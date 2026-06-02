@@ -3,8 +3,112 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 // ============================================================
 // MADINA MEDICINE CORNER - PROFESSIONAL PHARMACY POS SYSTEM
-// Version 8.0 - Advanced Edition
+// Version 8.0 - Advanced Edition + Firebase Cloud Sync
 // ============================================================
+
+// ============================================================
+// FIREBASE CLOUD SYNC
+// ─────────────────────────────────────────────────────────────
+// HOW TO SETUP (one-time, 5 minutes):
+//
+// 1. Go to https://console.firebase.google.com
+// 2. Click "Add project" → give it a name → Continue
+// 3. In the project, click "Build" → "Realtime Database"
+// 4. Click "Create Database" → choose any location → Start in TEST MODE
+// 5. Click "Project Settings" (gear icon) → "Your apps" → </> (Web)
+// 6. Register app → copy the firebaseConfig values below
+// 7. In Realtime Database → Rules → paste:
+//    { "rules": { ".read": true, ".write": true } }  → Publish
+//
+// Then fill in YOUR values in FIREBASE_CONFIG below.
+// ============================================================
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyD-oDPGUKhOhB71oso_9gN5L2KNxBRwbeE",
+  databaseURL: "https://madinamedicine-default-rtdb.asia-southeast1.firebasedatabase.app",
+};
+
+// Keys that sync to cloud (business data). Session/theme/sound are device-local only.
+const CLOUD_SYNC_KEYS = [
+  'madina_v7_meds',
+  'madina_v7_invoices',
+  'madina_v7_purchases',
+  'madina_v7_due_list',
+  'madina_v7_due_collection_log',
+  'madina_v7_companies',
+  'madina_v7_mednames',
+  'madina_v7_medmeta',
+  'madina_v7_sales',
+  'madina_v7_profit',
+  'madina_v7_admin_user',
+  'madina_v7_admin_pass',
+  'madina_v7_staff_user',
+  'madina_v7_staff_pass',
+  'madina_v7_secret_code',
+  'madina_v7_staff_perms',
+  'madina_v7_name',
+  'madina_v7_slogan',
+  'madina_v7_address',
+  'madina_v7_logo',
+  'madina_v7_currency',
+  'madina_v7_vat',
+  'madina_v7_threshold',
+  'madina_v7_footer',
+];
+
+// ── Firebase REST helpers (no SDK needed — pure fetch) ──────
+const isFirebaseConfigured = () =>
+  FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY" &&
+  FIREBASE_CONFIG.databaseURL !== "YOUR_DATABASE_URL" &&
+  !!FIREBASE_CONFIG.databaseURL;
+
+const fbUrl = (key: string) =>
+  `${FIREBASE_CONFIG.databaseURL}/madina_data/${key}.json?auth=${FIREBASE_CONFIG.apiKey}`;
+
+// Write a single key to Firebase
+const fbSet = async (key: string, value: string): Promise<void> => {
+  if (!isFirebaseConfigured()) return;
+  try {
+    await fetch(fbUrl(key), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(value),
+    });
+  } catch { /* silent fail — localStorage still works */ }
+};
+
+// Read a single key from Firebase
+const fbGet = async (key: string): Promise<string | null> => {
+  if (!isFirebaseConfigured()) return null;
+  try {
+    const res = await fetch(fbUrl(key));
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data === 'string' ? data : null;
+  } catch { return null; }
+};
+
+// Read ALL cloud keys at once (faster than individual reads on load)
+const fbGetAll = async (): Promise<Record<string, string> | null> => {
+  if (!isFirebaseConfigured()) return null;
+  try {
+    const res = await fetch(`${FIREBASE_CONFIG.databaseURL}/madina_data.json?auth=${FIREBASE_CONFIG.apiKey}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || typeof data !== 'object') return null;
+    const result: Record<string, string> = {};
+    for (const k of CLOUD_SYNC_KEYS) {
+      if (typeof data[k] === 'string') result[k] = data[k];
+    }
+    return result;
+  } catch { return null; }
+};
+
+// Wrapped localStorage.setItem that ALSO writes to Firebase
+const cloudSet = (key: string, value: string) => {
+  localStorage.setItem(key, value);
+  if (CLOUD_SYNC_KEYS.includes(key)) fbSet(key, value);
+};
 
 // ============================================================
 // SOUND ENGINE — Web Audio API (no external deps)
@@ -445,6 +549,22 @@ export default function Home() {
   const medicineSuggestRef = useRef<HTMLDivElement>(null);
 
   // ============================================================
+  // NEW PRODUCT FORM STATES (Add Product → goes to Stock In only)
+  // ============================================================
+  const [npCompanyName, setNpCompanyName] = useState("");
+  const [npMedicineName, setNpMedicineName] = useState("");
+  const [npGenericName, setNpGenericName] = useState("");
+  const [npBuyPrice, setNpBuyPrice] = useState("");
+  const [npSalePrice, setNpSalePrice] = useState("");
+  const [npCategory, setNpCategory] = useState("Tablet");
+  const [npCompanySuggestions, setNpCompanySuggestions] = useState<string[]>([]);
+  const [showNpCompanySuggestions, setShowNpCompanySuggestions] = useState(false);
+  const [npMedSuggestions, setNpMedSuggestions] = useState<{name:string; buyPrice:number; sellPrice:number; company:string}[]>([]);
+  const [showNpMedSuggestions, setShowNpMedSuggestions] = useState(false);
+  const npCompanyRef = useRef<HTMLDivElement>(null);
+  const npMedRef = useRef<HTMLDivElement>(null);
+
+  // ============================================================
   // RETURN SYSTEM
   // ============================================================
   const [selectedVoucher, setSelectedVoucher] = useState<any>(null);
@@ -476,12 +596,17 @@ export default function Home() {
   };
 
   // ============================================================
-  // LOAD FROM LOCALSTORAGE
+  // SYNC STATUS STATE
+  // ============================================================
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'offline'>('idle');
+
+  // ============================================================
+  // LOAD DATA — Firebase first, localStorage as fallback
   // ============================================================
   useEffect(() => {
     setIsMounted(true);
 
-    // Check login session — valid for current calendar day only (expires at midnight)
+    // Session is always device-local (login expires at midnight)
     const savedSession = localStorage.getItem('madina_v7_session');
     if (savedSession) {
       try {
@@ -491,7 +616,6 @@ export default function Home() {
           setIsLoggedIn(true);
           setCurrentUserRole(sess.role);
         } else {
-          // New day — clear session, require fresh login
           localStorage.removeItem('madina_v7_session');
         }
       } catch {
@@ -499,75 +623,123 @@ export default function Home() {
       }
     }
 
-    const load = (key: string) => localStorage.getItem(key);
-
-    const savedMeds = load('madina_v7_meds');
-    const savedInvoices = load('madina_v7_invoices');
-    const savedPurchases = load('madina_v7_purchases');
-    const savedDueList = load('madina_v7_due_list');
-    const savedCompanies = load('madina_v7_companies');
-    const savedMedNames = load('madina_v7_mednames');
-    const savedMedMeta = load('madina_v7_medmeta');
-    const savedSales = load('madina_v7_sales');
-    const savedProfit = load('madina_v7_profit');
-
-    if (savedMeds) setMedicines(JSON.parse(savedMeds));
-    else { setMedicines(defaultMedicines); localStorage.setItem('madina_v7_meds', JSON.stringify(defaultMedicines)); }
-    if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
-    if (savedPurchases) setPurchaseList(JSON.parse(savedPurchases));
-    if (savedDueList) setDueList(JSON.parse(savedDueList));
-    if (savedSales) setTotalSales(parseFloat(savedSales));
-    if (savedProfit) setTotalProfit(parseFloat(savedProfit));
-    const savedDueCLog = load('madina_v7_due_collection_log');
-    if (savedDueCLog) setDueCollectionLog(JSON.parse(savedDueCLog));
-
-    if (savedCompanies) setBdMedicineCompanies(JSON.parse(savedCompanies));
-    else { setBdMedicineCompanies(initialMedicineCompanies); localStorage.setItem('madina_v7_companies', JSON.stringify(initialMedicineCompanies)); }
-    if (savedMedNames) setBdMedicineNamesList(JSON.parse(savedMedNames));
-    else { setBdMedicineNamesList(initialMedicineNamesList); localStorage.setItem('madina_v7_mednames', JSON.stringify(initialMedicineNamesList)); }
-    if (savedMedMeta) setBdMedNameMetadata(JSON.parse(savedMedMeta));
-
-    const savedDark = load('madina_v7_dark');
-    const savedTheme = load('madina_v7_theme');
-    const savedSound = load('madina_v7_sound');
-    const savedName = load('madina_v7_name');
-    const savedSlogan = load('madina_v7_slogan');
-    const savedAddress = load('madina_v7_address');
-    const savedLogo = load('madina_v7_logo');
-    const savedCurrency = load('madina_v7_currency');
-    const savedVat = load('madina_v7_vat');
-    const savedThreshold = load('madina_v7_threshold');
-    const savedFooter = load('madina_v7_footer');
-    const savedUser = load('madina_v7_admin_user');
-    const savedPass = load('madina_v7_admin_pass');
-    const savedStaffUser = load('madina_v7_staff_user');
-    const savedStaffPass = load('madina_v7_staff_pass');
-    const savedSecret = load('madina_v7_secret_code');
-    const savedPermissions = load('madina_v7_staff_perms');
-    const savedLang = load('madina_v7_language');
-
+    // Device-local preferences (not synced across devices)
+    const savedDark = localStorage.getItem('madina_v7_dark');
+    const savedTheme = localStorage.getItem('madina_v7_theme');
+    const savedSound = localStorage.getItem('madina_v7_sound');
+    const savedLang = localStorage.getItem('madina_v7_language');
     if (savedTheme) setThemeMode(savedTheme);
     else if (savedDark) setThemeMode(JSON.parse(savedDark) ? 'dark' : 'light');
     if (savedSound !== null) setSoundEnabled(JSON.parse(savedSound));
-    if (savedName) { setPharmacyName(savedName); setSettingsName(savedName); }
-    else setSettingsName("Madina Medicine Corner");
-    if (savedSlogan) { setPharmacySlogan(savedSlogan); setSettingsSlogan(savedSlogan); }
-    else setSettingsSlogan("Professional Pharmacy POS System");
-    if (savedAddress) { setPharmacyAddress(savedAddress); setSettingsAddress(savedAddress); }
-    else setSettingsAddress("Chaumuhani Bazar, Cumilla");
-    if (savedLogo) { setPharmacyLogo(savedLogo); setSettingsLogo(savedLogo); }
-    else setSettingsLogo("M+");
-    if (savedCurrency) setCurrencySymbol(savedCurrency);
-    if (savedVat) setVatPercentage(savedVat);
-    if (savedThreshold) setLowStockThreshold(savedThreshold);
-    if (savedFooter) setReceiptFooterMsg(savedFooter);
-    if (savedUser) { setAdminUsername(savedUser); setNewUsernameInput(savedUser); }
-    if (savedPass) { setAdminPassword(savedPass); setNewPasswordInput(savedPass); }
-    if (savedStaffUser) { setStaffUsername(savedStaffUser); setNewStaffUsernameInput(savedStaffUser); }
-    if (savedStaffPass) { setStaffPassword(savedStaffPass); setNewStaffPasswordInput(savedStaffPass); }
-    if (savedSecret) { setSecretCode(savedSecret); setNewSecretCodeInput(savedSecret); }
-    if (savedPermissions) setStaffVisibleModules(prev => ({ ...prev, ...JSON.parse(savedPermissions) }));
     if (savedLang) setLanguage(savedLang as any);
+
+    // Helper: apply loaded cloud/local data to all state setters
+    const applyData = (data: Record<string, string | null>) => {
+      const g = (key: string) => data[key] ?? null;
+
+      const savedMeds = g('madina_v7_meds');
+      if (savedMeds) setMedicines(JSON.parse(savedMeds));
+      else { setMedicines(defaultMedicines); cloudSet('madina_v7_meds', JSON.stringify(defaultMedicines)); }
+
+      const savedInvoices = g('madina_v7_invoices');
+      if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
+
+      const savedPurchases = g('madina_v7_purchases');
+      if (savedPurchases) setPurchaseList(JSON.parse(savedPurchases));
+
+      const savedDueList = g('madina_v7_due_list');
+      if (savedDueList) setDueList(JSON.parse(savedDueList));
+
+      const savedDueCLog = g('madina_v7_due_collection_log');
+      if (savedDueCLog) setDueCollectionLog(JSON.parse(savedDueCLog));
+
+      const savedSales = g('madina_v7_sales');
+      if (savedSales) setTotalSales(parseFloat(savedSales));
+
+      const savedProfit = g('madina_v7_profit');
+      if (savedProfit) setTotalProfit(parseFloat(savedProfit));
+
+      const savedCompanies = g('madina_v7_companies');
+      if (savedCompanies) setBdMedicineCompanies(JSON.parse(savedCompanies));
+      else { setBdMedicineCompanies(initialMedicineCompanies); cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies)); }
+
+      const savedMedNames = g('madina_v7_mednames');
+      if (savedMedNames) setBdMedicineNamesList(JSON.parse(savedMedNames));
+      else { setBdMedicineNamesList(initialMedicineNamesList); cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList)); }
+
+      const savedMedMeta = g('madina_v7_medmeta');
+      if (savedMedMeta) setBdMedNameMetadata(JSON.parse(savedMedMeta));
+
+      const savedName = g('madina_v7_name');
+      if (savedName) { setPharmacyName(savedName); setSettingsName(savedName); }
+      else setSettingsName("Madina Medicine Corner");
+
+      const savedSlogan = g('madina_v7_slogan');
+      if (savedSlogan) { setPharmacySlogan(savedSlogan); setSettingsSlogan(savedSlogan); }
+      else setSettingsSlogan("Professional Pharmacy POS System");
+
+      const savedAddress = g('madina_v7_address');
+      if (savedAddress) { setPharmacyAddress(savedAddress); setSettingsAddress(savedAddress); }
+      else setSettingsAddress("Chaumuhani Bazar, Cumilla");
+
+      const savedLogo = g('madina_v7_logo');
+      if (savedLogo) { setPharmacyLogo(savedLogo); setSettingsLogo(savedLogo); }
+      else setSettingsLogo("M+");
+
+      const savedCurrency = g('madina_v7_currency');
+      if (savedCurrency) setCurrencySymbol(savedCurrency);
+
+      const savedVat = g('madina_v7_vat');
+      if (savedVat) setVatPercentage(savedVat);
+
+      const savedThreshold = g('madina_v7_threshold');
+      if (savedThreshold) setLowStockThreshold(savedThreshold);
+
+      const savedFooter = g('madina_v7_footer');
+      if (savedFooter) setReceiptFooterMsg(savedFooter);
+
+      const savedUser = g('madina_v7_admin_user');
+      if (savedUser) { setAdminUsername(savedUser); setNewUsernameInput(savedUser); }
+
+      const savedPass = g('madina_v7_admin_pass');
+      if (savedPass) { setAdminPassword(savedPass); setNewPasswordInput(savedPass); }
+
+      const savedStaffUser = g('madina_v7_staff_user');
+      if (savedStaffUser) { setStaffUsername(savedStaffUser); setNewStaffUsernameInput(savedStaffUser); }
+
+      const savedStaffPass = g('madina_v7_staff_pass');
+      if (savedStaffPass) { setStaffPassword(savedStaffPass); setNewStaffPasswordInput(savedStaffPass); }
+
+      const savedSecret = g('madina_v7_secret_code');
+      if (savedSecret) { setSecretCode(savedSecret); setNewSecretCodeInput(savedSecret); }
+
+      const savedPermissions = g('madina_v7_staff_perms');
+      if (savedPermissions) setStaffVisibleModules(prev => ({ ...prev, ...JSON.parse(savedPermissions) }));
+    };
+
+    // Step 1: Load from localStorage immediately (instant, no flicker)
+    const localData: Record<string, string | null> = {};
+    for (const k of CLOUD_SYNC_KEYS) localData[k] = localStorage.getItem(k);
+    applyData(localData);
+
+    // Step 2: Try Firebase — if available, overwrite with fresher cloud data
+    if (isFirebaseConfigured()) {
+      setSyncStatus('syncing');
+      fbGetAll().then(cloudData => {
+        if (cloudData && Object.keys(cloudData).length > 0) {
+          // Write cloud data to localStorage so offline works too
+          for (const k of CLOUD_SYNC_KEYS) {
+            if (cloudData[k]) localStorage.setItem(k, cloudData[k]);
+          }
+          applyData(cloudData);
+          setSyncStatus('synced');
+        } else {
+          setSyncStatus('offline');
+        }
+        // Auto-clear the synced indicator after 3 seconds
+        setTimeout(() => setSyncStatus('idle'), 3000);
+      }).catch(() => setSyncStatus('offline'));
+    }
   }, []);
 
   // ============================================================
@@ -594,6 +766,8 @@ export default function Home() {
     function handleClickOutside(event: MouseEvent) {
       if (suggestionRef.current && !suggestionRef.current.contains(event.target as Node)) setShowSuggestions(false);
       if (medicineSuggestRef.current && !medicineSuggestRef.current.contains(event.target as Node)) setShowMedicineSuggestions(false);
+      if (npCompanyRef.current && !npCompanyRef.current.contains(event.target as Node)) setShowNpCompanySuggestions(false);
+      if (npMedRef.current && !npMedRef.current.contains(event.target as Node)) setShowNpMedSuggestions(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -696,11 +870,11 @@ export default function Home() {
       }
       if (loginRole === "admin") {
         setAdminPassword(forgotNewPass);
-        localStorage.setItem('madina_v7_admin_pass', forgotNewPass);
+        cloudSet('madina_v7_admin_pass', forgotNewPass);
         setNewPasswordInput(forgotNewPass);
       } else {
         setStaffPassword(forgotNewPass);
-        localStorage.setItem('madina_v7_staff_pass', forgotNewPass);
+        cloudSet('madina_v7_staff_pass', forgotNewPass);
         setNewStaffPasswordInput(forgotNewPass);
       }
       alert(t("Password reset successfully!", "পাসওয়ার্ড সফলভাবে পরিবর্তন হয়েছে!"));
@@ -726,7 +900,7 @@ export default function Home() {
   const toggleStaffPermissionField = (moduleKey: string) => {
     const updatedPerms = { ...staffVisibleModules, [moduleKey]: !staffVisibleModules[moduleKey] };
     setStaffVisibleModules(updatedPerms);
-    localStorage.setItem('madina_v7_staff_perms', JSON.stringify(updatedPerms));
+    cloudSet('madina_v7_staff_perms', JSON.stringify(updatedPerms));
   };
 
   const checkShouldRenderTabOption = (tabKey: string) => {
@@ -776,7 +950,7 @@ export default function Home() {
   const deleteCompanySuggestion = (name: string) => {
     const updated = bdMedicineCompanies.filter(c => c !== name);
     setBdMedicineCompanies(updated);
-    localStorage.setItem('madina_v7_companies', JSON.stringify(updated));
+    cloudSet('madina_v7_companies', JSON.stringify(updated));
     const newFiltered = updated.filter(c => c.toLowerCase().includes(pCompanyName.toLowerCase()));
     setCompanySuggestions(newFiltered);
   };
@@ -802,10 +976,10 @@ export default function Home() {
   const deleteMedicineNameSuggestion = (name: string) => {
     const updated = bdMedicineNamesList.filter(m => m !== name);
     setBdMedicineNamesList(updated);
-    localStorage.setItem('madina_v7_mednames', JSON.stringify(updated));
+    cloudSet('madina_v7_mednames', JSON.stringify(updated));
     const updatedMeta = bdMedNameMetadata.filter(m => m.name !== name);
     setBdMedNameMetadata(updatedMeta);
-    localStorage.setItem('madina_v7_medmeta', JSON.stringify(updatedMeta));
+    cloudSet('madina_v7_medmeta', JSON.stringify(updatedMeta));
     // Rebuild suggestions
     const metaMatches = updatedMeta.filter(m => m.name.toLowerCase().includes(pMedicineName.toLowerCase()));
     const metaNames = new Set(metaMatches.map(m => m.name.toLowerCase()));
@@ -875,7 +1049,7 @@ export default function Home() {
     if (trimmedCompany && !currentCompanies.some(c => c.toLowerCase() === trimmedCompany.toLowerCase())) {
       currentCompanies.push(trimmedCompany);
       setBdMedicineCompanies(currentCompanies);
-      localStorage.setItem('madina_v7_companies', JSON.stringify(currentCompanies));
+      cloudSet('madina_v7_companies', JSON.stringify(currentCompanies));
     }
 
     purchaseCart.forEach(item => {
@@ -941,19 +1115,105 @@ export default function Home() {
     });
 
     setBdMedicineNamesList(currentMedNames);
-    localStorage.setItem('madina_v7_mednames', JSON.stringify(currentMedNames));
+    cloudSet('madina_v7_mednames', JSON.stringify(currentMedNames));
     setBdMedNameMetadata([...bdMedNameMetadata]);
-    localStorage.setItem('madina_v7_medmeta', JSON.stringify(bdMedNameMetadata));
+    cloudSet('madina_v7_medmeta', JSON.stringify(bdMedNameMetadata));
 
     setMedicines(updatedMeds);
     setPurchaseList(newPurchaseLogs);
-    localStorage.setItem('madina_v7_meds', JSON.stringify(updatedMeds));
-    localStorage.setItem('madina_v7_purchases', JSON.stringify(newPurchaseLogs));
+    cloudSet('madina_v7_meds', JSON.stringify(updatedMeds));
+    cloudSet('madina_v7_purchases', JSON.stringify(newPurchaseLogs));
 
     setPurchaseCart([]);
     setPCompanyName("");
     setPAmountPaid("");
     alert(t(`✅ Purchase saved! ${purchaseCart.length} medicines added.`, `✅ ক্রয় সংরক্ষিত! ${purchaseCart.length} টি ওষুধ যোগ হয়েছে।`));
+  };
+
+  // ============================================================
+  // NEW PRODUCT FORM HANDLERS
+  // ============================================================
+  const handleNpCompanyChange = (value: string) => {
+    setNpCompanyName(value);
+    if (value.trim().length >= 1) {
+      const filtered = bdMedicineCompanies.filter(c => c.toLowerCase().includes(value.toLowerCase()));
+      setNpCompanySuggestions(filtered);
+      setShowNpCompanySuggestions(true);
+    } else {
+      setNpCompanySuggestions([]);
+      setShowNpCompanySuggestions(false);
+    }
+  };
+
+  const handleNpMedNameChange = (value: string) => {
+    setNpMedicineName(value);
+    if (value.trim().length >= 1) {
+      const metaMatches = bdMedNameMetadata.filter(m => m.name.toLowerCase().includes(value.toLowerCase()));
+      const metaNames = new Set(metaMatches.map(m => m.name.toLowerCase()));
+      const plainMatches = bdMedicineNamesList
+        .filter(n => n.toLowerCase().includes(value.toLowerCase()) && !metaNames.has(n.toLowerCase()))
+        .map(n => ({ name: n, buyPrice: 0, sellPrice: 0, company: "" }));
+      setNpMedSuggestions([...metaMatches, ...plainMatches]);
+      setShowNpMedSuggestions(true);
+    } else {
+      setNpMedSuggestions([]);
+      setShowNpMedSuggestions(false);
+    }
+  };
+
+  const handleNpMedSelect = (item: {name:string; buyPrice:number; sellPrice:number; company:string}) => {
+    setNpMedicineName(item.name);
+    if (item.buyPrice > 0) setNpBuyPrice(item.buyPrice.toString());
+    if (item.sellPrice > 0) setNpSalePrice(item.sellPrice.toString());
+    if (item.company) setNpCompanyName(item.company);
+    setShowNpMedSuggestions(false);
+  };
+
+  // Saves to medicine database (metadata + name list) but NOT to inventory/medicines state
+  // The product will only appear in Sell AFTER being added via Stock In
+  const handleSaveNewProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!npMedicineName.trim()) return alert(t("Please enter medicine name!", "ওষুধের নাম লিখুন!"));
+    if (!npBuyPrice || !npSalePrice) return alert(t("Please enter buy price and sale price!", "ক্রয় মূল্য এবং বিক্রয় মূল্য লিখুন!"));
+
+    const trimmedMed = npMedicineName.trim();
+    const trimmedCompany = npCompanyName.trim();
+    const buyP = parseFloat(npBuyPrice) || 0;
+    const sellP = parseFloat(npSalePrice) || 0;
+
+    // Add to medicine names list if not already there
+    let currentMedNames = [...bdMedicineNamesList];
+    if (!currentMedNames.some(m => m.toLowerCase() === trimmedMed.toLowerCase())) {
+      currentMedNames.push(trimmedMed);
+      setBdMedicineNamesList(currentMedNames);
+      cloudSet('madina_v7_mednames', JSON.stringify(currentMedNames));
+    }
+
+    // Add/update metadata
+    const updatedMeta = [...bdMedNameMetadata];
+    const existingIdx = updatedMeta.findIndex(m => m.name.toLowerCase() === trimmedMed.toLowerCase());
+    const newMeta = { name: trimmedMed, buyPrice: buyP, sellPrice: sellP, company: trimmedCompany };
+    if (existingIdx !== -1) {
+      updatedMeta[existingIdx] = newMeta;
+    } else {
+      updatedMeta.push(newMeta);
+    }
+    setBdMedNameMetadata(updatedMeta);
+    cloudSet('madina_v7_medmeta', JSON.stringify(updatedMeta));
+
+    // Add company if not already in list
+    if (trimmedCompany && !bdMedicineCompanies.some(c => c.toLowerCase() === trimmedCompany.toLowerCase())) {
+      const updatedCompanies = [...bdMedicineCompanies, trimmedCompany];
+      setBdMedicineCompanies(updatedCompanies);
+      cloudSet('madina_v7_companies', JSON.stringify(updatedCompanies));
+    }
+
+    // Reset form
+    setNpMedicineName(""); setNpCompanyName(""); setNpGenericName("");
+    setNpBuyPrice(""); setNpSalePrice(""); setNpCategory("Tablet");
+
+    playSound('save');
+    addToast(t(`✅ "${trimmedMed}" added! Go to Stock In to add quantity.`, `✅ "${trimmedMed}" যোগ হয়েছে! স্টক ইন থেকে পরিমাণ যোগ করুন।`), 'success');
   };
 
   // ============================================================
@@ -979,7 +1239,7 @@ export default function Home() {
       lowStockAlert: parseInt(editFormData.lowStockAlert) || 10
     } : m);
     setMedicines(updated);
-    localStorage.setItem('madina_v7_meds', JSON.stringify(updated));
+    cloudSet('madina_v7_meds', JSON.stringify(updated));
     setEditingId(null);
     alert(t("✅ Medicine updated!", "✅ ওষুধ আপডেট হয়েছে!"));
   };
@@ -988,7 +1248,7 @@ export default function Home() {
     if (confirm(t("Are you sure you want to delete this medicine?", "এই ওষুধটি মুছে ফেলবেন?"))) {
       const updated = medicines.filter(m => m.id !== id);
       setMedicines(updated);
-      localStorage.setItem('madina_v7_meds', JSON.stringify(updated));
+      cloudSet('madina_v7_meds', JSON.stringify(updated));
     }
   };
 
@@ -1012,7 +1272,7 @@ export default function Home() {
 
     const updatedMeds = medicines.map(item => item.id === med.id ? { ...item, stock: item.stock - 1 } : item);
     setMedicines(updatedMeds);
-    localStorage.setItem('madina_v7_meds', JSON.stringify(updatedMeds));
+    cloudSet('madina_v7_meds', JSON.stringify(updatedMeds));
   };
 
   const removeFromCart = (itemToRemove: any) => {
@@ -1020,7 +1280,7 @@ export default function Home() {
     const currentCartQty = parseInt(itemToRemove.qty) || 0;
     const updatedMeds = medicines.map(item => item.id === itemToRemove.id ? { ...item, stock: item.stock + currentCartQty } : item);
     setMedicines(updatedMeds);
-    localStorage.setItem('madina_v7_meds', JSON.stringify(updatedMeds));
+    cloudSet('madina_v7_meds', JSON.stringify(updatedMeds));
   };
 
   const handleQuantityChange = (itemId: number, newQtyValue: string) => {
@@ -1101,9 +1361,9 @@ export default function Home() {
     setTotalProfit(totalProfit + netProfit);
     setLastInvoice(newInvoice);
 
-    localStorage.setItem('madina_v7_sales', (totalSales + currentFinalBill).toString());
-    localStorage.setItem('madina_v7_profit', (totalProfit + netProfit).toString());
-    localStorage.setItem('madina_v7_invoices', JSON.stringify(updatedInvoices));
+    cloudSet('madina_v7_sales', (totalSales + currentFinalBill).toString());
+    cloudSet('madina_v7_profit', (totalProfit + netProfit).toString());
+    cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
 
     if (dueAmt > 0) {
       const effectiveName = customerName.trim() || t("Regular Customer", "সাধারণ গ্রাহক");
@@ -1126,7 +1386,7 @@ export default function Home() {
         });
       }
       setDueList(updatedDueList);
-      localStorage.setItem('madina_v7_due_list', JSON.stringify(updatedDueList));
+      cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
     }
 
     setCart([]); setCustomerName(""); setCustomerPhone(""); setDiscountValue("0"); setCashReceived(""); setInvoiceDue("0");
@@ -1224,10 +1484,10 @@ export default function Home() {
     setInvoices(updatedInvoices);
     setTotalSales(newSalesState);
     setTotalProfit(newProfitState);
-    localStorage.setItem('madina_v7_meds', JSON.stringify(updatedMeds));
-    localStorage.setItem('madina_v7_invoices', JSON.stringify(updatedInvoices));
-    localStorage.setItem('madina_v7_sales', newSalesState.toString());
-    localStorage.setItem('madina_v7_profit', newProfitState.toString());
+    cloudSet('madina_v7_meds', JSON.stringify(updatedMeds));
+    cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
+    cloudSet('madina_v7_sales', newSalesState.toString());
+    cloudSet('madina_v7_profit', newProfitState.toString());
 
     setShowReturnModal(false);
     setSelectedInvoiceForReturn(null);
@@ -1251,7 +1511,7 @@ export default function Home() {
     // Add collected cash to sales (profit was already counted at sale time)
     const newTotalSales = totalSales + payAmt;
     setTotalSales(newTotalSales);
-    localStorage.setItem('madina_v7_sales', newTotalSales.toString());
+    cloudSet('madina_v7_sales', newTotalSales.toString());
 
     // Log this collection with date for dashboard due collection stats
     const today = new Date();
@@ -1264,10 +1524,10 @@ export default function Home() {
     };
     const updatedLog = [logEntry, ...dueCollectionLog];
     setDueCollectionLog(updatedLog);
-    localStorage.setItem('madina_v7_due_collection_log', JSON.stringify(updatedLog));
+    cloudSet('madina_v7_due_collection_log', JSON.stringify(updatedLog));
 
     setDueList(updatedDueList);
-    localStorage.setItem('madina_v7_due_list', JSON.stringify(updatedDueList));
+    cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
     setDuePaymentModal(null);
     setDuePayAmount("");
     alert(t(`✅ Payment of ${payAmt.toFixed(1)} ${currencySymbol} recorded!`, `✅ ${payAmt.toFixed(1)} ${currencySymbol} পরিশোধ নথিভুক্ত হয়েছে!`));
@@ -1295,11 +1555,11 @@ export default function Home() {
     setStaffUsername(newStaffUsernameInput);
     setStaffPassword(newStaffPasswordInput);
     setSecretCode(newSecretCodeInput);
-    localStorage.setItem('madina_v7_admin_user', newUsernameInput);
-    localStorage.setItem('madina_v7_admin_pass', newPasswordInput);
-    localStorage.setItem('madina_v7_staff_user', newStaffUsernameInput);
-    localStorage.setItem('madina_v7_staff_pass', newStaffPasswordInput);
-    localStorage.setItem('madina_v7_secret_code', newSecretCodeInput);
+    cloudSet('madina_v7_admin_user', newUsernameInput);
+    cloudSet('madina_v7_admin_pass', newPasswordInput);
+    cloudSet('madina_v7_staff_user', newStaffUsernameInput);
+    cloudSet('madina_v7_staff_pass', newStaffPasswordInput);
+    cloudSet('madina_v7_secret_code', newSecretCodeInput);
     setIsCredentialsFormUnlocked(false);
     alert(t("✅ Credentials updated!", "✅ লগইন তথ্য আপডেট হয়েছে!"));
   };
@@ -1309,10 +1569,10 @@ export default function Home() {
     setPharmacySlogan(settingsSlogan);
     setPharmacyAddress(settingsAddress);
     setPharmacyLogo(settingsLogo);
-    localStorage.setItem('madina_v7_name', settingsName);
-    localStorage.setItem('madina_v7_slogan', settingsSlogan);
-    localStorage.setItem('madina_v7_address', settingsAddress);
-    localStorage.setItem('madina_v7_logo', settingsLogo);
+    cloudSet('madina_v7_name', settingsName);
+    cloudSet('madina_v7_slogan', settingsSlogan);
+    cloudSet('madina_v7_address', settingsAddress);
+    cloudSet('madina_v7_logo', settingsLogo);
     alert(t("✅ Website info saved!", "✅ ওয়েবসাইট তথ্য সংরক্ষিত!"));
   };
 
@@ -1340,10 +1600,10 @@ export default function Home() {
     setVatPercentage(vat);
     setLowStockThreshold(threshold);
     setReceiptFooterMsg(footer);
-    localStorage.setItem('madina_v7_currency', currency);
-    localStorage.setItem('madina_v7_vat', vat);
-    localStorage.setItem('madina_v7_threshold', threshold);
-    localStorage.setItem('madina_v7_footer', footer);
+    cloudSet('madina_v7_currency', currency);
+    cloudSet('madina_v7_vat', vat);
+    cloudSet('madina_v7_threshold', threshold);
+    cloudSet('madina_v7_footer', footer);
   };
 
   const handleLanguageChange = (lang: "en" | "bn") => {
@@ -1419,9 +1679,9 @@ export default function Home() {
     setInvoices(updatedInvoices);
     setTotalSales(newSales);
     setTotalProfit(newProfit);
-    localStorage.setItem('madina_v7_invoices', JSON.stringify(updatedInvoices));
-    localStorage.setItem('madina_v7_sales', newSales.toString());
-    localStorage.setItem('madina_v7_profit', newProfit.toString());
+    cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
+    cloudSet('madina_v7_sales', newSales.toString());
+    cloudSet('madina_v7_profit', newProfit.toString());
     alert(t("✅ Invoice deleted!", "✅ রশিদ মুছে ফেলা হয়েছে!"));
   };
 
@@ -1811,6 +2071,24 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-2 text-xs">
+          {/* Cloud Sync Status Badge */}
+          {isFirebaseConfigured() && syncStatus !== 'idle' && (
+            <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold border transition ${
+              syncStatus === 'syncing' ? (isDarkMode ? 'bg-blue-500/20 border-blue-500/40 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-600') :
+              syncStatus === 'synced'  ? (isDarkMode ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600') :
+                                         (isDarkMode ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-600')
+            }`}>
+              {syncStatus === 'syncing' ? <><span style={{animation:'spin-slow 1s linear infinite',display:'inline-block'}}>⟳</span> {t("Syncing...", "সিঙ্ক...")}</> :
+               syncStatus === 'synced'  ? <>☁️ {t("Synced", "সিঙ্কড")}</> :
+                                          <>⚠️ {t("Offline", "অফলাইন")}</>}
+            </div>
+          )}
+          {!isFirebaseConfigured() && (
+            <div title={t("Firebase not configured — data is local only","Firebase সেটআপ হয়নি — ডেটা শুধু এই ডিভাইসে")} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold border cursor-help ${isDarkMode ? 'bg-slate-700 border-slate-600 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-400'}`}>
+              💾 {t("Local", "লোকাল")}
+            </div>
+          )}
+
           {/* Role Badge */}
           <div className={`px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase ${currentUserRole === "ADMIN" ? (isDarkMode ? 'bg-teal-500/20 border-teal-500/40 text-teal-400' : 'bg-teal-50 border-teal-200 text-teal-600') : (isDarkMode ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'bg-indigo-50 border-indigo-200 text-indigo-600')}`}>
             {currentUserRole === "ADMIN" ? `👑 ${t("Admin", "অ্যাডমিন")}` : `👥 ${t("Staff", "স্টাফ")}`}
@@ -1867,6 +2145,12 @@ export default function Home() {
             <button onClick={() => { playSound('tab'); setActiveTab("procurement"); }} className={`sidebar-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "procurement" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <div className="flex items-center gap-2"><span>📥</span><span>{t("Stock In", "মাল কিনুন")}</span></div>
               <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${activeTab === "procurement" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{purchaseList.length}</span>
+            </button>
+          )}
+
+          {checkShouldRenderTabOption("procurement") && (
+            <button onClick={() => { playSound('tab'); setActiveTab("new_product"); }} className={`sidebar-nav-btn w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "new_product" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span>➕</span><span>{t("New Product", "নতুন পণ্য")}</span>
             </button>
           )}
 
@@ -2580,6 +2864,139 @@ export default function Home() {
           )}
 
           {/* =========================================================
+              TAB: NEW PRODUCT ADD
+          ========================================================= */}
+          {activeTab === "new_product" && checkShouldRenderTabOption("procurement") && (
+            <div key="new-product-tab" className="animate-tab-content max-w-lg mx-auto">
+              <div className={`p-5 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <h2 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-1">➕ {t("Add New Product", "নতুন পণ্য যোগ করুন")}</h2>
+                <p className={`text-[11px] mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {t("Product will be saved to the database. Go to Stock In to add quantity — only then it appears in Sell.", "পণ্য ডেটাবেজে সেভ হবে। স্টক ইন থেকে পরিমাণ যোগ করলে তবেই বিক্রয়তে আসবে।")}
+                </p>
+
+                <form onSubmit={handleSaveNewProduct} className="flex flex-col gap-3">
+
+                  {/* Company Name */}
+                  <div className="relative" ref={npCompanyRef}>
+                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Company Name", "কোম্পানির নাম")}</label>
+                    <input
+                      type="text"
+                      value={npCompanyName}
+                      onChange={e => handleNpCompanyChange(e.target.value)}
+                      placeholder={t("e.g. Square Pharmaceuticals...", "যেমন: স্কয়ার ফার্মা...")}
+                      className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200'}`}
+                    />
+                    {showNpCompanySuggestions && npCompanySuggestions.length > 0 && (
+                      <div className={`absolute z-30 w-full mt-1 rounded-xl border shadow-lg max-h-40 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                        {npCompanySuggestions.slice(0, 8).map(c => (
+                          <button type="button" key={c} onClick={() => { setNpCompanyName(c); setShowNpCompanySuggestions(false); }}
+                            className={`w-full text-left px-3 py-2 text-xs hover:bg-teal-500/10 transition ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Medicine Name */}
+                  <div className="relative" ref={npMedRef}>
+                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Medicine Name *", "ওষুধের নাম *")}</label>
+                    <input
+                      type="text"
+                      value={npMedicineName}
+                      onChange={e => handleNpMedNameChange(e.target.value)}
+                      placeholder={t("e.g. Napa 500mg...", "যেমন: নাপা ৫০০মিগ্রা...")}
+                      className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200'}`}
+                      required
+                    />
+                    {showNpMedSuggestions && npMedSuggestions.length > 0 && (
+                      <div className={`absolute z-30 w-full mt-1 rounded-xl border shadow-lg max-h-48 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                        {npMedSuggestions.slice(0, 10).map(item => (
+                          <button type="button" key={item.name} onClick={() => handleNpMedSelect(item)}
+                            className={`w-full text-left px-3 py-2 text-xs hover:bg-teal-500/10 transition ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                            <span className="font-bold">{item.name}</span>
+                            {item.buyPrice > 0 && <span className="ml-2 text-teal-500 font-mono text-[10px]">Buy: {item.buyPrice} / Sell: {item.sellPrice}</span>}
+                            {item.company && <span className={`ml-2 text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{item.company}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Generic Name */}
+                  <div>
+                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Generic Name", "জেনেরিক নাম")}</label>
+                    <input
+                      type="text"
+                      value={npGenericName}
+                      onChange={e => setNpGenericName(e.target.value)}
+                      placeholder={t("e.g. Paracetamol...", "যেমন: প্যারাসিটামল...")}
+                      className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200'}`}
+                    />
+                  </div>
+
+                  {/* Category */}
+                  <div>
+                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Category", "ক্যাটাগরি")}</label>
+                    <select value={npCategory} onChange={e => setNpCategory(e.target.value)}
+                      className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
+                      {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Buy Price & Sale Price */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Buy Price *", "ক্রয় মূল্য *")} ({currencySymbol})</label>
+                      <input
+                        type="number"
+                        value={npBuyPrice}
+                        onChange={e => setNpBuyPrice(e.target.value)}
+                        placeholder="0.00"
+                        step="0.01"
+                        className={`w-full px-3 py-2 rounded-lg border text-xs outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Sale Price *", "বিক্রয় মূল্য *")} ({currencySymbol})</label>
+                      <input
+                        type="number"
+                        value={npSalePrice}
+                        onChange={e => setNpSalePrice(e.target.value)}
+                        placeholder="0.00"
+                        step="0.01"
+                        className={`w-full px-3 py-2 rounded-lg border text-xs outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Info box */}
+                  <div className={`rounded-lg p-3 text-[11px] flex items-start gap-2 ${isDarkMode ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
+                    <span className="text-base shrink-0">ℹ️</span>
+                    <span>{t("After adding, this product will appear in Stock In suggestions. Add quantity via Stock In — it will then become available in Sell.", "যোগ করার পর এই পণ্য স্টক ইন-এ সাজেশনে আসবে। স্টক ইন থেকে পরিমাণ যোগ করলে তবেই বিক্রয়তে দেখা যাবে।")}</span>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => { setNpMedicineName(""); setNpCompanyName(""); setNpGenericName(""); setNpBuyPrice(""); setNpSalePrice(""); setNpCategory("Tablet"); }}
+                      className={`px-4 py-2.5 rounded-lg text-xs font-bold transition ${isDarkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      {t("Clear", "মুছুন")}
+                    </button>
+                    <button type="submit" className="flex-1 bg-teal-500 hover:bg-teal-600 text-white font-black py-2.5 rounded-lg text-xs uppercase tracking-wider shadow transition btn-press">
+                      ✅ {t("Save Product", "পণ্য সেভ করুন")}
+                    </button>
+                    <button type="button" onClick={() => { setActiveTab("procurement"); }}
+                      className="px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg text-xs transition btn-press">
+                      📥 {t("Go to Stock In", "স্টক ইনে যান")}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================
               TAB: PURCHASE HISTORY
           ========================================================= */}
           {activeTab === "purchase_history" && checkShouldRenderTabOption("purchase_history") && (() => {
@@ -2615,7 +3032,7 @@ export default function Home() {
               if (!confirm(t(`Delete this purchase voucher (${v.items.length} items)?`, `এই ক্রয় ভাউচার মুছে ফেলবেন (${v.items.length}টি আইটেম)?`))) return;
               const updatedList = purchaseList.filter(log => !v.logIds.includes(log.id));
               setPurchaseList(updatedList);
-              localStorage.setItem('madina_v7_purchases', JSON.stringify(updatedList));
+              cloudSet('madina_v7_purchases', JSON.stringify(updatedList));
               playSound('delete');
               addToast(t('✅ Voucher deleted!', '✅ ভাউচার মুছে ফেলা হয়েছে!'), 'success');
             };
@@ -3234,6 +3651,36 @@ export default function Home() {
             </div>
           )}
 
+
+          {/* =========================================================
+              FIREBASE SETUP GUIDE (shown inside Settings)
+          ========================================================= */}
+          {activeTab === "settings" && checkShouldRenderTabOption("settings") && (
+            <div className={`mt-4 p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <h3 className="text-xs font-black uppercase tracking-wider text-blue-500 mb-1">☁️ {t("Cloud Sync Setup (Firebase)", "ক্লাউড সিঙ্ক সেটআপ (Firebase)")}</h3>
+              {isFirebaseConfigured() ? (
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold ${isDarkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-700'}`}>
+                  ✅ {t("Firebase is configured! Data syncs across all devices automatically.", "Firebase সেটআপ হয়ে গেছে! সব ডিভাইসে ডেটা অটো সিঙ্ক হচ্ছে।")}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 text-xs">
+                  <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
+                    {t("Firebase is not configured yet. Follow the steps below to enable cross-device sync:", "Firebase এখনো সেটআপ হয়নি। নিচের ধাপ অনুসরণ করুন:")}
+                  </p>
+                  <ol className={`list-decimal list-inside flex flex-col gap-1.5 pl-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                    <li>{t("Go to", "যান")} <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline font-bold">console.firebase.google.com</a></li>
+                    <li>{t('Click "Add project" → give a name → Continue', '"Add project" ক্লিক করুন → নাম দিন → Continue')}</li>
+                    <li>{t('Click "Build" → "Realtime Database" → "Create Database" → Test Mode', '"Build" → "Realtime Database" → "Create Database" → Test Mode')}</li>
+                    <li>{t('Project Settings (gear ⚙️) → Your apps → Web (</>) → Register → copy firebaseConfig', 'Project Settings (⚙️) → Your apps → Web → Register → firebaseConfig কপি করুন')}</li>
+                    <li>{t("Open this file's code and replace YOUR_API_KEY and YOUR_DATABASE_URL at the top", "এই ফাইলের কোডের উপরে FIREBASE_CONFIG-এ YOUR_API_KEY ও YOUR_DATABASE_URL বসান")}</li>
+                  </ol>
+                  <div className={`font-mono text-[10px] p-2 rounded-lg mt-1 select-all ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-slate-100 text-slate-700'}`}>
+                    {`const FIREBASE_CONFIG = {\n  apiKey: "YOUR_API_KEY",\n  databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",\n};`}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* =========================================================
               TAB: STAFF PERMISSIONS (Admin Only)
