@@ -65,23 +65,59 @@ const isFirebaseConfigured = () =>
 const fbUrl = (key: string) =>
   `${FIREBASE_CONFIG.databaseURL}/madina_data/${key}.json?auth=${FIREBASE_CONFIG.apiKey}`;
 
+// Fetch with timeout — works on slow mobile data connections
+const fetchWithTimeout = (url: string, options: RequestInit = {}, timeoutMs = 10000): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timer));
+};
+
+// Offline queue — saves failed writes and retries when back online
+let offlineQueue: { key: string; value: string }[] = [];
+const flushOfflineQueue = async () => {
+  if (!isFirebaseConfigured() || offlineQueue.length === 0) return;
+  const queue = [...offlineQueue];
+  offlineQueue = [];
+  for (const item of queue) {
+    try {
+      await fetchWithTimeout(fbUrl(item.key), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item.value),
+      });
+    } catch {
+      offlineQueue.push(item); // re-queue if still failing
+    }
+  }
+};
+
+// Listen for network recovery and flush queued writes
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { flushOfflineQueue(); });
+}
+
 // Write a single key to Firebase
 const fbSet = async (key: string, value: string): Promise<void> => {
   if (!isFirebaseConfigured()) return;
   try {
-    await fetch(fbUrl(key), {
+    await fetchWithTimeout(fbUrl(key), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(value),
     });
-  } catch { /* silent fail — localStorage still works */ }
+  } catch {
+    // Network unavailable — queue for retry when back online
+    offlineQueue = offlineQueue.filter(q => q.key !== key);
+    offlineQueue.push({ key, value });
+  }
 };
 
 // Read a single key from Firebase
 const fbGet = async (key: string): Promise<string | null> => {
   if (!isFirebaseConfigured()) return null;
   try {
-    const res = await fetch(fbUrl(key));
+    const res = await fetchWithTimeout(fbUrl(key));
     if (!res.ok) return null;
     const data = await res.json();
     return typeof data === 'string' ? data : null;
@@ -92,7 +128,11 @@ const fbGet = async (key: string): Promise<string | null> => {
 const fbGetAll = async (): Promise<Record<string, string> | null> => {
   if (!isFirebaseConfigured()) return null;
   try {
-    const res = await fetch(`${FIREBASE_CONFIG.databaseURL}/madina_data.json?auth=${FIREBASE_CONFIG.apiKey}`);
+    const res = await fetchWithTimeout(
+      `${FIREBASE_CONFIG.databaseURL}/madina_data.json?auth=${FIREBASE_CONFIG.apiKey}`,
+      {},
+      12000
+    );
     if (!res.ok) return null;
     const data = await res.json();
     if (!data || typeof data !== 'object') return null;
