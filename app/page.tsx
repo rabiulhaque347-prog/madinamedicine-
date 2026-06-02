@@ -634,12 +634,13 @@ export default function Home() {
     if (savedLang) setLanguage(savedLang as any);
 
     // Helper: apply loaded cloud/local data to all state setters
-    const applyData = (data: Record<string, string | null>) => {
+    // allowSeedDefaults: only true when we KNOW Firebase has no data at all
+    const applyData = (data: Record<string, string | null>, allowSeedDefaults = false) => {
       const g = (key: string) => data[key] ?? null;
 
       const savedMeds = g('madina_v7_meds');
       if (savedMeds) setMedicines(JSON.parse(savedMeds));
-      else { setMedicines(defaultMedicines); cloudSet('madina_v7_meds', JSON.stringify(defaultMedicines)); }
+      else if (allowSeedDefaults) { setMedicines(defaultMedicines); cloudSet('madina_v7_meds', JSON.stringify(defaultMedicines)); }
 
       const savedInvoices = g('madina_v7_invoices');
       if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
@@ -661,11 +662,11 @@ export default function Home() {
 
       const savedCompanies = g('madina_v7_companies');
       if (savedCompanies) setBdMedicineCompanies(JSON.parse(savedCompanies));
-      else { setBdMedicineCompanies(initialMedicineCompanies); cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies)); }
+      else if (allowSeedDefaults) { setBdMedicineCompanies(initialMedicineCompanies); cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies)); }
 
       const savedMedNames = g('madina_v7_mednames');
       if (savedMedNames) setBdMedicineNamesList(JSON.parse(savedMedNames));
-      else { setBdMedicineNamesList(initialMedicineNamesList); cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList)); }
+      else if (allowSeedDefaults) { setBdMedicineNamesList(initialMedicineNamesList); cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList)); }
 
       const savedMedMeta = g('madina_v7_medmeta');
       if (savedMedMeta) setBdMedNameMetadata(JSON.parse(savedMedMeta));
@@ -718,27 +719,44 @@ export default function Home() {
     };
 
     // Step 1: Load from localStorage immediately (instant, no flicker)
+    // Do NOT seed defaults yet — we first check Firebase to avoid overwriting real data
     const localData: Record<string, string | null> = {};
     for (const k of CLOUD_SYNC_KEYS) localData[k] = localStorage.getItem(k);
-    applyData(localData);
+    const localHasMeds = !!localData['madina_v7_meds'];
+    applyData(localData, false); // never seed defaults from localStorage alone
 
     // Step 2: Try Firebase — if available, overwrite with fresher cloud data
     if (isFirebaseConfigured()) {
       setSyncStatus('syncing');
       fbGetAll().then(cloudData => {
         if (cloudData && Object.keys(cloudData).length > 0) {
-          // Write cloud data to localStorage so offline works too
+          // Cloud has real data — write to localStorage and apply (no seeding needed)
           for (const k of CLOUD_SYNC_KEYS) {
             if (cloudData[k]) localStorage.setItem(k, cloudData[k]);
           }
-          applyData(cloudData);
+          applyData(cloudData, false);
           setSyncStatus('synced');
         } else {
+          // Cloud is truly empty (brand new database) — safe to seed defaults now
+          if (!localHasMeds) {
+            applyData(localData, true);
+          }
           setSyncStatus('offline');
         }
         // Auto-clear the synced indicator after 3 seconds
         setTimeout(() => setSyncStatus('idle'), 3000);
-      }).catch(() => setSyncStatus('offline'));
+      }).catch(() => {
+        // Firebase unreachable — fall back to localStorage, seed only if local is also empty
+        if (!localHasMeds) {
+          applyData(localData, true);
+        }
+        setSyncStatus('offline');
+      });
+    } else {
+      // Firebase not configured — seed defaults only if localStorage is empty
+      if (!localHasMeds) {
+        applyData(localData, true);
+      }
     }
   }, []);
 
