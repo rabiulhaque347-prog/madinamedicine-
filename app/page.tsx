@@ -213,7 +213,7 @@ export default function Home() {
   const defaultMedicines = [
     { id: 1, name: "Napa Extend (500mg)", category: "Tablet", buyPrice: 11, price: 15, stock: 120, expire: "2027-12-01", generic: "Paracetamol", rack: "A-2", supplier: "Beximco Pharmaceuticals Ltd.", lowStockAlert: 10 },
     { id: 2, name: "Ace Plus", category: "Tablet", buyPrice: 9, price: 12, stock: 4, expire: "2026-09-15", generic: "Paracetamol + Caffeine", rack: "A-2", supplier: "Square Pharmaceuticals Ltd.", lowStockAlert: 10 },
-    { id: 3, name: "Seclo 20mg", category: "Capsule", buyPrice: 5, price: 7, stock: 200, expire: "2027-12-01", generic: "Omeprazole", rack: "B-1", supplier: "Incepta Pharmaceuticals Ltd.", lowStockAlert: 10 },
+    { id: 3, name: "Seclo 20mg", category: "Capsule", buyPrice: 5, price: 7, stock: 200, expire: "2025-04-10", generic: "Omeprazole", rack: "B-1", supplier: "Incepta Pharmaceuticals Ltd.", lowStockAlert: 10 },
     { id: 4, name: "Tusca Syrup", category: "Syrup", buyPrice: 65, price: 85, stock: 45, expire: "2027-01-20", generic: "Dextromethorphan", rack: "C-4", supplier: "Sandoz", lowStockAlert: 10 }
   ];
 
@@ -1356,7 +1356,7 @@ export default function Home() {
     }
 
     const parsedQty = parseInt(newQtyValue);
-    if (isNaN(parsedQty) || parsedQty <= 0) return;
+    if (isNaN(parsedQty) || parsedQty < 0) return;
     const currentCartQty = parseInt(existingCartItem.qty) || 0;
     const currentTotalAvailable = originalMed.stock + currentCartQty;
 
@@ -1381,8 +1381,7 @@ export default function Home() {
     ? (currentSubTotal * (parseFloat(discountValue) || 0)) / 100
     : (parseFloat(discountValue) || 0);
   const currentFinalBill = Math.max(0, currentSubTotal + calculatedVatAmount - activeDiscountAmount);
-  // If cashReceived is empty, treat as exact payment (change = 0); calculation still works
-  const liveRefundAmount = calculatorInput === "" ? 0 : (parseFloat(calculatorInput) || 0) - currentFinalBill;
+  const liveRefundAmount = (parseFloat(calculatorInput) || 0) - currentFinalBill;
 
   const executeFinalCheckout = () => {
     const totalCost = cart.reduce((sum, item) => sum + (item.buyPrice * (parseInt(item.qty) || 0)), 0);
@@ -1568,9 +1567,10 @@ export default function Home() {
       ? dueList.filter(d => d.id !== duePaymentModal.id)
       : dueList.map(d => d.id === duePaymentModal.id ? { ...d, totalDue: newTotalDue } : d);
 
-    // NOTE: totalSales already counted the full finalBill at invoice time.
-    // We do NOT add to totalSales again here — that would double-count.
-    // We only log this for the due-collection dashboard stats.
+    // Add collected cash to sales (profit was already counted at sale time)
+    const newTotalSales = totalSales + payAmt;
+    setTotalSales(newTotalSales);
+    cloudSet('madina_v7_sales', newTotalSales.toString());
 
     // Log this collection with date for dashboard due collection stats
     const today = new Date();
@@ -1673,86 +1673,26 @@ export default function Home() {
   const resetDatabase = () => {
     const confirmPass = prompt(t("⚠️ Enter Admin Password to Factory Reset:", "⚠️ ফ্যাক্টরি রিসেটের জন্য পাসওয়ার্ড দিন:"));
     if (confirmPass !== adminPassword) return alert(t("❌ Authentication Failed!", "❌ পাসওয়ার্ড ভুল!"));
-    if (confirm(t("⚠️ Delete ALL data? This cannot be undone!", "⚠️ সব তথ্য চিরতরে মুছে ফেলবেন?"))) {
+    if (confirm(t("⚠️ Delete ALL data?", "⚠️ সব তথ্য মুছে ফেলবেন?"))) {
       localStorage.clear();
-      // Also clear Firebase cloud data if configured
-      if (isFirebaseConfigured()) {
-        fetchWithTimeout(
-          `${FIREBASE_CONFIG.databaseURL}/madina_data.json?auth=${FIREBASE_CONFIG.apiKey}`,
-          { method: 'DELETE' }
-        ).catch(() => {});
-      }
-      const resetMeds = defaultMedicines;
-      setMedicines(resetMeds);
+      setMedicines(defaultMedicines);
       setBdMedicineCompanies(initialMedicineCompanies);
       setBdMedicineNamesList(initialMedicineNamesList);
-      setBdMedNameMetadata([]);
       setTotalSales(0); setTotalProfit(0);
       setInvoices([]); setCart([]); setPurchaseList([]); setDueList([]); setDueCollectionLog([]);
       setPharmacyName("Madina Medicine Corner");
       setPharmacySlogan("Professional Pharmacy POS System");
       setPharmacyAddress("Chaumuhani Bazar, Cumilla");
       setPharmacyLogo("M+");
-      setSettingsName("Madina Medicine Corner");
-      setSettingsSlogan("Professional Pharmacy POS System");
-      setSettingsAddress("Chaumuhani Bazar, Cumilla");
-      setSettingsLogo("M+");
       setCurrencySymbol("৳"); setVatPercentage("0"); setLowStockThreshold("10");
       setReceiptFooterMsg("ধন্যবাদ, আবার আসবেন!");
       setThemeMode('light');
       setAdminUsername("admin"); setAdminPassword("2026");
       setStaffUsername("staff"); setStaffPassword("staff123");
       setSecretCode("MADINA2026");
-      setNewUsernameInput("admin"); setNewPasswordInput("2026");
-      setNewStaffUsernameInput("staff"); setNewStaffPasswordInput("staff123");
-      setNewSecretCodeInput("MADINA2026");
-      setIsCredentialsFormUnlocked(false);
       setIsLoggedIn(false);
       alert(t("✅ System reset successful!", "✅ সিস্টেম রিসেট সম্পন্ন!"));
     }
-  };
-
-  // ============================================================
-  // CSV EXPORT HELPERS
-  // ============================================================
-  const exportToCSV = (filename: string, rows: string[][]) => {
-    const csvContent = rows.map(row =>
-      row.map(cell => {
-        const str = String(cell ?? '').replace(/"/g, '""');
-        return /[,"\n\r]/.test(str) ? `"${str}"` : str;
-      }).join(',')
-    ).join('\n');
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename; a.click();
-    URL.revokeObjectURL(url);
-    playSound('save');
-    addToast(t(`✅ ${filename} exported!`, `✅ ${filename} ডাউনলোড হয়েছে!`), 'success');
-  };
-
-  const exportInvoicesCSV = () => {
-    const headers = [t('Invoice ID','রশিদ নং'), t('Customer','গ্রাহক'), t('Phone','ফোন'), t('Date','তারিখ'), t('Payment','পেমেন্ট'), t('Total Bill','মোট বিল'), t('Due','বাকি'), t('Profit','লাভ'), t('Status','অবস্থা')];
-    const rows = invoices.map(inv => [inv.invoiceId, inv.customer, inv.phone, inv.dateString, inv.paymentMethod, inv.finalBill.toFixed(2), (inv.due||0).toFixed(2), inv.profit.toFixed(2), inv.isReturned ? t('Returned','ফেরত') : t('Paid','পরিশোধ')]);
-    exportToCSV(`invoices_${new Date().toLocaleDateString().replace(/\//g,'-')}.csv`, [headers, ...rows]);
-  };
-
-  const exportStockCSV = () => {
-    const headers = [t('Name','নাম'), t('Category','ধরন'), t('Generic','জেনেরিক'), t('Stock','স্টক'), t('Buy Price','ক্রয় মূল্য'), t('Sell Price','বিক্রয় মূল্য'), t('Buy Total','ক্রয় মোট'), t('Sell Total','বিক্রয় মোট'), t('Expiry','মেয়াদ'), t('Rack','র্যাক'), t('Supplier','সরবরাহকারী')];
-    const rows = medicines.map(m => [m.name, m.category, m.generic||'', m.stock, m.buyPrice, m.price, (m.buyPrice*m.stock).toFixed(2), (m.price*m.stock).toFixed(2), m.expire, m.rack||'', m.supplier||'']);
-    exportToCSV(`stock_report_${new Date().toLocaleDateString().replace(/\//g,'-')}.csv`, [headers, ...rows]);
-  };
-
-  const exportPurchaseCSV = () => {
-    const headers = [t('Company','কোম্পানি'), t('Medicine','ওষুধ'), t('Category','ধরন'), t('Batch','ব্যাচ'), t('Qty','পরিমাণ'), t('Unit Price','ইউনিট মূল্য'), t('Total Cost','মোট খরচ'), t('Paid','পরিশোধ'), t('Due','বাকি'), t('Expiry','মেয়াদ'), t('Date','তারিখ')];
-    const rows = purchaseList.map(p => [p.companyName, p.medicineName, p.category, p.batchNo||'', p.quantity, (p.unitPrice||0).toFixed(2), (p.totalCost||0).toFixed(2), (p.paid||0).toFixed(2), (p.due||0).toFixed(2), p.expireDate||'', p.dateString]);
-    exportToCSV(`purchases_${new Date().toLocaleDateString().replace(/\//g,'-')}.csv`, [headers, ...rows]);
-  };
-
-  const exportDueListCSV = () => {
-    const headers = [t('Customer','গ্রাহক'), t('Phone','ফোন'), t('Total Due','মোট বাকি'), t('Invoice Count','রশিদ সংখ্যা')];
-    const rows = dueList.map(d => [d.customerName, d.phone, d.totalDue.toFixed(2), d.invoices.length]);
-    exportToCSV(`due_list_${new Date().toLocaleDateString().replace(/\//g,'-')}.csv`, [headers, ...rows]);
   };
 
   // ============================================================
@@ -1793,7 +1733,7 @@ export default function Home() {
     if (!inv) return;
     const updatedInvoices = invoices.filter(i => i.invoiceId !== invoiceId);
     // Subtract the invoice profit and sales from totals
-    const newSales = Math.max(0, totalSales - inv.finalBill);
+    const newSales = Math.max(0, totalSales - (inv.finalBill - (inv.due || 0)));
     const newProfit = totalProfit - (inv.profit || 0);
     setInvoices(updatedInvoices);
     setTotalSales(newSales);
@@ -2226,7 +2166,7 @@ export default function Home() {
           <div>
             <h1 className="font-black text-sm tracking-tight uppercase flex items-center gap-1.5">
               <span>{pharmacyName}</span>
-              <span className="text-sm font-bold bg-teal-500/10 text-teal-500 px-1.5 py-0.5 rounded-full lowercase">v9.0</span>
+              <span className="text-sm font-bold bg-teal-500/10 text-teal-500 px-1.5 py-0.5 rounded-full lowercase">v8.0</span>
             </h1>
             <p className={`text-sm font-semibold opacity-60 hidden sm:block ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{pharmacySlogan}</p>
           </div>
@@ -2261,10 +2201,6 @@ export default function Home() {
             <button onClick={() => handleLanguageChange("en")} className={`px-2 py-1 rounded-md text-sm font-black transition ${language === "en" ? 'bg-teal-500 text-white' : 'text-slate-400'}`}>EN</button>
             <button onClick={() => handleLanguageChange("bn")} className={`px-2 py-1 rounded-md text-sm font-black transition ${language === "bn" ? 'bg-teal-500 text-white' : 'text-slate-400'}`}>বাং</button>
           </div>
-
-          <button onClick={toggleSound} className={`p-1.5 rounded-lg border transition ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'} ${soundEnabled ? 'text-teal-500' : 'text-slate-400'}`} title={soundEnabled ? t("Sound ON — click to mute","সাউন্ড চালু — বন্ধ করতে ক্লিক করুন") : t("Sound OFF — click to enable","সাউন্ড বন্ধ — চালু করতে ক্লিক করুন")}>
-            {soundEnabled ? "🔊" : "🔇"}
-          </button>
 
           <button onClick={() => handleToggleTheme(!isDarkMode)} className={`p-1.5 rounded-lg border transition ${isDarkMode ? 'bg-slate-800 border-slate-700 text-amber-400 hover:bg-slate-700' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`} title={`Theme: ${themeMode}`}>
             {themeMode === 'light' ? "🌙" : themeMode === 'dark' ? "☀️" : themeMode === 'ocean' ? "🌊" : themeMode === 'forest' ? "🌿" : themeMode === 'royal' ? "👑" : themeMode === 'sunset' ? "🌅" : themeMode === 'cherry' ? "🌸" : themeMode === 'midnight' ? "🌌" : themeMode === 'nordic' ? "❄️" : themeMode === 'lava' ? "🌋" : themeMode === 'glacier' ? "🏔️" : "🎨"}
@@ -2947,7 +2883,7 @@ export default function Home() {
                   <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">📥 {t("Add Medicine to Purchase", "ক্রয়ে ওষুধ যোগ করুন")}</h3>
 
                   {/* Company Name */}
-                  <div className="mb-3 relative" ref={suggestionRef}>
+                  <div className="mb-3" ref={suggestionRef}>
                     <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Company / Supplier Name", "কোম্পানি / সরবরাহকারীর নাম")} *</label>
                     <input
                       type="text"
@@ -2972,7 +2908,7 @@ export default function Home() {
                   <form onSubmit={addItemToPurchaseCart} className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
 
                     {/* Medicine Name with suggestion */}
-                    <div className="col-span-2 md:col-span-2 relative" ref={medicineSuggestRef}>
+                    <div className="col-span-2 md:col-span-2" ref={medicineSuggestRef}>
                       <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Medicine Name", "ওষুধের নাম")} *</label>
                       <input
                         type="text"
@@ -3388,7 +3324,6 @@ export default function Home() {
                     <div className={`text-right text-sm font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                       <div>{t("Total Purchased:", "মোট ক্রয়:")} <span className="font-mono text-teal-500">{grandTotalPurchaseCost.toFixed(1)} {currencySymbol}</span></div>
                       {grandTotalPurchaseDue > 0 && <div className="text-red-400">{t("Total Due:", "মোট বাকি:")} <span className="font-mono">{grandTotalPurchaseDue.toFixed(1)} {currencySymbol}</span></div>}
-                      <button onClick={exportPurchaseCSV} disabled={purchaseList.length === 0} className="mt-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-sm px-3 py-1 rounded-lg transition uppercase tracking-wider">📥 {t("Export CSV", "CSV ডাউনলোড")}</button>
                     </div>
                   </div>
 
@@ -3497,7 +3432,6 @@ export default function Home() {
             <div className={`ccard cc-pink p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-4">
                 <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">{t("Customer Invoices", "গ্রাহকের রশিদ")} ({invoices.length})</h3>
-                <button onClick={exportInvoicesCSV} disabled={invoices.length === 0} className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">📥 {t("Export CSV", "CSV ডাউনলোড")}</button>
                 {checkShouldRenderTabOption("invoice_search") && (
                   <input type="text" placeholder={t("Search by invoice, customer, phone...", "রশিদ নং, নাম বা ফোনে খুঁজুন...")} value={searchInvoiceQuery} onChange={e => setSearchInvoiceQuery(e.target.value)} className={`px-3 py-1.5 text-sm rounded-lg border outline-none max-w-sm w-full ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                 )}
@@ -3574,7 +3508,6 @@ export default function Home() {
                   <div className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     {t("Total Outstanding:", "মোট বাকি:")} <span className="text-red-500 font-mono font-black">{totalDueFromCustomers.toFixed(1)} {currencySymbol}</span>
                   </div>
-                  <button onClick={exportDueListCSV} disabled={dueList.length === 0} className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">📥 CSV</button>
                   <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">🖨️ {t("Print", "প্রিন্ট")}</button>
                 </div>
               </div>
@@ -3674,10 +3607,7 @@ export default function Home() {
                   <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">📋 {t("Stock Report", "স্টক রিপোর্ট")}</h3>
                   <p className={`text-sm mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("All medicines currently in stock with prices", "দোকানে বর্তমানে সব মালের তালিকা ও দাম")}</p>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={exportStockCSV} disabled={medicines.length === 0} className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-sm px-3 py-2 rounded-lg transition uppercase tracking-wider shadow">📥 {t("Export CSV", "CSV ডাউনলোড")}</button>
-                  <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow">🖨️ {t("Print Report", "রিপোর্ট প্রিন্ট করুন")}</button>
-                </div>
+                <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow">🖨️ {t("Print Report", "রিপোর্ট প্রিন্ট করুন")}</button>
               </div>
 
               {/* Print Header - only shows on print */}
