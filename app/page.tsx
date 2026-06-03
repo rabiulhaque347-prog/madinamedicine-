@@ -2167,14 +2167,14 @@ export default function Home() {
               <span>{pharmacyName}</span>
               <span className="text-sm font-bold bg-teal-500/10 text-teal-500 px-1.5 py-0.5 rounded-full lowercase">v8.0</span>
             </h1>
-            <p className={`text-sm font-semibold opacity-60 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{pharmacySlogan}</p>
+            <p className={`text-sm font-semibold opacity-60 hidden sm:block ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{pharmacySlogan}</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 text-sm">
           {/* Cloud Sync Status Badge */}
           {isFirebaseConfigured() && syncStatus !== 'idle' && (
-            <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-bold border transition ${
+            <div className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-bold border transition ${
               syncStatus === 'syncing' ? (isDarkMode ? 'bg-blue-500/20 border-blue-500/40 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-600') :
               syncStatus === 'synced'  ? (isDarkMode ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600') :
                                          (isDarkMode ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-600')
@@ -2185,13 +2185,13 @@ export default function Home() {
             </div>
           )}
           {!isFirebaseConfigured() && (
-            <div title={t("Firebase not configured — data is local only","Firebase সেটআপ হয়নি — ডেটা শুধু এই ডিভাইসে")} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-bold border cursor-help ${isDarkMode ? 'bg-slate-700 border-slate-600 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-400'}`}>
+            <div title={t("Firebase not configured — data is local only","Firebase সেটআপ হয়নি — ডেটা শুধু এই ডিভাইসে")} className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-bold border cursor-help ${isDarkMode ? 'bg-slate-700 border-slate-600 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-400'}`}>
               💾 {t("Local", "লোকাল")}
             </div>
           )}
 
           {/* Role Badge */}
-          <div className={`px-3 py-1.5 rounded-lg border text-sm font-black uppercase ${currentUserRole === "ADMIN" ? (isDarkMode ? 'bg-teal-500/20 border-teal-500/40 text-teal-400' : 'bg-teal-50 border-teal-200 text-teal-600') : (isDarkMode ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'bg-indigo-50 border-indigo-200 text-indigo-600')}`}>
+          <div className={`hidden sm:block px-3 py-1.5 rounded-lg border text-sm font-black uppercase ${currentUserRole === "ADMIN" ? (isDarkMode ? 'bg-teal-500/20 border-teal-500/40 text-teal-400' : 'bg-teal-50 border-teal-200 text-teal-600') : (isDarkMode ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'bg-indigo-50 border-indigo-200 text-indigo-600')}`}>
             {currentUserRole === "ADMIN" ? `👑 ${t("Admin", "অ্যাডমিন")}` : `👥 ${t("Staff", "স্টাফ")}`}
           </div>
 
@@ -2218,8 +2218,8 @@ export default function Home() {
       {/* MAIN LAYOUT */}
       <div className="flex-1 flex print:block">
 
-        {/* SIDEBAR */}
-        <nav className={`w-52 border-r p-3 flex flex-col gap-1.5 shrink-0 transition print:hidden ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderRightColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
+        {/* SIDEBAR — hidden on mobile, visible on md+ */}
+        <nav className={`hidden md:flex w-52 border-r p-3 flex-col gap-1.5 shrink-0 transition print:hidden ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderRightColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
           <span className="text-sm font-black text-slate-400 uppercase tracking-widest px-2 mb-1.5 block">{t("Menu", "মেনু")}</span>
 
           {checkShouldRenderTabOption("pos") && (
@@ -2325,8 +2325,48 @@ export default function Home() {
           </div>
         </nav>
 
+        {/* MOBILE BOTTOM NAVIGATION — visible only on mobile (md: hidden) */}
+        <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-40 border-t flex items-center justify-around px-1 py-1.5 print:hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderTopColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
+          {checkShouldRenderTabOption("pos") && (
+            <button onClick={() => { playSound('tab'); setActiveTab("pos"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "pos" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              <span className="text-lg">🛒</span>
+              <span>{t("Sell", "বিক্রয়")}</span>
+            </button>
+          )}
+          {checkShouldRenderTabOption("analytics") && (
+            <button onClick={() => { playSound('tab'); setActiveTab("analytics"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "analytics" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              <span className="text-lg">📊</span>
+              <span>{t("Dash", "ড্যাশ")}</span>
+            </button>
+          )}
+          {checkShouldRenderTabOption("inventory") && (
+            <button onClick={() => { playSound('tab'); setActiveTab("inventory"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "inventory" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              <span className="text-lg">📦</span>
+              <span>{t("Stock", "স্টক")}</span>
+            </button>
+          )}
+          {checkShouldRenderTabOption("invoices") && (
+            <button onClick={() => { playSound('tab'); setActiveTab("invoices"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "invoices" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              <span className="text-lg">🧾</span>
+              <span>{t("Bills", "রশিদ")}</span>
+            </button>
+          )}
+          {checkShouldRenderTabOption("due_list_view") && (
+            <button onClick={() => { playSound('tab'); setActiveTab("due_list"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "due_list" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              <span className="text-lg">💳</span>
+              <span>{t("Due", "বাকি")}</span>
+            </button>
+          )}
+          {checkShouldRenderTabOption("settings") && (
+            <button onClick={() => { playSound('tab'); setActiveTab("settings"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "settings" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              <span className="text-lg">⚙️</span>
+              <span>{t("More", "আরো")}</span>
+            </button>
+          )}
+        </nav>
+
         {/* MAIN CONTENT */}
-        <main className="flex-1 p-4 overflow-y-auto print:p-0">
+        <main className="flex-1 p-4 pb-24 md:pb-4 overflow-y-auto print:p-0">
 
           {/* =========================================================
               TAB 1: POS / SELL
