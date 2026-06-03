@@ -1894,7 +1894,7 @@ export default function Home() {
           <div className="text-center mb-4">
             <div className={`inline-flex flex-col items-center px-5 py-2.5 rounded-2xl border backdrop-blur-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700/50' : 'bg-white/70 border-slate-200/80'}`}>
               <span className="animate-clock font-mono font-black text-2xl text-teal-500 tracking-widest">{liveTime}</span>
-              <span className={`text-[10px] font-semibold tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{liveDate} · {liveDay}</span>
+              <span className={`text-sm font-semibold tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{liveDate} · {liveDay}</span>
             </div>
           </div>
 
@@ -1904,24 +1904,24 @@ export default function Home() {
             <div className="text-center mb-6">
               <div className="animate-logo-pulse w-16 h-16 rounded-2xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-lg font-black text-xl mx-auto mb-3">{pharmacyLogo}</div>
               <h1 className="font-black text-lg text-teal-600">{pharmacyName}</h1>
-              <p className={`text-xs font-medium mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{pharmacySlogan}</p>
+              <p className={`text-sm font-semibold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{pharmacySlogan}</p>
             </div>
 
           {!showForgotPass ? (
             <>
               {/* Login Type Toggle */}
               <div className={`flex p-1 rounded-xl mb-4 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
-                <button onClick={() => setLoginRole("admin")} className={`flex-1 py-2 rounded-lg text-xs font-black transition-all btn-press ${loginRole === "admin" ? 'bg-teal-500 text-white shadow' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                <button onClick={() => setLoginRole("admin")} className={`flex-1 py-2 rounded-lg text-sm font-black transition-all btn-press ${loginRole === "admin" ? 'bg-teal-500 text-white shadow' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   👑 {t("Admin", "অ্যাডমিন")}
                 </button>
-                <button onClick={() => setLoginRole("staff")} className={`flex-1 py-2 rounded-lg text-xs font-black transition-all btn-press ${loginRole === "staff" ? 'bg-indigo-500 text-white shadow' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                <button onClick={() => setLoginRole("staff")} className={`flex-1 py-2 rounded-lg text-sm font-black transition-all btn-press ${loginRole === "staff" ? 'bg-indigo-500 text-white shadow' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   👥 {t("Staff", "স্টাফ")}
                 </button>
               </div>
 
               <div className={`flex flex-col gap-3 ${loginShake ? 'animate-shake' : ''}`}>
                 <div>
-                  <label className={`block text-[10px] font-bold uppercase mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Username", "ইউজারনেম")}</label>
+                  <label className={`block text-sm font-bold uppercase mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Username", "ইউজারনেম")}</label>
                   <input
                     type="text"
                     value={loginUsername}
@@ -1932,7 +1932,7 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label className={`block text-[10px] font-bold uppercase mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Password", "পাসওয়ার্ড")}</label>
+                  <label className={`block text-sm font-bold uppercase mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Password", "পাসওয়ার্ড")}</label>
                   <div className="relative">
                     <input
                       type={showLoginPass ? "text" : "password"}
@@ -1942,11 +1942,11 @@ export default function Home() {
                       placeholder={t("Enter password...", "পাসওয়ার্ড লিখুন...")}
                       className={`w-full px-3 py-2 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-teal-500/30 transition-all pr-10 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                     />
-                    <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">{showLoginPass ? "🙈" : "👁️"}</button>
+                    <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">{showLoginPass ? "🙈" : "👁️"}</button>
                   </div>
                 </div>
 
-                {loginError && <p className="text-red-500 text-xs font-bold text-center">{loginError}</p>}
+                {loginError && <p className="text-red-500 text-sm font-bold text-center">{loginError}</p>}
 
                 <button onClick={handleLogin} disabled={loginLoading} className="w-full bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-black py-2.5 rounded-xl text-sm hover:from-teal-600 hover:to-emerald-600 transition-all shadow-md mt-1 btn-press disabled:opacity-60 relative overflow-hidden">
                   {loginLoading ? (
@@ -1957,15 +1957,15 @@ export default function Home() {
                   ) : <>🔐 {t("Login", "লগইন")}</>}
                 </button>
 
-                <button onClick={() => { setShowForgotPass(true); setForgotStep("secret"); setForgotError(""); }} className="text-teal-500 text-xs font-bold hover:underline text-center">
+                <button onClick={() => { setShowForgotPass(true); setForgotStep("secret"); setForgotError(""); }} className="text-teal-500 text-sm font-bold hover:underline text-center">
                   {t("Forgot Password?", "পাসওয়ার্ড ভুলে গেছেন?")}
                 </button>
               </div>
 
               {/* Language Toggle on login */}
               <div className="flex justify-center mt-4 gap-2">
-                <button onClick={() => handleLanguageChange("en")} className={`px-3 py-1 rounded-lg text-[10px] font-bold transition btn-press ${language === "en" ? 'bg-teal-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>EN</button>
-                <button onClick={() => handleLanguageChange("bn")} className={`px-3 py-1 rounded-lg text-[10px] font-bold transition btn-press ${language === "bn" ? 'bg-teal-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>বাং</button>
+                <button onClick={() => handleLanguageChange("en")} className={`px-3 py-1 rounded-lg text-sm font-bold transition btn-press ${language === "en" ? 'bg-teal-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>EN</button>
+                <button onClick={() => handleLanguageChange("bn")} className={`px-3 py-1 rounded-lg text-sm font-bold transition btn-press ${language === "bn" ? 'bg-teal-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>বাং</button>
               </div>
             </>
           ) : (
@@ -1973,7 +1973,7 @@ export default function Home() {
               <h3 className="text-sm font-black text-center text-teal-500 mb-4">{t("Reset Password", "পাসওয়ার্ড রিসেট")}</h3>
               {forgotStep === "secret" ? (
                 <div className="flex flex-col gap-3">
-                  <p className={`text-xs text-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Enter your Secret Code to verify identity:", "পরিচয় যাচাইয়ের জন্য সিক্রেট কোড দিন:")}</p>
+                  <p className={`text-sm text-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Enter your Secret Code to verify identity:", "পরিচয় যাচাইয়ের জন্য সিক্রেট কোড দিন:")}</p>
                   <input
                     type="text"
                     value={forgotSecretInput}
@@ -1981,12 +1981,12 @@ export default function Home() {
                     placeholder={t("Secret Code...", "সিক্রেট কোড...")}
                     className={`w-full px-3 py-2 rounded-xl border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                   />
-                  {forgotError && <p className="text-red-500 text-xs font-bold text-center">{forgotError}</p>}
+                  {forgotError && <p className="text-red-500 text-sm font-bold text-center">{forgotError}</p>}
                   <button onClick={handleForgotPassword} className="w-full bg-teal-500 text-white font-black py-2.5 rounded-xl text-sm hover:bg-teal-600 transition btn-press">{t("Verify Code", "কোড যাচাই করুন")}</button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  <p className={`text-xs text-center text-emerald-500 font-bold`}>{t("✅ Identity Verified! Set new password:", "✅ পরিচয় যাচাই হয়েছে! নতুন পাসওয়ার্ড দিন:")}</p>
+                  <p className={`text-sm text-center text-emerald-500 font-bold`}>{t("✅ Identity Verified! Set new password:", "✅ পরিচয় যাচাই হয়েছে! নতুন পাসওয়ার্ড দিন:")}</p>
                   <input
                     type="password"
                     value={forgotNewPass}
@@ -1994,11 +1994,11 @@ export default function Home() {
                     placeholder={t("New Password...", "নতুন পাসওয়ার্ড...")}
                     className={`w-full px-3 py-2 rounded-xl border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                   />
-                  {forgotError && <p className="text-red-500 text-xs font-bold text-center">{forgotError}</p>}
+                  {forgotError && <p className="text-red-500 text-sm font-bold text-center">{forgotError}</p>}
                   <button onClick={handleForgotPassword} className="w-full bg-emerald-500 text-white font-black py-2.5 rounded-xl text-sm hover:bg-emerald-600 transition btn-press">{t("Reset Password", "পাসওয়ার্ড রিসেট")}</button>
                 </div>
               )}
-              <button onClick={() => { setShowForgotPass(false); setForgotStep("secret"); setForgotSecretInput(""); setForgotNewPass(""); setForgotError(""); }} className="w-full text-slate-400 text-xs font-bold mt-3 hover:underline">← {t("Back to Login", "লগইনে ফিরুন")}</button>
+              <button onClick={() => { setShowForgotPass(false); setForgotStep("secret"); setForgotSecretInput(""); setForgotNewPass(""); setForgotError(""); }} className="w-full text-slate-400 text-sm font-bold mt-3 hover:underline">← {t("Back to Login", "লগইনে ফিরুন")}</button>
             </>
           )}
           </div>
@@ -2048,8 +2048,51 @@ export default function Home() {
         .btn-press:active { transform: scale(0.95) !important; }
         .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
         .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
-        .sidebar-nav-btn { transition: all 0.15s ease; }
-        .sidebar-nav-btn:hover { padding-left: 14px !important; }
+        /* ── Colorful card border system ── */
+        .ccard { border-left-width: 4px !important; border-left-style: solid !important; }
+        .cc-teal    { border-left-color: #0d9488 !important; }
+        .cc-indigo  { border-left-color: #6366f1 !important; }
+        .cc-amber   { border-left-color: #f59e0b !important; }
+        .cc-emerald { border-left-color: #10b981 !important; }
+        .cc-blue    { border-left-color: #3b82f6 !important; }
+        .cc-red     { border-left-color: #ef4444 !important; }
+        .cc-orange  { border-left-color: #f97316 !important; }
+        .cc-violet  { border-left-color: #8b5cf6 !important; }
+        .cc-pink    { border-left-color: #ec4899 !important; }
+        .cc-rose    { border-left-color: #f43f5e !important; }
+        .cc-green   { border-left-color: #22c55e !important; }
+        .cc-slate   { border-left-color: #64748b !important; }
+        .cc-cyan    { border-left-color: #06b6d4 !important; }
+        .cc-purple  { border-left-color: #a855f7 !important; }
+        /* Input fields — colorful focus */
+        input:focus, select:focus, textarea:focus {
+          outline: none !important;
+          border-color: #14b8a6 !important;
+          box-shadow: 0 0 0 3px rgba(20,184,166,0.2) !important;
+        }
+        /* Table rows */
+        tbody tr:nth-child(even) { background-color: rgba(20,184,166,0.035); }
+        tbody tr:hover { background-color: rgba(20,184,166,0.07) !important; }
+
+        .sidebar-nav-btn { transition: all 0.18s ease; border: 2px solid transparent; border-radius: 11px; }
+        .sidebar-nav-btn:hover { padding-left: 16px !important; }
+        .snav-pos     { border-color: #0d9488 !important; }
+        .snav-dash    { border-color: #6366f1 !important; }
+        .snav-stock   { border-color: #f59e0b !important; }
+        .snav-stockin { border-color: #10b981 !important; }
+        .snav-newprod { border-color: #22c55e !important; }
+        .snav-ph      { border-color: #8b5cf6 !important; }
+        .snav-inv     { border-color: #3b82f6 !important; }
+        .snav-due     { border-color: #ef4444 !important; }
+        .snav-report  { border-color: #f97316 !important; }
+        .snav-ret     { border-color: #ec4899 !important; }
+        .snav-set     { border-color: #64748b !important; }
+        .snav-perm    { border-color: #f43f5e !important; }
+        .snav-pos.bg-teal-500,.snav-dash.bg-teal-500,.snav-stock.bg-teal-500,
+        .snav-stockin.bg-teal-500,.snav-newprod.bg-teal-500,.snav-ph.bg-teal-500,
+        .snav-inv.bg-teal-500,.snav-due.bg-teal-500,.snav-report.bg-teal-500,
+        .snav-ret.bg-teal-500,.snav-set.bg-teal-500,.snav-perm.bg-teal-500
+        { border-color: rgba(255,255,255,0.45) !important; box-shadow: 0 0 10px rgba(20,184,166,0.35); }
       `}</style>
 
       {/* ANIMATED TOAST NOTIFICATIONS */}
@@ -2057,7 +2100,7 @@ export default function Home() {
         {toastQueue.map((toast, idx) => (
           <div
             key={toast.id}
-            className={`animate-toast-in pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border text-xs font-bold min-w-[220px] max-w-xs ${
+            className={`animate-toast-in pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border text-sm font-bold min-w-[220px] max-w-xs ${
               toast.type === 'success' ? (isDarkMode ? 'bg-emerald-900/90 border-emerald-500/40 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-700') :
               toast.type === 'error' ? (isDarkMode ? 'bg-red-900/90 border-red-500/40 text-red-300' : 'bg-red-50 border-red-200 text-red-700') :
               (isDarkMode ? 'bg-slate-800/90 border-slate-600/40 text-slate-200' : 'bg-white border-slate-200 text-slate-700')
@@ -2105,10 +2148,10 @@ export default function Home() {
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-full px-4 py-3 rounded-xl shadow-2xl border flex items-center gap-3 ${isDarkMode ? 'bg-slate-800 border-teal-500/30 text-teal-400' : 'bg-white border-teal-200 text-teal-600'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-card'], borderColor: (activeThemeStyle as any)['--theme-border'], color: (activeThemeStyle as any)['--theme-accent'] } : {}}>
           <div className="w-8 h-8 rounded-full bg-teal-500/10 flex items-center justify-center text-lg">🎉</div>
           <div className="flex-1">
-            <h5 className="font-bold text-xs">{t("Invoice Created Successfully!", "বিল তৈরি সফল হয়েছে!")}</h5>
-            <p className="text-[10px] opacity-80">{t("Click Print to get a receipt copy.", "প্রিন্ট বাটনে ক্লিক করুন।")}</p>
+            <h5 className="font-bold text-sm">{t("Invoice Created Successfully!", "বিল তৈরি সফল হয়েছে!")}</h5>
+            <p className="text-sm opacity-80">{t("Click Print to get a receipt copy.", "প্রিন্ট বাটনে ক্লিক করুন।")}</p>
           </div>
-          <button onClick={() => viewInvoiceLog(invoices[0])} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-[10px] px-2.5 py-1 rounded uppercase tracking-wider transition">{t("View", "দেখুন")}</button>
+          <button onClick={() => viewInvoiceLog(invoices[0])} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-2.5 py-1 rounded uppercase tracking-wider transition">{t("View", "দেখুন")}</button>
         </div>
       )}
 
@@ -2120,18 +2163,18 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-md font-black text-sm">{pharmacyLogo}</div>
           <div>
-            <h1 className="font-black text-xs tracking-tight uppercase flex items-center gap-1.5">
+            <h1 className="font-black text-sm tracking-tight uppercase flex items-center gap-1.5">
               <span>{pharmacyName}</span>
-              <span className="text-[9px] font-bold bg-teal-500/10 text-teal-500 px-1.5 py-0.5 rounded-full lowercase">v8.0</span>
+              <span className="text-sm font-bold bg-teal-500/10 text-teal-500 px-1.5 py-0.5 rounded-full lowercase">v8.0</span>
             </h1>
-            <p className={`text-[10px] font-medium opacity-60 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{pharmacySlogan}</p>
+            <p className={`text-sm font-semibold opacity-60 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{pharmacySlogan}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-2 text-sm">
           {/* Cloud Sync Status Badge */}
           {isFirebaseConfigured() && syncStatus !== 'idle' && (
-            <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold border transition ${
+            <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-bold border transition ${
               syncStatus === 'syncing' ? (isDarkMode ? 'bg-blue-500/20 border-blue-500/40 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-600') :
               syncStatus === 'synced'  ? (isDarkMode ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600') :
                                          (isDarkMode ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-600')
@@ -2142,33 +2185,33 @@ export default function Home() {
             </div>
           )}
           {!isFirebaseConfigured() && (
-            <div title={t("Firebase not configured — data is local only","Firebase সেটআপ হয়নি — ডেটা শুধু এই ডিভাইসে")} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold border cursor-help ${isDarkMode ? 'bg-slate-700 border-slate-600 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-400'}`}>
+            <div title={t("Firebase not configured — data is local only","Firebase সেটআপ হয়নি — ডেটা শুধু এই ডিভাইসে")} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-bold border cursor-help ${isDarkMode ? 'bg-slate-700 border-slate-600 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-400'}`}>
               💾 {t("Local", "লোকাল")}
             </div>
           )}
 
           {/* Role Badge */}
-          <div className={`px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase ${currentUserRole === "ADMIN" ? (isDarkMode ? 'bg-teal-500/20 border-teal-500/40 text-teal-400' : 'bg-teal-50 border-teal-200 text-teal-600') : (isDarkMode ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'bg-indigo-50 border-indigo-200 text-indigo-600')}`}>
+          <div className={`px-3 py-1.5 rounded-lg border text-sm font-black uppercase ${currentUserRole === "ADMIN" ? (isDarkMode ? 'bg-teal-500/20 border-teal-500/40 text-teal-400' : 'bg-teal-50 border-teal-200 text-teal-600') : (isDarkMode ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'bg-indigo-50 border-indigo-200 text-indigo-600')}`}>
             {currentUserRole === "ADMIN" ? `👑 ${t("Admin", "অ্যাডমিন")}` : `👥 ${t("Staff", "স্টাফ")}`}
           </div>
 
           {/* Language Toggle */}
           <div className={`flex items-center p-0.5 rounded-lg border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
-            <button onClick={() => handleLanguageChange("en")} className={`px-2 py-1 rounded-md text-[10px] font-black transition ${language === "en" ? 'bg-teal-500 text-white' : 'text-slate-400'}`}>EN</button>
-            <button onClick={() => handleLanguageChange("bn")} className={`px-2 py-1 rounded-md text-[10px] font-black transition ${language === "bn" ? 'bg-teal-500 text-white' : 'text-slate-400'}`}>বাং</button>
+            <button onClick={() => handleLanguageChange("en")} className={`px-2 py-1 rounded-md text-sm font-black transition ${language === "en" ? 'bg-teal-500 text-white' : 'text-slate-400'}`}>EN</button>
+            <button onClick={() => handleLanguageChange("bn")} className={`px-2 py-1 rounded-md text-sm font-black transition ${language === "bn" ? 'bg-teal-500 text-white' : 'text-slate-400'}`}>বাং</button>
           </div>
 
           <button onClick={() => handleToggleTheme(!isDarkMode)} className={`p-1.5 rounded-lg border transition ${isDarkMode ? 'bg-slate-800 border-slate-700 text-amber-400 hover:bg-slate-700' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`} title={`Theme: ${themeMode}`}>
             {themeMode === 'light' ? "🌙" : themeMode === 'dark' ? "☀️" : themeMode === 'ocean' ? "🌊" : themeMode === 'forest' ? "🌿" : themeMode === 'royal' ? "👑" : themeMode === 'sunset' ? "🌅" : themeMode === 'cherry' ? "🌸" : themeMode === 'midnight' ? "🌌" : themeMode === 'nordic' ? "❄️" : themeMode === 'lava' ? "🌋" : themeMode === 'glacier' ? "🏔️" : "🎨"}
           </button>
 
-          <div className={`text-right hidden sm:block text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          <div className={`text-right hidden sm:block text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             <span className="font-bold">{currentUserRole}</span>
-            <span className="block font-mono text-teal-500 animate-clock font-black text-xs">{liveTime}</span>
-            <span className="block font-mono text-[9px] opacity-70">{liveDate}</span>
+            <span className="block font-mono text-teal-500 animate-clock font-black text-sm">{liveTime}</span>
+            <span className="block font-mono text-sm opacity-70">{liveDate}</span>
           </div>
 
-          <button onClick={handleLogout} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-[10px] px-2 py-1 rounded-lg transition uppercase">{t("Logout", "লগআউট")}</button>
+          <button onClick={handleLogout} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-3 py-2 rounded-lg transition uppercase">{t("Logout", "লগআউট")}</button>
         </div>
       </header>
 
@@ -2176,83 +2219,83 @@ export default function Home() {
       <div className="flex-1 flex print:block">
 
         {/* SIDEBAR */}
-        <nav className={`w-48 border-r p-3 flex flex-col gap-1 shrink-0 transition print:hidden ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderRightColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
-          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2 mb-1.5 block">{t("Menu", "মেনু")}</span>
+        <nav className={`w-52 border-r p-3 flex flex-col gap-1.5 shrink-0 transition print:hidden ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderRightColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
+          <span className="text-sm font-black text-slate-400 uppercase tracking-widest px-2 mb-1.5 block">{t("Menu", "মেনু")}</span>
 
           {checkShouldRenderTabOption("pos") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("pos"); }} className={`sidebar-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "pos" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("pos"); }} className={`sidebar-nav-btn snav-pos w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "pos" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <div className="flex items-center gap-2"><span>🛒</span><span>{t("Sell", "বিক্রয়")}</span></div>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${activeTab === "pos" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{cart.length}</span>
+              <span className={`text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "pos" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{cart.length}</span>
             </button>
           )}
 
           {checkShouldRenderTabOption("analytics") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("analytics"); }} className={`sidebar-nav-btn w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "analytics" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("analytics"); }} className={`sidebar-nav-btn snav-dash w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "analytics" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <span>📊</span><span>{t("Dashboard", "ড্যাশবোর্ড")}</span>
             </button>
           )}
 
           {checkShouldRenderTabOption("inventory") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("inventory"); }} className={`sidebar-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "inventory" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("inventory"); }} className={`sidebar-nav-btn snav-stock w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "inventory" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <div className="flex items-center gap-2"><span>📦</span><span>{t("Stock", "স্টক")}</span></div>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${activeTab === "inventory" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{medicines.length}</span>
+              <span className={`text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "inventory" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{medicines.length}</span>
             </button>
           )}
 
           {checkShouldRenderTabOption("procurement") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("procurement"); }} className={`sidebar-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "procurement" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("procurement"); }} className={`sidebar-nav-btn snav-stockin w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "procurement" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <div className="flex items-center gap-2"><span>📥</span><span>{t("Stock In", "মাল কিনুন")}</span></div>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${activeTab === "procurement" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{purchaseList.length}</span>
+              <span className={`text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "procurement" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{purchaseList.length}</span>
             </button>
           )}
 
           {checkShouldRenderTabOption("procurement") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("new_product"); }} className={`sidebar-nav-btn w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "new_product" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("new_product"); }} className={`sidebar-nav-btn snav-newprod w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "new_product" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <span>➕</span><span>{t("New Product", "নতুন পণ্য")}</span>
             </button>
           )}
 
           {checkShouldRenderTabOption("purchase_history") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("purchase_history"); }} className={`sidebar-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "purchase_history" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("purchase_history"); }} className={`sidebar-nav-btn snav-ph w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "purchase_history" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <div className="flex items-center gap-2"><span>🧾</span><span>{t("Purchase History", "ক্রয় ইতিহাস")}</span></div>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${activeTab === "purchase_history" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{purchaseList.length}</span>
+              <span className={`text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "purchase_history" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{purchaseList.length}</span>
             </button>
           )}
 
           {checkShouldRenderTabOption("invoices") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("invoices"); }} className={`sidebar-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "invoices" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("invoices"); }} className={`sidebar-nav-btn snav-inv w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "invoices" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <div className="flex items-center gap-2"><span>🧾</span><span>{t("Invoices", "রশিদ")}</span></div>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${activeTab === "invoices" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{invoices.length}</span>
+              <span className={`text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "invoices" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{invoices.length}</span>
             </button>
           )}
 
           {checkShouldRenderTabOption("due_list_view") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("due_list"); }} className={`sidebar-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "due_list" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("due_list"); }} className={`sidebar-nav-btn snav-due w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "due_list" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <div className="flex items-center gap-2"><span>💳</span><span>{t("Due List", "বাকি তালিকা")}</span></div>
-              {dueList.length > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-red-500 text-white">{dueList.length}</span>}
+              {dueList.length > 0 && <span className="text-xs px-1.5 py-0.5 rounded font-mono bg-red-500 text-white">{dueList.length}</span>}
             </button>
           )}
 
           {checkShouldRenderTabOption("report_view") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("report"); }} className={`sidebar-nav-btn w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "report" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("report"); }} className={`sidebar-nav-btn snav-report w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "report" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <span>📋</span><span>{t("Report", "রিপোর্ট")}</span>
             </button>
           )}
 
           {checkShouldRenderTabOption("returns") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("returns"); }} className={`sidebar-nav-btn w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "returns" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("returns"); }} className={`sidebar-nav-btn snav-ret w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "returns" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <span>🔄</span><span>{t("Returns", "ফেরত")}</span>
             </button>
           )}
 
           {checkShouldRenderTabOption("settings") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("settings"); }} className={`sidebar-nav-btn w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "settings" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("settings"); }} className={`sidebar-nav-btn snav-set w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "settings" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <span>⚙️</span><span>{t("Settings", "সেটিংস")}</span>
             </button>
           )}
 
           {currentUserRole === "ADMIN" && (
-            <button onClick={() => { playSound('tab'); setActiveTab("modules_menu"); }} className={`sidebar-nav-btn w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition btn-press ${activeTab === "modules_menu" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("modules_menu"); }} className={`sidebar-nav-btn snav-perm w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "modules_menu" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <span>🛡️</span><span>{t("Permissions", "অনুমতি")}</span>
             </button>
           )}
@@ -2264,18 +2307,18 @@ export default function Home() {
             {/* Sidebar Clock */}
             <div className={`p-2 rounded-xl text-center mb-2 ${isDarkMode ? 'bg-slate-800/60' : 'bg-teal-50'}`}>
               <div className="animate-clock font-mono font-black text-teal-500 text-sm tracking-widest">{liveTime}</div>
-              <div className={`text-[9px] font-medium mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{liveDate}</div>
-              <div className={`text-[9px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-teal-600'}`}>{liveDay}</div>
+              <div className={`text-sm font-semibold mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{liveDate}</div>
+              <div className={`text-sm font-semibold ${isDarkMode ? 'text-slate-400' : 'text-teal-600'}`}>{liveDay}</div>
             </div>
-            <div className={`p-2 rounded-xl text-[11px] ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-100'}`}>
+            <div className={`p-2 rounded-xl text-sm ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-100'}`}>
               <div className="flex items-center gap-1.5 font-bold mb-1">
                 <span className={`w-2 h-2 rounded-full ${currentUserRole === 'ADMIN' ? 'bg-teal-400' : 'bg-indigo-400'}`}></span>
-                <span className="uppercase tracking-wider text-[10px] text-slate-400">{t("Logged in as", "লগইন")}</span>
+                <span className="uppercase tracking-wider text-sm text-slate-400">{t("Logged in as", "লগইন")}</span>
               </div>
-              <p className="font-mono font-black text-xs truncate">{currentUserRole === "ADMIN" ? t("Administrator", "অ্যাডমিন") : t("Staff", "স্টাফ")}</p>
+              <p className="font-mono font-black text-sm truncate">{currentUserRole === "ADMIN" ? t("Administrator", "অ্যাডমিন") : t("Staff", "স্টাফ")}</p>
             </div>
             {checkShouldRenderTabOption("backup_restore") && (
-              <button onClick={resetDatabase} className="w-full mt-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold py-1 px-2 rounded text-[10px] transition uppercase tracking-wider">
+              <button onClick={resetDatabase} className="w-full mt-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold py-1 px-2 rounded text-sm transition uppercase tracking-wider">
                 🚨 {t("Reset System", "রিসেট")}
               </button>
             )}
@@ -2293,16 +2336,16 @@ export default function Home() {
 
               {/* Left: Product Search */}
               <div className="lg:col-span-7 flex flex-col gap-3">
-                <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                <div className={`ccard cc-teal p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
                   <div className="flex gap-2 flex-wrap">
                     <input
                       type="text"
                       placeholder={t("Search medicine...", "ওষুধ খুঁজুন...")}
                       value={searchTerm}
                       onChange={e => setSearchTerm(e.target.value)}
-                      className={`flex-1 px-3 py-2 text-xs rounded-lg border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                      className={`flex-1 px-3 py-2 text-sm rounded-lg border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                     />
-                    <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} className={`px-2 py-2 text-xs rounded-lg border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
+                    <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} className={`px-2 py-2 text-sm rounded-lg border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
                       <option value="All">{t("All", "সব")}</option>
                       {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
@@ -2318,37 +2361,37 @@ export default function Home() {
                         key={med.id}
                         onClick={() => addToCart(med)}
                         disabled={med.stock === 0 || isExpired}
-                        className={`p-2.5 rounded-xl border text-left text-xs transition hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-teal-500/50' : 'bg-white border-slate-200 hover:border-teal-300 shadow-sm'}`}
+                        className={`p-2.5 rounded-xl border ccard cc-teal text-left transition hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-teal-500/50' : 'bg-white border-slate-200 hover:border-teal-300 shadow-sm'}`}
                       >
-                        <div className="font-black text-[11px] truncate mb-1">{med.name}</div>
-                        <div className={`text-[10px] font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{med.category}</div>
+                        <div className="font-black text-sm truncate mb-1">{med.name}</div>
+                        <div className={`text-sm font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{med.category}</div>
                         <div className="flex items-center justify-between mt-1.5">
-                          <span className="font-mono font-black text-teal-500 text-[11px]">{med.price} {currencySymbol}</span>
-                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${med.stock === 0 ? 'bg-red-500 text-white' : isExpired ? 'bg-red-500 text-white' : isLowStock ? 'bg-amber-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>
+                          <span className="font-mono font-black text-teal-500 text-sm">{med.price} {currencySymbol}</span>
+                          <span className={`text-sm font-black px-1.5 py-0.5 rounded ${med.stock === 0 ? 'bg-red-500 text-white' : isExpired ? 'bg-red-500 text-white' : isLowStock ? 'bg-amber-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>
                             {med.stock === 0 ? t("Out", "শেষ") : isExpired ? t("Exp", "মেয়াদ") : `${med.stock}`}
                           </span>
                         </div>
                       </button>
                     );
                   })}
-                  {filteredMedicines.length === 0 && <div className="col-span-3 text-center py-8 text-slate-400 italic text-xs">{t("No medicine found.", "কোনো ওষুধ পাওয়া যায়নি।")}</div>}
+                  {filteredMedicines.length === 0 && <div className="col-span-3 text-center py-8 text-slate-400 italic text-sm">{t("No medicine found.", "কোনো ওষুধ পাওয়া যায়নি।")}</div>}
                 </div>
               </div>
 
               {/* Right: Cart */}
               <div className="lg:col-span-5">
-                <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-teal-500 mb-3">🛒 {t("Cart", "কার্ট")} ({cart.length})</h3>
+                <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">🛒 {t("Cart", "কার্ট")} ({cart.length})</h3>
 
                   {/* Customer */}
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Customer Name", "গ্রাহকের নাম")}</label>
-                      <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder={t("Optional...", "ঐচ্ছিক...")} className={`w-full px-2 py-1.5 rounded border text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Customer Name", "গ্রাহকের নাম")}</label>
+                      <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder={t("Optional...", "ঐচ্ছিক...")} className={`w-full px-2 py-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Phone", "ফোন")}</label>
-                      <input type="text" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="01XXXXXXXXX" className={`w-full px-2 py-1.5 rounded border text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Phone", "ফোন")}</label>
+                      <input type="text" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="01XXXXXXXXX" className={`w-full px-2 py-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
                   </div>
 
@@ -2357,31 +2400,31 @@ export default function Home() {
                     {cart.map(item => (
                       <div key={item.id} className={`flex items-center gap-2 p-2 rounded-lg ${isDarkMode ? 'bg-slate-900/60' : 'bg-slate-50'}`}>
                         <div className="flex-1 min-w-0">
-                          <div className="font-bold text-[11px] truncate">{item.name}</div>
-                          <div className="text-[10px] text-teal-500 font-mono">{item.price} {currencySymbol}</div>
+                          <div className="font-bold text-sm truncate">{item.name}</div>
+                          <div className="text-sm text-teal-500 font-mono">{item.price} {currencySymbol}</div>
                         </div>
-                        <input type="number" min={1} value={item.qty} onChange={e => handleQuantityChange(item.id, e.target.value)} className={`w-12 px-1 py-0.5 text-center font-mono text-xs rounded border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`} />
-                        <span className="text-[10px] font-mono font-black w-14 text-right">{((parseInt(item.qty) || 0) * item.price).toFixed(1)}</span>
-                        <button onClick={() => removeFromCart(item)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                        <input type="number" min={1} value={item.qty} onChange={e => handleQuantityChange(item.id, e.target.value)} className={`w-12 px-1 py-0.5 text-center font-mono text-sm rounded border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`} />
+                        <span className="text-sm font-mono font-black w-14 text-right">{((parseInt(item.qty) || 0) * item.price).toFixed(1)}</span>
+                        <button onClick={() => removeFromCart(item)} className="text-red-400 hover:text-red-600 text-sm">✕</button>
                       </div>
                     ))}
-                    {cart.length === 0 && <div className="text-center py-6 text-slate-400 text-xs italic">{t("Cart is empty.", "কার্ট খালি।")}</div>}
+                    {cart.length === 0 && <div className="text-center py-6 text-slate-400 text-sm italic">{t("Cart is empty.", "কার্ট খালি।")}</div>}
                   </div>
 
                   {/* Discount */}
                   {checkShouldRenderTabOption("discount_manager") && cart.length > 0 && (
                     <div className="flex gap-2 mb-3">
-                      <select value={discountType} onChange={e => setDiscountType(e.target.value as "TK" | "PERCENT")} className={`px-2 py-1 text-xs rounded border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
+                      <select value={discountType} onChange={e => setDiscountType(e.target.value as "TK" | "PERCENT")} className={`px-2 py-1 text-sm rounded border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
                         <option value="TK">{t("Discount (৳)", "ছাড় (৳)")}</option>
                         <option value="PERCENT">{t("Discount (%)", "ছাড় (%)")}</option>
                       </select>
-                      <input type="number" value={discountValue} onChange={e => setDiscountValue(e.target.value)} className={`flex-1 px-2 py-1 text-xs rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                      <input type="number" value={discountValue} onChange={e => setDiscountValue(e.target.value)} className={`flex-1 px-2 py-1 text-sm rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
                   )}
 
                   {/* Totals */}
                   {cart.length > 0 && (
-                    <div className="flex flex-col gap-1 text-xs mb-3 border-t pt-2">
+                    <div className="flex flex-col gap-1 text-sm mb-3 border-t pt-2">
                       <div className="flex justify-between"><span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("Subtotal", "মোট")}</span><span className="font-mono">{currentSubTotal.toFixed(1)} {currencySymbol}</span></div>
                       {parseFloat(vatPercentage) > 0 && <div className="flex justify-between"><span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("VAT", "ভ্যাট")} ({vatPercentage}%)</span><span className="font-mono">+{calculatedVatAmount.toFixed(1)} {currencySymbol}</span></div>}
                       {activeDiscountAmount > 0 && <div className="flex justify-between text-red-500"><span>{t("Discount", "ছাড়")}</span><span className="font-mono">-{activeDiscountAmount.toFixed(1)} {currencySymbol}</span></div>}
@@ -2389,7 +2432,7 @@ export default function Home() {
                     </div>
                   )}
 
-                  <button onClick={handleCheckoutIntent} disabled={cart.length === 0} className="w-full bg-gradient-to-r from-teal-500 to-emerald-500 text-white text-xs font-black py-2.5 rounded-xl uppercase tracking-wider shadow-md hover:from-teal-600 hover:to-emerald-600 transition disabled:opacity-40">
+                  <button onClick={handleCheckoutIntent} disabled={cart.length === 0} className="w-full bg-gradient-to-r from-teal-500 to-emerald-500 text-white text-sm font-black py-2.5 rounded-xl uppercase tracking-wider shadow-md hover:from-teal-600 hover:to-emerald-600 transition disabled:opacity-40">
                     🚀 {t("Create Invoice", "বিল তৈরি করুন")}
                   </button>
                 </div>
@@ -2408,118 +2451,118 @@ export default function Home() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
 
                 {/* Daily Sale */}
-                <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-card'], borderColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
-                  <span className="block text-[9px] font-black text-teal-500 uppercase tracking-widest mb-1">{t("Today's Sale", "আজকের বিক্রয়")}</span>
+                <div className={`ccard cc-violet p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-card'], borderColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
+                  <span className="block text-sm font-black text-teal-500 uppercase tracking-widest mb-1">{t("Today's Sale", "আজকের বিক্রয়")}</span>
                   <div className="font-mono text-lg font-black text-teal-500">{computedDailySalesAmount.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">{t("Cash collected today", "আজ সংগ্রহ")}</div>
+                  <div className="text-sm text-slate-400 mt-1">{t("Cash collected today", "আজ সংগ্রহ")}</div>
                   <div className="absolute right-2 bottom-1 text-2xl opacity-10">💰</div>
                 </div>
 
                 {/* Monthly Sale */}
-                <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                  <span className="block text-[9px] font-black text-blue-500 uppercase tracking-widest mb-1">{t("Monthly Sale", "মাসিক বিক্রয়")}</span>
+                <div className={`ccard cc-pink p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <span className="block text-sm font-black text-blue-500 uppercase tracking-widest mb-1">{t("Monthly Sale", "মাসিক বিক্রয়")}</span>
                   <div className="font-mono text-lg font-black text-blue-500">{computedMonthlySalesAmount.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">{t("This month", "এই মাসে")}</div>
+                  <div className="text-sm text-slate-400 mt-1">{t("This month", "এই মাসে")}</div>
                   <div className="absolute right-2 bottom-1 text-2xl opacity-10">📅</div>
                 </div>
 
                 {/* Daily Profit */}
                 {checkShouldRenderTabOption("daily_profit_view") && (
-                  <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                    <span className="block text-[9px] font-black text-emerald-500 uppercase tracking-widest mb-1">{t("Today's Profit", "আজকের লাভ")}</span>
+                  <div className={`ccard cc-rose p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <span className="block text-sm font-black text-emerald-500 uppercase tracking-widest mb-1">{t("Today's Profit", "আজকের লাভ")}</span>
                     <div className="font-mono text-lg font-black text-emerald-500">{computedDailyProfitAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">{t("Net profit today", "আজ নেট লাভ")}</div>
+                    <div className="text-sm text-slate-400 mt-1">{t("Net profit today", "আজ নেট লাভ")}</div>
                     <div className="absolute right-2 bottom-1 text-2xl opacity-10">📈</div>
                   </div>
                 )}
 
                 {/* Monthly Profit */}
                 {checkShouldRenderTabOption("monthly_profit_view") && (
-                  <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                    <span className="block text-[9px] font-black text-purple-500 uppercase tracking-widest mb-1">{t("Monthly Profit", "মাসিক লাভ")}</span>
+                  <div className={`ccard cc-green p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <span className="block text-sm font-black text-purple-500 uppercase tracking-widest mb-1">{t("Monthly Profit", "মাসিক লাভ")}</span>
                     <div className="font-mono text-lg font-black text-purple-500">{computedMonthlyProfitAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">{t("Net profit this month", "মাসে নেট লাভ")}</div>
+                    <div className="text-sm text-slate-400 mt-1">{t("Net profit this month", "মাসে নেট লাভ")}</div>
                     <div className="absolute right-2 bottom-1 text-2xl opacity-10">📊</div>
                   </div>
                 )}
 
                 {/* Daily Purchase */}
                 {checkShouldRenderTabOption("daily_purchases_view") && (
-                  <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                    <span className="block text-[9px] font-black text-rose-400 uppercase tracking-widest mb-1">{t("Today's Purchase", "আজকের ক্রয়")}</span>
+                  <div className={`ccard cc-slate p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <span className="block text-sm font-black text-rose-400 uppercase tracking-widest mb-1">{t("Today's Purchase", "আজকের ক্রয়")}</span>
                     <div className="font-mono text-lg font-black text-rose-400">{computedDailyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">{t("Purchased today", "আজ কেনা")}</div>
+                    <div className="text-sm text-slate-400 mt-1">{t("Purchased today", "আজ কেনা")}</div>
                     <div className="absolute right-2 bottom-1 text-2xl opacity-10">📥</div>
                   </div>
                 )}
 
                 {/* Monthly Purchase */}
                 {checkShouldRenderTabOption("monthly_purchases_view") && (
-                  <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                    <span className="block text-[9px] font-black text-amber-500 uppercase tracking-widest mb-1">{t("Monthly Purchase", "মাসিক ক্রয়")}</span>
+                  <div className={`ccard cc-cyan p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <span className="block text-sm font-black text-amber-500 uppercase tracking-widest mb-1">{t("Monthly Purchase", "মাসিক ক্রয়")}</span>
                     <div className="font-mono text-lg font-black text-amber-500">{computedMonthlyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">{t("Purchased this month", "মাসে কেনা")}</div>
+                    <div className="text-sm text-slate-400 mt-1">{t("Purchased this month", "মাসে কেনা")}</div>
                     <div className="absolute right-2 bottom-1 text-2xl opacity-10">📦</div>
                   </div>
                 )}
 
                 {/* Daily Due */}
-                <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                  <span className="block text-[9px] font-black text-red-400 uppercase tracking-widest mb-1">{t("Today's Due", "আজকের বাকি")}</span>
+                <div className={`ccard cc-purple p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <span className="block text-sm font-black text-red-400 uppercase tracking-widest mb-1">{t("Today's Due", "আজকের বাকি")}</span>
                   <div className="font-mono text-lg font-black text-red-400">{computedDailyDue.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">{t("Due given today", "আজ বাকি দেওয়া")}</div>
+                  <div className="text-sm text-slate-400 mt-1">{t("Due given today", "আজ বাকি দেওয়া")}</div>
                   <div className="absolute right-2 bottom-1 text-2xl opacity-10">⏳</div>
                 </div>
 
                 {/* Monthly Due */}
-                <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                  <span className="block text-[9px] font-black text-orange-400 uppercase tracking-widest mb-1">{t("Monthly Due", "মাসিক বাকি")}</span>
+                <div className={`ccard cc-teal p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <span className="block text-sm font-black text-orange-400 uppercase tracking-widest mb-1">{t("Monthly Due", "মাসিক বাকি")}</span>
                   <div className="font-mono text-lg font-black text-orange-400">{computedMonthlyDue.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">{t("Total due this month", "মাসে মোট বাকি")}</div>
+                  <div className="text-sm text-slate-400 mt-1">{t("Total due this month", "মাসে মোট বাকি")}</div>
                   <div className="absolute right-2 bottom-1 text-2xl opacity-10">📋</div>
                 </div>
 
                 {/* Daily bKash/Nagad */}
                 {checkShouldRenderTabOption("bkash_nagad_view") && (
-                  <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                    <span className="block text-[9px] font-black text-pink-500 uppercase tracking-widest mb-1">{t("Today's bKash/Nagad", "আজকের বিকাশ/নগদ")}</span>
+                  <div className={`ccard cc-indigo p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <span className="block text-sm font-black text-pink-500 uppercase tracking-widest mb-1">{t("Today's bKash/Nagad", "আজকের বিকাশ/নগদ")}</span>
                     <div className="font-mono text-lg font-black text-pink-500">{computedDailyBkash.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">{t("Mobile payment today", "আজ মোবাইল পেমেন্ট")}</div>
+                    <div className="text-sm text-slate-400 mt-1">{t("Mobile payment today", "আজ মোবাইল পেমেন্ট")}</div>
                     <div className="absolute right-2 bottom-1 text-2xl opacity-10">📱</div>
                   </div>
                 )}
 
                 {/* Monthly bKash/Nagad */}
                 {checkShouldRenderTabOption("bkash_nagad_view") && (
-                  <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                    <span className="block text-[9px] font-black text-fuchsia-500 uppercase tracking-widest mb-1">{t("Monthly bKash/Nagad", "মাসিক বিকাশ/নগদ")}</span>
+                  <div className={`ccard cc-amber p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <span className="block text-sm font-black text-fuchsia-500 uppercase tracking-widest mb-1">{t("Monthly bKash/Nagad", "মাসিক বিকাশ/নগদ")}</span>
                     <div className="font-mono text-lg font-black text-fuchsia-500">{computedMonthlyBkash.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">{t("Mobile payment month", "মাসে মোবাইল পেমেন্ট")}</div>
+                    <div className="text-sm text-slate-400 mt-1">{t("Mobile payment month", "মাসে মোবাইল পেমেন্ট")}</div>
                     <div className="absolute right-2 bottom-1 text-2xl opacity-10">📲</div>
                   </div>
                 )}
 
                 {/* Total Outstanding Due */}
-                <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                  <span className="block text-[9px] font-black text-red-500 uppercase tracking-widest mb-1">{t("Total Due (All Time)", "মোট বাকি")}</span>
+                <div className={`ccard cc-emerald p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <span className="block text-sm font-black text-red-500 uppercase tracking-widest mb-1">{t("Total Due (All Time)", "মোট বাকি")}</span>
                   <div className="font-mono text-lg font-black text-red-500">{totalDueFromCustomers.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">{t("From", "থেকে")} {dueList.length} {t("customers", "গ্রাহক")}</div>
+                  <div className="text-sm text-slate-400 mt-1">{t("From", "থেকে")} {dueList.length} {t("customers", "গ্রাহক")}</div>
                   <div className="absolute right-2 bottom-1 text-2xl opacity-10">👤</div>
                 </div>
 
                 {/* Today Due Collection */}
-                <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                  <span className="block text-[9px] font-black text-teal-600 uppercase tracking-widest mb-1">{t("Today's Due Collection", "আজকের বাকি আদায়")}</span>
+                <div className={`ccard cc-blue p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <span className="block text-sm font-black text-teal-600 uppercase tracking-widest mb-1">{t("Today's Due Collection", "আজকের বাকি আদায়")}</span>
                   <div className="font-mono text-lg font-black text-teal-600">{computedDailyDueCollection.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">{t("Collected today", "আজ আদায় হয়েছে")}</div>
+                  <div className="text-sm text-slate-400 mt-1">{t("Collected today", "আজ আদায় হয়েছে")}</div>
                   <div className="absolute right-2 bottom-1 text-2xl opacity-10">✅</div>
                 </div>
 
                 {/* Monthly Due Collection */}
-                <div className={`p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                  <span className="block text-[9px] font-black text-cyan-500 uppercase tracking-widest mb-1">{t("Monthly Due Collection", "মাসিক বাকি আদায়")}</span>
+                <div className={`ccard cc-red p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <span className="block text-sm font-black text-cyan-500 uppercase tracking-widest mb-1">{t("Monthly Due Collection", "মাসিক বাকি আদায়")}</span>
                   <div className="font-mono text-lg font-black text-cyan-500">{computedMonthlyDueCollection.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">{t("Collected this month", "এই মাসে আদায়")}</div>
+                  <div className="text-sm text-slate-400 mt-1">{t("Collected this month", "এই মাসে আদায়")}</div>
                   <div className="absolute right-2 bottom-1 text-2xl opacity-10">💰</div>
                 </div>
               </div>
@@ -2527,9 +2570,9 @@ export default function Home() {
               {/* Total Stock Value */}
               {checkShouldRenderTabOption("stock_value_calculator") && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                    <h4 className="text-xs font-black uppercase text-teal-500 mb-2">📦 {t("Total Stock", "মোট স্টক")}</h4>
-                    <div className="flex flex-col gap-1 text-xs">
+                  <div className={`ccard cc-amber p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <h4 className="text-sm font-black uppercase text-teal-500 mb-2">📦 {t("Total Stock", "মোট স্টক")}</h4>
+                    <div className="flex flex-col gap-1 text-sm">
                       <div className="flex justify-between"><span className="text-slate-400">{t("Total Items:", "মোট আইটেম:")}</span><span className="font-mono font-black">{medicines.length}</span></div>
                       <div className="flex justify-between"><span className="text-slate-400">{t("Total Units:", "মোট পরিমাণ:")}</span><span className="font-mono font-black">{medicines.reduce((s, m) => s + m.stock, 0)}</span></div>
                       <div className="flex justify-between"><span className="text-slate-400">{t("Buy Value:", "ক্রয় মূল্য:")}</span><span className="font-mono font-black text-amber-500">{totalStockValue.toFixed(1)} {currencySymbol}</span></div>
@@ -2539,38 +2582,38 @@ export default function Home() {
 
                   {/* Low Stock Alert */}
                   {checkShouldRenderTabOption("low_stock_alerts") && (
-                    <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <div className={`ccard cc-emerald p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
                       <div className="flex items-center justify-between border-b pb-2 mb-2">
-                        <h4 className="text-xs font-black uppercase text-amber-500">⚠️ {t("Low Stock", "কম স্টক")}</h4>
-                        <span className="bg-amber-500 text-white font-mono text-[10px] px-1.5 py-0.5 rounded-full font-bold">{lowStockMedicines.length}</span>
+                        <h4 className="text-sm font-black uppercase text-amber-500">⚠️ {t("Low Stock", "কম স্টক")}</h4>
+                        <span className="bg-amber-500 text-white font-mono text-sm px-1.5 py-0.5 rounded-full font-bold">{lowStockMedicines.length}</span>
                       </div>
                       <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
                         {lowStockMedicines.map(m => (
-                          <div key={m.id} className="flex justify-between items-center text-xs font-semibold p-1 bg-amber-500/5 rounded border border-amber-500/10">
+                          <div key={m.id} className="flex justify-between items-center text-sm font-semibold p-1 bg-amber-500/5 rounded border border-amber-500/10">
                             <span className="truncate max-w-[120px]">{m.name}</span>
-                            <span className="font-mono text-amber-500 text-[10px]">{m.stock} {t("left", "বাকি")}</span>
+                            <span className="font-mono text-amber-500 text-sm">{m.stock} {t("left", "বাকি")}</span>
                           </div>
                         ))}
-                        {lowStockMedicines.length === 0 && <div className="text-slate-400 italic text-[11px] py-3 text-center">{t("All stock levels OK!", "সব স্টক ঠিক আছে!")}</div>}
+                        {lowStockMedicines.length === 0 && <div className="text-slate-400 italic text-sm py-3 text-center">{t("All stock levels OK!", "সব স্টক ঠিক আছে!")}</div>}
                       </div>
                     </div>
                   )}
 
                   {/* Expired */}
                   {checkShouldRenderTabOption("expired_meds_view") && (
-                    <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <div className={`ccard cc-blue p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
                       <div className="flex items-center justify-between border-b pb-2 mb-2">
-                        <h4 className="text-xs font-black uppercase text-red-500">🚨 {t("Expired", "মেয়াদ শেষ")}</h4>
-                        <span className="bg-red-500 text-white font-mono text-[10px] px-1.5 py-0.5 rounded-full font-bold">{expiredMedicines.length}</span>
+                        <h4 className="text-sm font-black uppercase text-red-500">🚨 {t("Expired", "মেয়াদ শেষ")}</h4>
+                        <span className="bg-red-500 text-white font-mono text-sm px-1.5 py-0.5 rounded-full font-bold">{expiredMedicines.length}</span>
                       </div>
                       <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
                         {expiredMedicines.map(m => (
-                          <div key={m.id} className="flex justify-between items-center text-xs font-semibold p-1 bg-red-500/5 rounded border border-red-500/10">
+                          <div key={m.id} className="flex justify-between items-center text-sm font-semibold p-1 bg-red-500/5 rounded border border-red-500/10">
                             <span className="truncate max-w-[120px]">{m.name}</span>
-                            <span className="font-mono text-red-400 text-[10px]">{m.expire}</span>
+                            <span className="font-mono text-red-400 text-sm">{m.expire}</span>
                           </div>
                         ))}
-                        {expiredMedicines.length === 0 && <div className="text-slate-400 italic text-[11px] py-3 text-center">{t("No expired medicines!", "মেয়াদ শেষ ওষুধ নেই!")}</div>}
+                        {expiredMedicines.length === 0 && <div className="text-slate-400 italic text-sm py-3 text-center">{t("No expired medicines!", "মেয়াদ শেষ ওষুধ নেই!")}</div>}
                       </div>
                     </div>
                   )}
@@ -2579,16 +2622,16 @@ export default function Home() {
 
               {/* Category Stock */}
               {checkShouldRenderTabOption("category_wise_stock") && (
-                <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                  <h4 className="text-xs font-black uppercase text-teal-500 mb-3">📊 {t("Stock by Category", "ক্যাটাগরি অনুযায়ী স্টক")}</h4>
+                <div className={`ccard cc-red p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <h4 className="text-sm font-black uppercase text-teal-500 mb-3">📊 {t("Stock by Category", "ক্যাটাগরি অনুযায়ী স্টক")}</h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
                     {allCategories.map(cat => {
                       const total = countStockByCategory(cat);
                       if (total === 0) return null;
                       return (
-                        <div key={cat} className={`p-2 rounded-lg text-xs text-center ${isDarkMode ? 'bg-slate-900/60' : 'bg-slate-50'}`}>
+                        <div key={cat} className={`p-2 rounded-lg text-sm text-center ${isDarkMode ? 'bg-slate-900/60' : 'bg-slate-50'}`}>
                           <div className="font-black text-teal-500 text-sm font-mono">{total}</div>
-                          <div className="text-slate-400 text-[10px]">{cat}</div>
+                          <div className="text-slate-400 text-sm">{cat}</div>
                         </div>
                       );
                     })}
@@ -2605,10 +2648,10 @@ export default function Home() {
             <div className="flex flex-col gap-4">
               <div className={`rounded-xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                 <div className="p-3 border-b border-slate-700/10 flex items-center justify-between flex-wrap gap-2">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-teal-500">{t("Medicine Stock List", "ওষুধের স্টক তালিকা")} ({medicines.length})</h3>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">{t("Medicine Stock List", "ওষুধের স্টক তালিকা")} ({medicines.length})</h3>
                   <div className="flex gap-2">
-                    <input type="text" placeholder={t("Search...", "খুঁজুন...")} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={`px-2 py-1 text-xs rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
-                    <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} className={`px-2 py-1 text-xs rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
+                    <input type="text" placeholder={t("Search...", "খুঁজুন...")} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={`px-2 py-1 text-sm rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                    <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} className={`px-2 py-1 text-sm rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
                       <option value="All">{t("All", "সব")}</option>
                       {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
@@ -2616,7 +2659,7 @@ export default function Home() {
                 </div>
 
                 <div className="overflow-x-auto w-full">
-                  <table className="w-full text-left text-xs border-collapse">
+                  <table className="w-full text-left text-sm border-collapse">
                     <thead>
                       <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                         <th className="p-2.5">#</th>
@@ -2641,55 +2684,55 @@ export default function Home() {
 
                         return (
                           <tr key={med.id} className={`transition-colors hover:bg-slate-500/5 ${expiredFlag ? 'bg-red-500/5' : lowStockFlag ? 'bg-amber-500/5' : ''}`}>
-                            <td className="p-2.5 font-mono text-slate-400 text-[11px]">{index + 1}</td>
+                            <td className="p-2.5 font-mono text-slate-400 text-sm">{index + 1}</td>
                             <td className="p-2.5 font-bold">
-                              {isEditing ? <input type="text" value={editFormData.name} onChange={e => handleEditFormChange("name", e.target.value)} className="px-1.5 py-0.5 rounded border text-xs bg-transparent w-full" />
+                              {isEditing ? <input type="text" value={editFormData.name} onChange={e => handleEditFormChange("name", e.target.value)} className="px-1.5 py-0.5 rounded border text-sm bg-transparent w-full" />
                                 : <span className="block truncate max-w-[140px]">{med.name}</span>}
                             </td>
                             <td className="p-2.5">
                               {isEditing ? (
-                                <select value={editFormData.category} onChange={e => handleEditFormChange("category", e.target.value)} className="p-0.5 rounded border text-xs bg-transparent">
+                                <select value={editFormData.category} onChange={e => handleEditFormChange("category", e.target.value)} className="p-0.5 rounded border text-sm bg-transparent">
                                   {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                 </select>
-                              ) : <span className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase bg-slate-500/10 text-slate-400">{med.category}</span>}
+                              ) : <span className="text-sm px-1.5 py-0.5 rounded font-bold uppercase bg-slate-500/10 text-slate-400">{med.category}</span>}
                             </td>
                             <td className="p-2.5 text-slate-400 italic">
-                              {isEditing ? <input type="text" value={editFormData.generic} onChange={e => handleEditFormChange("generic", e.target.value)} className="px-1.5 py-0.5 rounded border text-xs bg-transparent w-full" />
+                              {isEditing ? <input type="text" value={editFormData.generic} onChange={e => handleEditFormChange("generic", e.target.value)} className="px-1.5 py-0.5 rounded border text-sm bg-transparent w-full" />
                                 : <span className="block truncate max-w-[100px]">{med.generic}</span>}
                             </td>
                             {currentUserRole === "ADMIN" && (
                               <td className="p-2.5 font-mono">
-                                {isEditing ? <input type="number" step="any" value={editFormData.buyPrice} onChange={e => handleEditFormChange("buyPrice", e.target.value)} className="px-1 py-0.5 rounded border text-xs bg-transparent w-16" />
+                                {isEditing ? <input type="number" step="any" value={editFormData.buyPrice} onChange={e => handleEditFormChange("buyPrice", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-16" />
                                   : <span>{med.buyPrice} {currencySymbol}</span>}
                               </td>
                             )}
                             <td className="p-2.5 font-mono font-bold text-teal-500">
-                              {isEditing ? <input type="number" step="any" value={editFormData.price} onChange={e => handleEditFormChange("price", e.target.value)} className="px-1 py-0.5 rounded border text-xs bg-transparent w-16" />
+                              {isEditing ? <input type="number" step="any" value={editFormData.price} onChange={e => handleEditFormChange("price", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-16" />
                                 : <span>{med.price} {currencySymbol}</span>}
                             </td>
                             <td className="p-2.5 font-mono">
-                              {isEditing ? <input type="number" value={editFormData.stock} onChange={e => handleEditFormChange("stock", e.target.value)} className="px-1 py-0.5 rounded border text-xs bg-transparent w-16" />
-                                : <span className={`px-1.5 py-0.5 rounded font-black text-[11px] ${med.stock === 0 ? 'bg-red-500 text-white' : lowStockFlag ? 'bg-amber-500 text-white' : isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{med.stock}</span>}
+                              {isEditing ? <input type="number" value={editFormData.stock} onChange={e => handleEditFormChange("stock", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-16" />
+                                : <span className={`px-1.5 py-0.5 rounded font-black text-sm ${med.stock === 0 ? 'bg-red-500 text-white' : lowStockFlag ? 'bg-amber-500 text-white' : isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{med.stock}</span>}
                             </td>
                             <td className="p-2.5 font-mono">
-                              {isEditing ? <input type="number" value={editFormData.lowStockAlert || activeThreshold} onChange={e => handleEditFormChange("lowStockAlert", e.target.value)} className="px-1 py-0.5 rounded border text-xs bg-transparent w-14" />
+                              {isEditing ? <input type="number" value={editFormData.lowStockAlert || activeThreshold} onChange={e => handleEditFormChange("lowStockAlert", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-14" />
                                 : <span className="text-amber-500 font-bold">{medLowAlert}</span>}
                             </td>
                             <td className="p-2.5 font-mono">
-                              {isEditing ? <input type="date" value={editFormData.expire} onChange={e => handleEditFormChange("expire", e.target.value)} className="p-0.5 rounded border text-xs bg-transparent" />
+                              {isEditing ? <input type="date" value={editFormData.expire} onChange={e => handleEditFormChange("expire", e.target.value)} className="p-0.5 rounded border text-sm bg-transparent" />
                                 : <span className={expiredFlag ? 'text-red-500 font-bold' : 'text-slate-400'}>{med.expire}</span>}
                             </td>
                             {checkShouldRenderTabOption("rack_management") && (
                               <td className="p-2.5 font-mono text-slate-500">
-                                {isEditing ? <input type="text" value={editFormData.rack} onChange={e => handleEditFormChange("rack", e.target.value)} className="px-1 py-0.5 rounded border text-xs bg-transparent w-14" />
+                                {isEditing ? <input type="text" value={editFormData.rack} onChange={e => handleEditFormChange("rack", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-14" />
                                   : <span>{med.rack}</span>}
                               </td>
                             )}
                             <td className="p-2.5 text-center">
                               {isEditing ? (
                                 <div className="flex gap-1 justify-center">
-                                  <button onClick={() => saveEditedMedicine(med.id)} className="bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded hover:bg-emerald-600 transition">{t("Save", "সেভ")}</button>
-                                  <button onClick={() => setEditingId(null)} className="bg-slate-400 text-white text-[10px] font-bold px-2 py-0.5 rounded hover:bg-slate-500 transition">{t("Cancel", "বাতিল")}</button>
+                                  <button onClick={() => saveEditedMedicine(med.id)} className="bg-emerald-500 text-white text-sm font-bold px-2 py-0.5 rounded hover:bg-emerald-600 transition">{t("Save", "সেভ")}</button>
+                                  <button onClick={() => setEditingId(null)} className="bg-slate-400 text-white text-sm font-bold px-2 py-0.5 rounded hover:bg-slate-500 transition">{t("Cancel", "বাতিল")}</button>
                                 </div>
                               ) : (
                                 <div className="flex gap-1.5 justify-center">
@@ -2717,25 +2760,25 @@ export default function Home() {
 
               {/* Left: Add Items */}
               <div className="xl:col-span-5 flex flex-col gap-3">
-                <div className={`p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-teal-500 mb-3">📥 {t("Add Medicine to Purchase", "ক্রয়ে ওষুধ যোগ করুন")}</h3>
+                <div className={`ccard cc-orange p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">📥 {t("Add Medicine to Purchase", "ক্রয়ে ওষুধ যোগ করুন")}</h3>
 
                   {/* Company Name */}
                   <div className="mb-3" ref={suggestionRef}>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Company / Supplier Name", "কোম্পানি / সরবরাহকারীর নাম")} *</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Company / Supplier Name", "কোম্পানি / সরবরাহকারীর নাম")} *</label>
                     <input
                       type="text"
                       value={pCompanyName}
                       onChange={e => handleCompanyInputChange(e.target.value)}
                       placeholder={t("Type company name...", "কোম্পানির নাম লিখুন...")}
-                      className={`w-full px-3 py-2 rounded-xl border text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                      className={`w-full px-3 py-2 rounded-xl border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                     />
                     {showSuggestions && companySuggestions.length > 0 && (
                       <div className={`absolute z-20 w-72 max-h-48 overflow-y-auto rounded-xl shadow-2xl border mt-1 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                         {companySuggestions.map(name => (
-                          <div key={name} className={`flex items-center justify-between px-3 py-1.5 cursor-pointer text-xs font-medium hover:bg-teal-500/10 ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                          <div key={name} className={`flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm font-semibold hover:bg-teal-500/10 ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
                             <span onClick={() => { setPCompanyName(name); setShowSuggestions(false); }} className="flex-1">{name}</span>
-                            <button onClick={() => deleteCompanySuggestion(name)} className="text-red-400 hover:text-red-600 text-[10px] ml-2 font-black">✕ {t("Delete", "মুছুন")}</button>
+                            <button onClick={() => deleteCompanySuggestion(name)} className="text-red-400 hover:text-red-600 text-sm ml-2 font-black">✕ {t("Delete", "মুছুন")}</button>
                           </div>
                         ))}
                       </div>
@@ -2743,11 +2786,11 @@ export default function Home() {
                   </div>
 
                   {/* Medicine Add Form */}
-                  <form onSubmit={addItemToPurchaseCart} className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                  <form onSubmit={addItemToPurchaseCart} className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
 
                     {/* Medicine Name with suggestion */}
                     <div className="col-span-2 md:col-span-2" ref={medicineSuggestRef}>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Medicine Name", "ওষুধের নাম")} *</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Medicine Name", "ওষুধের নাম")} *</label>
                       <input
                         type="text"
                         value={pMedicineName}
@@ -2758,7 +2801,7 @@ export default function Home() {
                       {showMedicineSuggestions && pMedicineSuggestions.length > 0 && (
                         <div className={`absolute z-20 w-72 max-h-48 overflow-y-auto rounded-xl shadow-2xl border mt-1 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                           {pMedicineSuggestions.map(item => (
-                            <div key={item.name} className={`flex items-center justify-between px-3 py-1.5 cursor-pointer text-xs font-medium hover:bg-teal-500/10 ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                            <div key={item.name} className={`flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm font-semibold hover:bg-teal-500/10 ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
                               <span onClick={() => {
                                 setPMedicineName(item.name);
                                 if (item.buyPrice > 0) setPUnitPriceBox(item.buyPrice.toString());
@@ -2767,10 +2810,10 @@ export default function Home() {
                                 setShowMedicineSuggestions(false);
                               }} className="flex-1">
                                 <span className="font-bold">{item.name}</span>
-                                {item.buyPrice > 0 && <span className="ml-2 text-[9px] text-slate-400 font-mono">Buy: {item.buyPrice} | Sell: {item.sellPrice}</span>}
-                                {item.company && <span className="ml-1 text-[9px] text-teal-400">· {item.company}</span>}
+                                {item.buyPrice > 0 && <span className="ml-2 text-sm text-slate-400 font-mono">Buy: {item.buyPrice} | Sell: {item.sellPrice}</span>}
+                                {item.company && <span className="ml-1 text-sm text-teal-400">· {item.company}</span>}
                               </span>
-                              <button type="button" onClick={() => deleteMedicineNameSuggestion(item.name)} className="text-red-400 hover:text-red-600 text-[10px] ml-2 font-black">✕ {t("Delete", "মুছুন")}</button>
+                              <button type="button" onClick={() => deleteMedicineNameSuggestion(item.name)} className="text-red-400 hover:text-red-600 text-sm ml-2 font-black">✕ {t("Delete", "মুছুন")}</button>
                             </div>
                           ))}
                         </div>
@@ -2778,54 +2821,54 @@ export default function Home() {
                     </div>
 
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Type", "ধরন")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Type", "ধরন")}</label>
                       <select value={pCategory} onChange={e => setPCategory(e.target.value)} className={`w-full px-2.5 py-1.5 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
                         {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                       </select>
                     </div>
 
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Generic Name", "জেনেরিক নাম")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Generic Name", "জেনেরিক নাম")}</label>
                       <input type="text" value={pGenericName} onChange={e => setPGenericName(e.target.value)} placeholder="e.g. Paracetamol" className={`w-full px-2.5 py-1.5 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
 
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Batch No", "ব্যাচ নং")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Batch No", "ব্যাচ নং")}</label>
                       <input type="text" value={pBatchNo} onChange={e => setPBatchNo(e.target.value)} placeholder="Optional" className={`w-full px-2.5 py-1.5 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
 
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Quantity *", "পরিমাণ *")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Quantity *", "পরিমাণ *")}</label>
                       <input type="number" value={pQuantity} onChange={e => handleQuantityInputChange(e.target.value)} placeholder="e.g. 100" className={`w-full px-2.5 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
 
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Buy Price (each)", "ক্রয় মূল্য (প্রতিটি)")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Buy Price (each)", "ক্রয় মূল্য (প্রতিটি)")}</label>
                       <input type="number" step="any" value={pUnitPriceBox} onChange={e => handleUnitPriceInputChange(e.target.value)} placeholder="e.g. 8" className={`w-full px-2.5 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
 
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Total Cost *", "মোট খরচ *")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Total Cost *", "মোট খরচ *")}</label>
                       <input type="number" step="any" value={pTotalCost} onChange={e => handleTotalCostInputChange(e.target.value)} placeholder="e.g. 800" className={`w-full px-2.5 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
 
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Sell Price (each)", "বিক্রয় মূল্য (প্রতিটি)")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Sell Price (each)", "বিক্রয় মূল্য (প্রতিটি)")}</label>
                       <input type="number" step="any" value={pRetailPrice} onChange={e => setPRetailPrice(e.target.value)} placeholder="e.g. 10" className={`w-full px-2.5 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
 
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Expiry Date", "মেয়াদ তারিখ")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Expiry Date", "মেয়াদ তারিখ")}</label>
                       <input type="date" value={pExpireDate} onChange={e => setPExpireDate(e.target.value)} className={`w-full px-2.5 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
 
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Rack Location", "র্যাক")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Rack Location", "র্যাক")}</label>
                       <input type="text" value={pRackLocation} onChange={e => setPRackLocation(e.target.value)} placeholder="e.g. A-3" className={`w-full px-2.5 py-1.5 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
 
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>⚠️ {t("Low Stock Alert (qty)", "কম স্টক সতর্কতা (পরিমাণ)")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>⚠️ {t("Low Stock Alert (qty)", "কম স্টক সতর্কতা (পরিমাণ)")}</label>
                       <input type="number" value={pLowStockAlert} onChange={e => setPLowStockAlert(e.target.value)} placeholder={`${t("Default:", "ডিফল্ট:")} ${lowStockThreshold}`} className={`w-full px-2.5 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
 
@@ -2837,10 +2880,10 @@ export default function Home() {
 
                 {/* Purchase Cart */}
                 {purchaseCart.length > 0 && (
-                  <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                    <h4 className="text-xs font-black uppercase text-teal-500 mb-2">📋 {t("Items Added", "যোগ করা আইটেম")} ({purchaseCart.length})</h4>
+                  <div className={`ccard cc-orange p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <h4 className="text-sm font-black uppercase text-teal-500 mb-2">📋 {t("Items Added", "যোগ করা আইটেম")} ({purchaseCart.length})</h4>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
+                      <table className="w-full text-sm">
                         <thead>
                           <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                             <th className="p-1 text-left">{t("Medicine", "ওষুধ")}</th>
@@ -2869,15 +2912,15 @@ export default function Home() {
                     </div>
 
                     <div className="mt-3 pt-3 border-t flex flex-col sm:flex-row items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 text-xs">
+                      <div className="flex items-center gap-3 text-sm">
                         <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("Total:", "মোট:")} <strong className="text-teal-500 font-mono">{bulkCartTotalCost.toFixed(1)} {currencySymbol}</strong></span>
                         <div>
-                          <label className={`text-[10px] font-bold mr-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Paid:", "পরিশোধ:")}</label>
-                          <input type="number" value={pAmountPaid} onChange={e => setPAmountPaid(e.target.value)} placeholder={t("Amount paid...", "পরিশোধিত...")} className={`px-2 py-1 rounded border text-xs outline-none font-mono w-28 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                          <label className={`text-sm font-bold mr-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Paid:", "পরিশোধ:")}</label>
+                          <input type="number" value={pAmountPaid} onChange={e => setPAmountPaid(e.target.value)} placeholder={t("Amount paid...", "পরিশোধিত...")} className={`px-2 py-1 rounded border text-sm outline-none font-mono w-28 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                         </div>
                         {currentUserRole === "ADMIN" && <span className="text-red-400 font-bold font-mono">{t("Due:", "বাকি:")} {bulkCartCalculatedDue.toFixed(1)}</span>}
                       </div>
-                      <button onClick={handleBulkPurchaseMasterSubmit} className="bg-teal-500 hover:bg-teal-600 text-white font-black text-xs px-5 py-2 rounded-xl uppercase tracking-wider shadow transition">
+                      <button onClick={handleBulkPurchaseMasterSubmit} className="bg-teal-500 hover:bg-teal-600 text-white font-black text-sm px-5 py-2 rounded-xl uppercase tracking-wider shadow transition">
                         📥 {t("Save Purchase", "ক্রয় সংরক্ষণ")}
                       </button>
                     </div>
@@ -2888,32 +2931,32 @@ export default function Home() {
               {/* Right: Purchase History */}
               {checkShouldRenderTabOption("purchase_reports") && (
                 <div className="xl:col-span-3">
-                  <div className={`p-3 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                    <h3 className="text-xs font-black uppercase tracking-wider text-teal-500 mb-2">{t("Purchase History", "ক্রয়ের ইতিহাস")}</h3>
+                  <div className={`ccard cc-emerald p-3 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-2">{t("Purchase History", "ক্রয়ের ইতিহাস")}</h3>
                     {currentUserRole === "ADMIN" && (
-                      <div className="mb-2 text-xs flex justify-between">
+                      <div className="mb-2 text-sm flex justify-between">
                         <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("Total:", "মোট:")} <strong className="text-teal-500 font-mono">{grandTotalPurchaseCost.toFixed(1)} {currencySymbol}</strong></span>
                         <span className="text-red-400 font-bold">{t("Due:", "বাকি:")} <strong className="font-mono">{grandTotalPurchaseDue.toFixed(1)}</strong></span>
                       </div>
                     )}
                     <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto">
                       {purchaseList.map(log => (
-                        <div key={log.id} className={`p-2.5 rounded-xl border flex flex-col gap-1 text-[11px] ${isDarkMode ? 'bg-slate-900/60 border-slate-700/60' : 'bg-slate-50 border-slate-200'}`}>
+                        <div key={log.id} className={`p-2.5 rounded-xl border flex flex-col gap-1 text-sm ${isDarkMode ? 'bg-slate-900/60 border-slate-700/60' : 'bg-slate-50 border-slate-200'}`}>
                           <div className="flex items-center justify-between font-bold">
                             <span className="text-teal-500 truncate max-w-[140px]">{log.medicineName}</span>
                             {currentUserRole === "ADMIN" && <span className="font-mono text-slate-400">{log.totalCost.toFixed(1)} {currencySymbol}</span>}
                           </div>
-                          <div className="flex items-center justify-between text-[10px] text-slate-400 font-semibold">
+                          <div className="flex items-center justify-between text-sm text-slate-400 font-semibold">
                             <span>{log.companyName}</span>
                             <span>{log.quantity} pcs</span>
                           </div>
-                          <div className="flex items-center justify-between text-[9px] font-mono border-t pt-1 border-slate-700/5 text-slate-400">
+                          <div className="flex items-center justify-between text-sm font-mono border-t pt-1 border-slate-700/5 text-slate-400">
                             {currentUserRole === "ADMIN" ? <span>{t("Due:", "বাকি:")} <strong className={log.due > 0 ? 'text-red-400' : 'text-slate-400'}>{log.due.toFixed(1)}</strong></span> : <span>-</span>}
                             <span>{log.dateString}</span>
                           </div>
                         </div>
                       ))}
-                      {purchaseList.length === 0 && <div className="p-6 text-center italic text-slate-400 text-xs">{t("No purchase history.", "কোনো ক্রয়ের ইতিহাস নেই।")}</div>}
+                      {purchaseList.length === 0 && <div className="p-6 text-center italic text-slate-400 text-sm">{t("No purchase history.", "কোনো ক্রয়ের ইতিহাস নেই।")}</div>}
                     </div>
                   </div>
                 </div>
@@ -2928,7 +2971,7 @@ export default function Home() {
             <div key="new-product-tab" className="animate-tab-content max-w-lg mx-auto">
               <div className={`p-5 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                 <h2 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-1">➕ {t("Add New Product", "নতুন পণ্য যোগ করুন")}</h2>
-                <p className={`text-[11px] mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                <p className={`text-sm mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   {t("Product will be saved to the database. Go to Stock In to add quantity — only then it appears in Sell.", "পণ্য ডেটাবেজে সেভ হবে। স্টক ইন থেকে পরিমাণ যোগ করলে তবেই বিক্রয়তে আসবে।")}
                 </p>
 
@@ -2936,19 +2979,19 @@ export default function Home() {
 
                   {/* Company Name */}
                   <div className="relative" ref={npCompanyRef}>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Company Name", "কোম্পানির নাম")}</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Company Name", "কোম্পানির নাম")}</label>
                     <input
                       type="text"
                       value={npCompanyName}
                       onChange={e => handleNpCompanyChange(e.target.value)}
                       placeholder={t("e.g. Square Pharmaceuticals...", "যেমন: স্কয়ার ফার্মা...")}
-                      className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200'}`}
+                      className={`w-full px-3 py-2 rounded-lg border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200'}`}
                     />
                     {showNpCompanySuggestions && npCompanySuggestions.length > 0 && (
                       <div className={`absolute z-30 w-full mt-1 rounded-xl border shadow-lg max-h-40 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
                         {npCompanySuggestions.slice(0, 8).map(c => (
                           <button type="button" key={c} onClick={() => { setNpCompanyName(c); setShowNpCompanySuggestions(false); }}
-                            className={`w-full text-left px-3 py-2 text-xs hover:bg-teal-500/10 transition ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-teal-500/10 transition ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
                             {c}
                           </button>
                         ))}
@@ -2958,23 +3001,23 @@ export default function Home() {
 
                   {/* Medicine Name */}
                   <div className="relative" ref={npMedRef}>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Medicine Name *", "ওষুধের নাম *")}</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Medicine Name *", "ওষুধের নাম *")}</label>
                     <input
                       type="text"
                       value={npMedicineName}
                       onChange={e => handleNpMedNameChange(e.target.value)}
                       placeholder={t("e.g. Napa 500mg...", "যেমন: নাপা ৫০০মিগ্রা...")}
-                      className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200'}`}
+                      className={`w-full px-3 py-2 rounded-lg border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200'}`}
                       required
                     />
                     {showNpMedSuggestions && npMedSuggestions.length > 0 && (
                       <div className={`absolute z-30 w-full mt-1 rounded-xl border shadow-lg max-h-48 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
                         {npMedSuggestions.slice(0, 10).map(item => (
                           <button type="button" key={item.name} onClick={() => handleNpMedSelect(item)}
-                            className={`w-full text-left px-3 py-2 text-xs hover:bg-teal-500/10 transition ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-teal-500/10 transition ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
                             <span className="font-bold">{item.name}</span>
-                            {item.buyPrice > 0 && <span className="ml-2 text-teal-500 font-mono text-[10px]">Buy: {item.buyPrice} / Sell: {item.sellPrice}</span>}
-                            {item.company && <span className={`ml-2 text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{item.company}</span>}
+                            {item.buyPrice > 0 && <span className="ml-2 text-teal-500 font-mono text-sm">Buy: {item.buyPrice} / Sell: {item.sellPrice}</span>}
+                            {item.company && <span className={`ml-2 text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{item.company}</span>}
                           </button>
                         ))}
                       </div>
@@ -2983,21 +3026,21 @@ export default function Home() {
 
                   {/* Generic Name */}
                   <div>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Generic Name", "জেনেরিক নাম")}</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Generic Name", "জেনেরিক নাম")}</label>
                     <input
                       type="text"
                       value={npGenericName}
                       onChange={e => setNpGenericName(e.target.value)}
                       placeholder={t("e.g. Paracetamol...", "যেমন: প্যারাসিটামল...")}
-                      className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200'}`}
+                      className={`w-full px-3 py-2 rounded-lg border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200'}`}
                     />
                   </div>
 
                   {/* Category */}
                   <div>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Category", "ক্যাটাগরি")}</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Category", "ক্যাটাগরি")}</label>
                     <select value={npCategory} onChange={e => setNpCategory(e.target.value)}
-                      className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
+                      className={`w-full px-3 py-2 rounded-lg border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
                       {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
                   </div>
@@ -3005,47 +3048,47 @@ export default function Home() {
                   {/* Buy Price & Sale Price */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Buy Price *", "ক্রয় মূল্য *")} ({currencySymbol})</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Buy Price *", "ক্রয় মূল্য *")} ({currencySymbol})</label>
                       <input
                         type="number"
                         value={npBuyPrice}
                         onChange={e => setNpBuyPrice(e.target.value)}
                         placeholder="0.00"
                         step="0.01"
-                        className={`w-full px-3 py-2 rounded-lg border text-xs outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                        className={`w-full px-3 py-2 rounded-lg border text-sm outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                         required
                       />
                     </div>
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Sale Price *", "বিক্রয় মূল্য *")} ({currencySymbol})</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Sale Price *", "বিক্রয় মূল্য *")} ({currencySymbol})</label>
                       <input
                         type="number"
                         value={npSalePrice}
                         onChange={e => setNpSalePrice(e.target.value)}
                         placeholder="0.00"
                         step="0.01"
-                        className={`w-full px-3 py-2 rounded-lg border text-xs outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                        className={`w-full px-3 py-2 rounded-lg border text-sm outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                         required
                       />
                     </div>
                   </div>
 
                   {/* Info box */}
-                  <div className={`rounded-lg p-3 text-[11px] flex items-start gap-2 ${isDarkMode ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
+                  <div className={`rounded-lg p-3 text-sm flex items-start gap-2 ${isDarkMode ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
                     <span className="text-base shrink-0">ℹ️</span>
                     <span>{t("After adding, this product will appear in Stock In suggestions. Add quantity via Stock In — it will then become available in Sell.", "যোগ করার পর এই পণ্য স্টক ইন-এ সাজেশনে আসবে। স্টক ইন থেকে পরিমাণ যোগ করলে তবেই বিক্রয়তে দেখা যাবে।")}</span>
                   </div>
 
                   <div className="flex gap-2">
                     <button type="button" onClick={() => { setNpMedicineName(""); setNpCompanyName(""); setNpGenericName(""); setNpBuyPrice(""); setNpSalePrice(""); setNpCategory("Tablet"); }}
-                      className={`px-4 py-2.5 rounded-lg text-xs font-bold transition ${isDarkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      className={`px-4 py-2.5 rounded-lg text-sm font-bold transition ${isDarkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                       {t("Clear", "মুছুন")}
                     </button>
-                    <button type="submit" className="flex-1 bg-teal-500 hover:bg-teal-600 text-white font-black py-2.5 rounded-lg text-xs uppercase tracking-wider shadow transition btn-press">
+                    <button type="submit" className="flex-1 bg-teal-500 hover:bg-teal-600 text-white font-black py-2.5 rounded-lg text-sm uppercase tracking-wider shadow transition btn-press">
                       ✅ {t("Save Product", "পণ্য সেভ করুন")}
                     </button>
                     <button type="button" onClick={() => { setActiveTab("procurement"); }}
-                      className="px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg text-xs transition btn-press">
+                      className="px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg text-sm transition btn-press">
                       📥 {t("Go to Stock In", "স্টক ইনে যান")}
                     </button>
                   </div>
@@ -3107,17 +3150,17 @@ export default function Home() {
                   <div className="hidden print:block fixed inset-0 bg-white z-[9999] p-8 text-black">
                     <div className="max-w-sm mx-auto text-center border border-slate-300 p-5 rounded">
                       <h2 className="font-black text-base uppercase">{pharmacyName}</h2>
-                      <p className="text-xs">{pharmacyAddress}</p>
+                      <p className="text-sm">{pharmacyAddress}</p>
                       <div className="border-b border-dashed border-slate-400 my-2"></div>
                       <h3 className="font-black text-sm uppercase">{t("Purchase Invoice", "ক্রয় ভাউচার")}</h3>
                       <div className="border-b border-dashed border-slate-400 my-2"></div>
-                      <div className="text-left text-[11px] flex flex-col gap-0.5 mb-3">
+                      <div className="text-left text-sm flex flex-col gap-0.5 mb-3">
                         <div className="flex justify-between"><span>{t("Voucher:", "ভাউচার নং:")}</span><span className="font-bold">{selectedVoucher.voucherId}</span></div>
                         <div className="flex justify-between"><span>{t("Supplier:", "সরবরাহকারী:")}</span><span className="font-bold">{selectedVoucher.companyName}</span></div>
                         <div className="flex justify-between"><span>{t("Date:", "তারিখ:")}</span><span>{selectedVoucher.dateStr}</span></div>
                       </div>
                       <div className="border-b border-dashed border-slate-400 my-2"></div>
-                      <table className="w-full text-left text-[10px] border-collapse mb-3">
+                      <table className="w-full text-left text-sm border-collapse mb-3">
                         <thead>
                           <tr className="font-black border-b border-slate-300">
                             <th className="py-1">{t("Medicine", "ওষুধ")}</th>
@@ -3131,8 +3174,8 @@ export default function Home() {
                             <tr key={i} className="border-b border-slate-100">
                               <td className="py-1">
                                 <div className="font-bold">{item.medicineName}</div>
-                                {item.batchNo && item.batchNo !== 'N/A' && <div className="text-[9px] text-slate-400">{t("Batch:", "ব্যাচ:")} {item.batchNo}</div>}
-                                {item.expireDate && item.expireDate !== 'N/A' && <div className="text-[9px] text-slate-400">{t("Exp:", "মেয়াদ:")} {item.expireDate}</div>}
+                                {item.batchNo && item.batchNo !== 'N/A' && <div className="text-sm text-slate-400">{t("Batch:", "ব্যাচ:")} {item.batchNo}</div>}
+                                {item.expireDate && item.expireDate !== 'N/A' && <div className="text-sm text-slate-400">{t("Exp:", "মেয়াদ:")} {item.expireDate}</div>}
                               </td>
                               <td className="py-1 text-center font-mono">{item.quantity}</td>
                               <td className="py-1 text-right font-mono">{item.unitPrice?.toFixed(2) || '-'}</td>
@@ -3142,31 +3185,31 @@ export default function Home() {
                         </tbody>
                       </table>
                       <div className="border-b border-dashed border-slate-400 my-2"></div>
-                      <div className="flex flex-col gap-1 text-[11px] text-right font-semibold">
+                      <div className="flex flex-col gap-1 text-sm text-right font-semibold">
                         <div className="flex justify-between"><span>{t("Total Cost:", "মোট খরচ:")}</span><span className="font-mono font-black">{selectedVoucher.totalCost.toFixed(1)} {currencySymbol}</span></div>
                         <div className="flex justify-between"><span>{t("Paid:", "পরিশোধ:")}</span><span className="font-mono text-emerald-600">{selectedVoucher.totalPaid.toFixed(1)} {currencySymbol}</span></div>
                         {selectedVoucher.totalDue > 0 && <div className="flex justify-between text-red-600 font-black"><span>{t("Due:", "বাকি:")}</span><span className="font-mono">{selectedVoucher.totalDue.toFixed(1)} {currencySymbol}</span></div>}
                       </div>
                       <div className="border-b border-dashed border-slate-400 my-3"></div>
-                      <p className="text-[10px] font-bold uppercase">{t("Thank you!", "ধন্যবাদ!")}</p>
+                      <p className="text-sm font-bold uppercase">{t("Thank you!", "ধন্যবাদ!")}</p>
                     </div>
                   </div>
                 )}
 
-                <div className={`p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className={`ccard cc-violet p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h3 className="text-xs font-black uppercase tracking-wider text-teal-500">📋 {t("Purchase History", "ক্রয়ের ইতিহাস")}</h3>
-                      <p className={`text-[10px] mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{vouchers.length} {t("vouchers", "ভাউচার")} · {purchaseList.length} {t("items total", "টি আইটেম")}</p>
+                      <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">📋 {t("Purchase History", "ক্রয়ের ইতিহাস")}</h3>
+                      <p className={`text-sm mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{vouchers.length} {t("vouchers", "ভাউচার")} · {purchaseList.length} {t("items total", "টি আইটেম")}</p>
                     </div>
-                    <div className={`text-right text-xs font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                    <div className={`text-right text-sm font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                       <div>{t("Total Purchased:", "মোট ক্রয়:")} <span className="font-mono text-teal-500">{grandTotalPurchaseCost.toFixed(1)} {currencySymbol}</span></div>
                       {grandTotalPurchaseDue > 0 && <div className="text-red-400">{t("Total Due:", "মোট বাকি:")} <span className="font-mono">{grandTotalPurchaseDue.toFixed(1)} {currencySymbol}</span></div>}
                     </div>
                   </div>
 
                   {vouchers.length === 0 ? (
-                    <div className="p-10 text-center text-slate-400 italic text-xs">{t("No purchase history yet.", "এখনো কোনো ক্রয়ের ইতিহাস নেই।")}</div>
+                    <div className="p-10 text-center text-slate-400 italic text-sm">{t("No purchase history yet.", "এখনো কোনো ক্রয়ের ইতিহাস নেই।")}</div>
                   ) : (
                     <div className="flex flex-col gap-3">
                       {vouchers.map((v, vi) => (
@@ -3174,27 +3217,27 @@ export default function Home() {
                           {/* Voucher Header */}
                           <div className={`flex items-center justify-between px-4 py-2.5 ${isDarkMode ? 'bg-slate-800 border-b border-slate-700' : 'bg-white border-b border-slate-200'}`}>
                             <div className="flex items-center gap-3">
-                              <span className={`text-[10px] font-black font-mono px-2 py-0.5 rounded ${isDarkMode ? 'bg-teal-500/20 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>{v.voucherId}</span>
+                              <span className={`text-sm font-black font-mono px-2 py-0.5 rounded ${isDarkMode ? 'bg-teal-500/20 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>{v.voucherId}</span>
                               <div>
-                                <div className="text-xs font-black">{v.companyName}</div>
-                                <div className={`text-[10px] font-mono ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{v.dateStr}</div>
+                                <div className="text-sm font-black">{v.companyName}</div>
+                                <div className={`text-sm font-mono ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{v.dateStr}</div>
                               </div>
                             </div>
                             <div className="flex items-center gap-3">
                               <div className="text-right hidden sm:block">
-                                <div className="text-xs font-black font-mono text-teal-500">{v.totalCost.toFixed(1)} {currencySymbol}</div>
-                                {v.totalDue > 0 && <div className="text-[10px] font-mono text-red-400">{t("Due:", "বাকি:")} {v.totalDue.toFixed(1)}</div>}
+                                <div className="text-sm font-black font-mono text-teal-500">{v.totalCost.toFixed(1)} {currencySymbol}</div>
+                                {v.totalDue > 0 && <div className="text-sm font-mono text-red-400">{t("Due:", "বাকি:")} {v.totalDue.toFixed(1)}</div>}
                               </div>
                               <div className="flex gap-1.5">
                                 <button
                                   onClick={() => { setSelectedVoucher(v); setTimeout(() => window.print(), 300); playSound('print'); }}
-                                  className={`p-1.5 rounded-lg text-xs font-bold transition btn-press ${isDarkMode ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white' : 'bg-blue-50 text-blue-500 hover:bg-blue-500 hover:text-white'}`}
+                                  className={`p-1.5 rounded-lg text-sm font-bold transition btn-press ${isDarkMode ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white' : 'bg-blue-50 text-blue-500 hover:bg-blue-500 hover:text-white'}`}
                                   title={t("Print Invoice", "প্রিন্ট করুন")}
                                 >🖨️</button>
                                 {currentUserRole === "ADMIN" && (
                                   <button
                                     onClick={() => handleDeleteVoucher(v)}
-                                    className={`p-1.5 rounded-lg text-xs font-bold transition btn-press ${isDarkMode ? 'bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white'}`}
+                                    className={`p-1.5 rounded-lg text-sm font-bold transition btn-press ${isDarkMode ? 'bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white'}`}
                                     title={t("Delete Voucher", "ভাউচার মুছুন")}
                                   >🗑️</button>
                                 )}
@@ -3204,9 +3247,9 @@ export default function Home() {
 
                           {/* Items Table */}
                           <div className="overflow-x-auto">
-                            <table className="w-full text-left text-[11px] border-collapse">
+                            <table className="w-full text-left text-sm border-collapse">
                               <thead>
-                                <tr className={`font-black text-[10px] uppercase tracking-wider ${isDarkMode ? 'text-slate-500 border-b border-slate-700/50' : 'text-slate-400 border-b border-slate-200'}`}>
+                                <tr className={`font-black text-sm uppercase tracking-wider ${isDarkMode ? 'text-slate-500 border-b border-slate-700/50' : 'text-slate-400 border-b border-slate-200'}`}>
                                   <th className="px-4 py-1.5">{t("Medicine", "ওষুধ")}</th>
                                   <th className="px-4 py-1.5">{t("Category", "ধরন")}</th>
                                   {checkShouldRenderTabOption("batch_tracking") && <th className="px-4 py-1.5">{t("Batch", "ব্যাচ")}</th>}
@@ -3221,15 +3264,15 @@ export default function Home() {
                                   <tr key={ii} className="hover:bg-slate-500/5 transition-colors">
                                     <td className="px-4 py-2">
                                       <div className="font-bold">{item.medicineName}</div>
-                                      {item.genericName && item.genericName !== 'N/A' && <div className={`text-[9px] italic ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{item.genericName}</div>}
+                                      {item.genericName && item.genericName !== 'N/A' && <div className={`text-sm italic ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{item.genericName}</div>}
                                     </td>
                                     <td className="px-4 py-2">
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{item.category}</span>
+                                      <span className={`text-sm px-1.5 py-0.5 rounded font-bold ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{item.category}</span>
                                     </td>
                                     {checkShouldRenderTabOption("batch_tracking") && <td className="px-4 py-2 font-mono text-slate-400">{item.batchNo || '-'}</td>}
                                     {checkShouldRenderTabOption("expiry_tracker") && (
                                       <td className="px-4 py-2 font-mono">
-                                        <span className={`text-[10px] font-bold ${new Date(item.expireDate) < new Date() ? 'text-red-400' : 'text-slate-400'}`}>{item.expireDate || '-'}</span>
+                                        <span className={`text-sm font-bold ${new Date(item.expireDate) < new Date() ? 'text-red-400' : 'text-slate-400'}`}>{item.expireDate || '-'}</span>
                                       </td>
                                     )}
                                     <td className="px-4 py-2 text-center font-mono font-black text-blue-400">{item.quantity}</td>
@@ -3240,12 +3283,12 @@ export default function Home() {
                               </tbody>
                               {checkShouldRenderTabOption("purchase_reports") && (
                                 <tfoot>
-                                  <tr className={`font-black text-xs border-t-2 ${isDarkMode ? 'border-slate-600 bg-slate-900/40' : 'border-slate-300 bg-slate-100'}`}>
+                                  <tr className={`font-black text-sm border-t-2 ${isDarkMode ? 'border-slate-600 bg-slate-900/40' : 'border-slate-300 bg-slate-100'}`}>
                                     <td colSpan={checkShouldRenderTabOption("batch_tracking") && checkShouldRenderTabOption("expiry_tracker") ? 5 : checkShouldRenderTabOption("batch_tracking") || checkShouldRenderTabOption("expiry_tracker") ? 4 : 3} className="px-4 py-2 text-right uppercase">{t("Total:", "মোট:")}</td>
                                     <td className="px-4 py-2 text-right font-mono text-teal-500">{v.totalCost.toFixed(1)} {currencySymbol}</td>
                                   </tr>
                                   {v.totalDue > 0 && (
-                                    <tr className={`text-[11px] ${isDarkMode ? 'bg-red-500/5' : 'bg-red-50'}`}>
+                                    <tr className={`text-sm ${isDarkMode ? 'bg-red-500/5' : 'bg-red-50'}`}>
                                       <td colSpan={checkShouldRenderTabOption("batch_tracking") && checkShouldRenderTabOption("expiry_tracker") ? 5 : checkShouldRenderTabOption("batch_tracking") || checkShouldRenderTabOption("expiry_tracker") ? 4 : 3} className="px-4 py-1.5 text-right font-bold text-red-400">{t("Due:", "বাকি:")}</td>
                                       <td className="px-4 py-1.5 text-right font-mono font-black text-red-500">{v.totalDue.toFixed(1)} {currencySymbol}</td>
                                     </tr>
@@ -3267,16 +3310,16 @@ export default function Home() {
               TAB 5: INVOICES
           ========================================================= */}
           {activeTab === "invoices" && checkShouldRenderTabOption("invoices") && (
-            <div className={`p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`ccard cc-pink p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-teal-500">{t("Customer Invoices", "গ্রাহকের রশিদ")} ({invoices.length})</h3>
+                <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">{t("Customer Invoices", "গ্রাহকের রশিদ")} ({invoices.length})</h3>
                 {checkShouldRenderTabOption("invoice_search") && (
-                  <input type="text" placeholder={t("Search by invoice, customer, phone...", "রশিদ নং, নাম বা ফোনে খুঁজুন...")} value={searchInvoiceQuery} onChange={e => setSearchInvoiceQuery(e.target.value)} className={`px-3 py-1.5 text-xs rounded-lg border outline-none max-w-sm w-full ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                  <input type="text" placeholder={t("Search by invoice, customer, phone...", "রশিদ নং, নাম বা ফোনে খুঁজুন...")} value={searchInvoiceQuery} onChange={e => setSearchInvoiceQuery(e.target.value)} className={`px-3 py-1.5 text-sm rounded-lg border outline-none max-w-sm w-full ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                 )}
               </div>
 
               <div className="overflow-x-auto w-full">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full text-left text-sm border-collapse">
                   <thead>
                     <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                       <th className="p-2.5">{t("Invoice #", "রশিদ নং")}</th>
@@ -3296,12 +3339,12 @@ export default function Home() {
                         <td className="p-2.5 font-mono font-black text-teal-500">{inv.invoiceId}</td>
                         <td className="p-2.5 font-bold">
                           <div>{inv.customer}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">{inv.phone}</div>
+                          <div className="text-sm text-slate-400 font-mono">{inv.phone}</div>
                         </td>
-                        <td className="p-2.5 font-mono text-slate-400 text-[11px]">{inv.dateString}</td>
+                        <td className="p-2.5 font-mono text-slate-400 text-sm">{inv.dateString}</td>
                         <td className="p-2.5 font-mono text-right font-black text-teal-500">{inv.finalBill.toFixed(1)} {currencySymbol}</td>
                         <td className="p-2.5 text-right">
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${inv.paymentMethod === "bKash/Nagad" ? 'bg-pink-500/10 text-pink-500' : inv.paymentMethod === "Card" ? 'bg-indigo-500/10 text-indigo-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
+                          <span className={`text-sm font-bold px-1.5 py-0.5 rounded ${inv.paymentMethod === "bKash/Nagad" ? 'bg-pink-500/10 text-pink-500' : inv.paymentMethod === "Card" ? 'bg-indigo-500/10 text-indigo-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
                             {inv.paymentMethod}
                           </span>
                         </td>
@@ -3311,18 +3354,18 @@ export default function Home() {
                         )}
                         <td className="p-2.5 text-center">
                           {inv.isReturned
-                            ? <span className="text-[9px] bg-red-500/10 text-red-400 font-black uppercase px-2 py-0.5 rounded">{t("Returned", "ফেরত")}</span>
-                            : <span className="text-[9px] bg-teal-500/10 text-teal-500 font-black uppercase px-2 py-0.5 rounded">{t("Paid", "পরিশোধ")}</span>
+                            ? <span className="text-xs bg-red-500/10 text-red-400 font-black uppercase px-2 py-0.5 rounded">{t("Returned", "ফেরত")}</span>
+                            : <span className="text-xs bg-teal-500/10 text-teal-500 font-black uppercase px-2 py-0.5 rounded">{t("Paid", "পরিশোধ")}</span>
                           }
                         </td>
                         <td className="p-2.5 text-center">
                           <div className="flex gap-2 justify-center">
-                            <button onClick={() => viewInvoiceLog(inv)} className="bg-slate-500 hover:bg-slate-600 text-white font-bold text-[10px] px-2 py-0.5 rounded transition">🔍</button>
+                            <button onClick={() => viewInvoiceLog(inv)} className="bg-slate-500 hover:bg-slate-600 text-white font-bold text-sm px-2 py-0.5 rounded transition">🔍</button>
                             {checkShouldRenderTabOption("returns") && !inv.isReturned && (
-                              <button onClick={() => openReturnInterface(inv)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-[10px] px-2 py-0.5 rounded transition">🔄</button>
+                              <button onClick={() => openReturnInterface(inv)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 py-0.5 rounded transition">🔄</button>
                             )}
                             {currentUserRole === "ADMIN" && (
-                              <button onClick={() => deleteInvoice(inv.invoiceId)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-[10px] px-2 py-0.5 rounded transition">🗑️</button>
+                              <button onClick={() => deleteInvoice(inv.invoiceId)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 py-0.5 rounded transition">🗑️</button>
                             )}
                           </div>
                         </td>
@@ -3339,22 +3382,22 @@ export default function Home() {
               TAB 6: DUE LIST
           ========================================================= */}
           {activeTab === "due_list" && checkShouldRenderTabOption("due_list_view") && (
-            <div className={`p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-teal-500">💳 {t("Customer Due List", "গ্রাহকের বাকি তালিকা")}</h3>
+                <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">💳 {t("Customer Due List", "গ্রাহকের বাকি তালিকা")}</h3>
                 <div className="flex items-center gap-3">
-                  <div className={`text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <div className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     {t("Total Outstanding:", "মোট বাকি:")} <span className="text-red-500 font-mono font-black">{totalDueFromCustomers.toFixed(1)} {currencySymbol}</span>
                   </div>
-                  <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg transition uppercase tracking-wider">🖨️ {t("Print", "প্রিন্ট")}</button>
+                  <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">🖨️ {t("Print", "প্রিন্ট")}</button>
                 </div>
               </div>
 
               {dueList.length === 0 ? (
-                <div className="text-center py-12 text-slate-400 italic text-xs">{t("No outstanding dues.", "কোনো বাকি নেই।")}</div>
+                <div className="text-center py-12 text-slate-400 italic text-sm">{t("No outstanding dues.", "কোনো বাকি নেই।")}</div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
+                  <table className="w-full text-left text-sm border-collapse">
                     <thead>
                       <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                         <th className="p-2.5">#</th>
@@ -3371,14 +3414,14 @@ export default function Home() {
                           <td className="p-2.5 text-slate-400">{idx + 1}</td>
                           <td className="p-2.5 font-black">{due.customerName}</td>
                           <td className="p-2.5 font-mono text-slate-400">{due.phone}</td>
-                          <td className="p-2.5 text-slate-400 text-[10px]">
+                          <td className="p-2.5 text-slate-400 text-sm">
                             {due.invoices.map((inv: any) => (
                               <span key={inv.invoiceId} className="mr-2">{inv.invoiceId} ({inv.amount.toFixed(1)})</span>
                             ))}
                           </td>
                           <td className="p-2.5 text-right font-mono font-black text-red-500 text-sm">{due.totalDue.toFixed(1)} {currencySymbol}</td>
                           <td className="p-2.5 text-center">
-                            <button onClick={() => { setDuePaymentModal(due); setDuePayAmount(""); }} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-[10px] px-3 py-1 rounded transition">
+                            <button onClick={() => { setDuePaymentModal(due); setDuePayAmount(""); }} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1 rounded transition">
                               💰 {t("Collect Payment", "পরিশোধ নিন")}
                             </button>
                           </td>
@@ -3395,12 +3438,12 @@ export default function Home() {
               TAB 7: RETURNS
           ========================================================= */}
           {activeTab === "returns" && checkShouldRenderTabOption("returns") && (
-            <div className={`p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-              <h3 className="text-xs font-black uppercase tracking-wider text-teal-500 mb-2">🔄 {t("Returns & Exchanges", "ফেরত ও বিনিময়")}</h3>
-              <p className="text-[11px] text-slate-400 mb-4">{t("Log of orders where a return or exchange was processed.", "যে সব অর্ডার ফেরত বা বিনিময় করা হয়েছে।")}</p>
+            <div className={`ccard cc-green p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-2">🔄 {t("Returns & Exchanges", "ফেরত ও বিনিময়")}</h3>
+              <p className="text-sm text-slate-400 mb-4">{t("Log of orders where a return or exchange was processed.", "যে সব অর্ডার ফেরত বা বিনিময় করা হয়েছে।")}</p>
 
               <div className="overflow-x-auto w-full">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full text-left text-sm border-collapse">
                   <thead>
                     <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                       <th className="p-2.5">{t("Invoice #", "রশিদ নং")}</th>
@@ -3417,12 +3460,12 @@ export default function Home() {
                         <td className="p-2.5 font-mono font-black text-red-400">{inv.invoiceId}</td>
                         <td className="p-2.5 font-bold">{inv.customer}</td>
                         <td className="p-2.5">
-                          <span className={`text-[9px] font-black px-2 py-0.5 rounded ${inv.returnDetails.action === 'CASH_REFUND' ? 'bg-amber-500/10 text-amber-500' : 'bg-indigo-500/10 text-indigo-500'}`}>
+                          <span className={`text-sm font-black px-2 py-0.5 rounded ${inv.returnDetails.action === 'CASH_REFUND' ? 'bg-amber-500/10 text-amber-500' : 'bg-indigo-500/10 text-indigo-500'}`}>
                             {inv.returnDetails.action === 'CASH_REFUND' ? t("Cash Refund", "নগদ ফেরত") : t("Store Credit", "স্টোর ক্রেডিট")}
                           </span>
                         </td>
                         <td className="p-2.5 font-mono text-right font-bold text-red-400">-{inv.returnDetails.refundedAmount.toFixed(1)} {currencySymbol}</td>
-                        <td className="p-2.5 font-mono text-slate-400 text-[11px]">{inv.returnDetails.timestamp}</td>
+                        <td className="p-2.5 font-mono text-slate-400 text-sm">{inv.returnDetails.timestamp}</td>
                         <td className="p-2.5 text-slate-400 italic truncate max-w-xs">{inv.returnDetails.reason}</td>
                       </tr>
                     ))}
@@ -3439,13 +3482,13 @@ export default function Home() {
               TAB: REPORT - Full Stock Report with Print
           ========================================================= */}
           {activeTab === "report" && checkShouldRenderTabOption("report_view") && (
-            <div className={`p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`ccard cc-slate p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center justify-between mb-4 print:hidden">
                 <div>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-teal-500">📋 {t("Stock Report", "স্টক রিপোর্ট")}</h3>
-                  <p className={`text-[10px] mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("All medicines currently in stock with prices", "দোকানে বর্তমানে সব মালের তালিকা ও দাম")}</p>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">📋 {t("Stock Report", "স্টক রিপোর্ট")}</h3>
+                  <p className={`text-sm mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("All medicines currently in stock with prices", "দোকানে বর্তমানে সব মালের তালিকা ও দাম")}</p>
                 </div>
-                <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-xs px-4 py-2 rounded-lg transition uppercase tracking-wider shadow">🖨️ {t("Print Report", "রিপোর্ট প্রিন্ট করুন")}</button>
+                <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow">🖨️ {t("Print Report", "রিপোর্ট প্রিন্ট করুন")}</button>
               </div>
 
               {/* Print Header - only shows on print */}
@@ -3457,27 +3500,27 @@ export default function Home() {
 
               {/* Summary Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-teal-50 border-teal-100'}`}>
-                  <p className={`text-[10px] font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-teal-600'}`}>{t("Total Items", "মোট আইটেম")}</p>
+                <div className={`ccard cc-blue p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-teal-50 border-teal-100'}`}>
+                  <p className={`text-sm font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-teal-600'}`}>{t("Total Items", "মোট আইটেম")}</p>
                   <p className="text-xl font-black text-teal-500">{medicines.length}</p>
                 </div>
-                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-blue-50 border-blue-100'}`}>
-                  <p className={`text-[10px] font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-blue-600'}`}>{t("Total Stock (pcs)", "মোট স্টক (পিস)")}</p>
+                <div className={`ccard cc-red p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-blue-50 border-blue-100'}`}>
+                  <p className={`text-sm font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-blue-600'}`}>{t("Total Stock (pcs)", "মোট স্টক (পিস)")}</p>
                   <p className="text-xl font-black text-blue-500">{medicines.reduce((s, m) => s + m.stock, 0)}</p>
                 </div>
-                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-amber-50 border-amber-100'}`}>
-                  <p className={`text-[10px] font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-amber-600'}`}>{t("Buy Value", "ক্রয় মূল্য মোট")}</p>
+                <div className={`ccard cc-orange p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-amber-50 border-amber-100'}`}>
+                  <p className={`text-sm font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-amber-600'}`}>{t("Buy Value", "ক্রয় মূল্য মোট")}</p>
                   <p className="text-xl font-black text-amber-500 font-mono">{totalStockValue.toFixed(0)} {currencySymbol}</p>
                 </div>
-                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-emerald-50 border-emerald-100'}`}>
-                  <p className={`text-[10px] font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-emerald-600'}`}>{t("Sell Value", "বিক্রয় মূল্য মোট")}</p>
+                <div className={`ccard cc-violet p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-emerald-50 border-emerald-100'}`}>
+                  <p className={`text-sm font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-emerald-600'}`}>{t("Sell Value", "বিক্রয় মূল্য মোট")}</p>
                   <p className="text-xl font-black text-emerald-500 font-mono">{totalStockRetailValue.toFixed(0)} {currencySymbol}</p>
                 </div>
               </div>
 
               {/* Full Medicine Table */}
               <div className="overflow-x-auto w-full">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full text-left text-sm border-collapse">
                   <thead>
                     <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                       <th className="p-2.5">#</th>
@@ -3502,7 +3545,7 @@ export default function Home() {
                           <td className="p-2.5 text-slate-400">{idx + 1}</td>
                           <td className="p-2.5 font-black">{med.name}</td>
                           <td className="p-2.5 text-slate-400">{med.category}</td>
-                          <td className="p-2.5 text-slate-400 text-[10px] italic">{med.generic || '-'}</td>
+                          <td className="p-2.5 text-slate-400 text-sm italic">{med.generic || '-'}</td>
                           <td className="p-2.5 text-center font-mono font-black">
                             <span className={isLow ? 'text-red-500' : 'text-emerald-500'}>{med.stock}</span>
                           </td>
@@ -3510,13 +3553,13 @@ export default function Home() {
                           <td className="p-2.5 text-right font-mono font-black text-teal-500">{med.price.toFixed(1)}</td>
                           <td className="p-2.5 text-right font-mono text-amber-500">{(med.buyPrice * med.stock).toFixed(1)}</td>
                           <td className="p-2.5 text-right font-mono text-emerald-500">{(med.price * med.stock).toFixed(1)}</td>
-                          <td className="p-2.5 font-mono text-[10px] text-slate-400">{med.expire}</td>
+                          <td className="p-2.5 font-mono text-sm text-slate-400">{med.expire}</td>
                           <td className="p-2.5 text-center">
                             {isExpired
-                              ? <span className="text-[9px] bg-red-500/10 text-red-500 font-black px-1.5 py-0.5 rounded uppercase">{t("Expired", "মেয়াদ শেষ")}</span>
+                              ? <span className="text-xs bg-red-500/10 text-red-500 font-black px-1.5 py-0.5 rounded uppercase">{t("Expired", "মেয়াদ শেষ")}</span>
                               : isLow
-                              ? <span className="text-[9px] bg-amber-500/10 text-amber-500 font-black px-1.5 py-0.5 rounded uppercase">⚠️ {t("Low", "কম")}</span>
-                              : <span className="text-[9px] bg-emerald-500/10 text-emerald-500 font-black px-1.5 py-0.5 rounded uppercase">✓ {t("OK", "ঠিক আছে")}</span>
+                              ? <span className="text-xs bg-amber-500/10 text-amber-500 font-black px-1.5 py-0.5 rounded uppercase">⚠️ {t("Low", "কম")}</span>
+                              : <span className="text-xs bg-emerald-500/10 text-emerald-500 font-black px-1.5 py-0.5 rounded uppercase">✓ {t("OK", "ঠিক আছে")}</span>
                             }
                           </td>
                         </tr>
@@ -3528,7 +3571,7 @@ export default function Home() {
                   </tbody>
                   <tfoot>
                     <tr className={`font-black border-t-2 ${isDarkMode ? 'border-slate-600 bg-slate-900/40' : 'border-slate-300 bg-slate-100'}`}>
-                      <td colSpan={4} className="p-2.5 text-right text-xs font-black uppercase">{t("TOTAL", "মোট")}</td>
+                      <td colSpan={4} className="p-2.5 text-right text-sm font-black uppercase">{t("TOTAL", "মোট")}</td>
                       <td className="p-2.5 text-center font-mono font-black text-blue-500">{medicines.reduce((s, m) => s + m.stock, 0)}</td>
                       <td colSpan={2}></td>
                       <td className="p-2.5 text-right font-mono font-black text-amber-500">{totalStockValue.toFixed(1)} {currencySymbol}</td>
@@ -3540,7 +3583,7 @@ export default function Home() {
               </div>
 
               {/* Print footer */}
-              <div className="hidden print:block mt-6 pt-3 border-t text-center text-[10px] text-slate-500">
+              <div className="hidden print:block mt-6 pt-3 border-t text-center text-sm text-slate-500">
                 <p>{t("Printed on:", "প্রিন্ট তারিখ:")} {new Date().toLocaleString()} | {pharmacyName}</p>
               </div>
             </div>
@@ -3553,55 +3596,55 @@ export default function Home() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
               {/* Website Info */}
-              <div className={`p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                <h3 className="text-xs font-black uppercase tracking-wider text-teal-500 mb-3">🏪 {t("Pharmacy Info", "ফার্মেসির তথ্য")}</h3>
-                <div className="flex flex-col gap-3 text-xs">
+              <div className={`ccard cc-cyan p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">🏪 {t("Pharmacy Info", "ফার্মেসির তথ্য")}</h3>
+                <div className="flex flex-col gap-3 text-sm">
                   <div>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Pharmacy Name", "ফার্মেসির নাম")}</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Pharmacy Name", "ফার্মেসির নাম")}</label>
                     <input type="text" value={settingsName} onChange={e => setSettingsName(e.target.value)} className={`w-full px-3 py-2 rounded-xl border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                   </div>
                   <div>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Slogan / Tagline", "স্লোগান")}</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Slogan / Tagline", "স্লোগান")}</label>
                     <input type="text" value={settingsSlogan} onChange={e => setSettingsSlogan(e.target.value)} className={`w-full px-3 py-2 rounded-xl border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                   </div>
                   <div>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Address", "ঠিকানা")}</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Address", "ঠিকানা")}</label>
                     <input type="text" value={settingsAddress} onChange={e => setSettingsAddress(e.target.value)} className={`w-full px-3 py-2 rounded-xl border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                   </div>
                   <div>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Logo Text / Icon (e.g. M+, 💊)", "লোগো টেক্সট/আইকন")}</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Logo Text / Icon (e.g. M+, 💊)", "লোগো টেক্সট/আইকন")}</label>
                     <input type="text" value={settingsLogo} onChange={e => setSettingsLogo(e.target.value)} className={`w-full px-3 py-2 rounded-xl border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                   </div>
-                  <button onClick={handleSaveWebsiteConfig} className="bg-teal-500 hover:bg-teal-600 text-white font-black px-4 py-2 rounded-xl text-xs transition">{t("Save Info", "তথ্য সংরক্ষণ")}</button>
+                  <button onClick={handleSaveWebsiteConfig} className="bg-teal-500 hover:bg-teal-600 text-white font-black px-4 py-2 rounded-xl text-sm transition">{t("Save Info", "তথ্য সংরক্ষণ")}</button>
                 </div>
               </div>
 
               {/* Advanced Config */}
-              <div className={`p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                <h3 className="text-xs font-black uppercase tracking-wider text-teal-500 mb-3">⚙️ {t("Advanced Settings", "উন্নত সেটিংস")}</h3>
-                <div className="flex flex-col gap-3 text-xs">
+              <div className={`ccard cc-purple p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">⚙️ {t("Advanced Settings", "উন্নত সেটিংস")}</h3>
+                <div className="flex flex-col gap-3 text-sm">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Currency Symbol", "মুদ্রা চিহ্ন")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Currency Symbol", "মুদ্রা চিহ্ন")}</label>
                       <input type="text" value={currencySymbol} onChange={e => handleUpdateAdvancedConfig(e.target.value, vatPercentage, lowStockThreshold, receiptFooterMsg)} className={`w-full px-2 py-1.5 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
                     <div>
-                      <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("VAT %", "ভ্যাট %")}</label>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("VAT %", "ভ্যাট %")}</label>
                       <input type="number" value={vatPercentage} onChange={e => handleUpdateAdvancedConfig(currencySymbol, e.target.value, lowStockThreshold, receiptFooterMsg)} className={`w-full px-2 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
                   </div>
                   <div>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Default Low Stock Alert Threshold", "ডিফল্ট কম স্টক সীমা")}</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Default Low Stock Alert Threshold", "ডিফল্ট কম স্টক সীমা")}</label>
                     <input type="number" value={lowStockThreshold} onChange={e => handleUpdateAdvancedConfig(currencySymbol, vatPercentage, e.target.value, receiptFooterMsg)} className={`w-full px-2 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                   </div>
                   <div>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Receipt Footer Message", "রশিদের শেষ বার্তা")}</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Receipt Footer Message", "রশিদের শেষ বার্তা")}</label>
                     <input type="text" value={receiptFooterMsg} onChange={e => handleUpdateAdvancedConfig(currencySymbol, vatPercentage, lowStockThreshold, e.target.value)} className={`w-full px-2 py-1.5 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                   </div>
 
                   {/* Theme */}
                   <div>
-                    <label className={`block text-[10px] font-bold mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Theme / Appearance", "থিম / রঙ")}</label>
+                    <label className={`block text-sm font-bold mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Theme / Appearance", "থিম / রঙ")}</label>
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         { key: 'light',    emoji: '☀️', label: t('Light',    'হালকা'),      dot: '#f8fafc', dotB: '#e2e8f0', ring: '#94a3b8' },
@@ -3619,7 +3662,7 @@ export default function Home() {
                         <button
                           key={th.key}
                           onClick={() => handleSetTheme(th.key)}
-                          className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-[11px] font-bold transition-all duration-200 hover:scale-[1.02]"
+                          className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-sm font-bold transition-all duration-200 hover:scale-[1.02]"
                           style={{
                             backgroundColor: th.dot,
                             borderColor: themeMode === th.key ? th.ring : th.dotB + '80',
@@ -3630,27 +3673,27 @@ export default function Home() {
                         >
                           <span className="text-base leading-none">{th.emoji}</span>
                           <span className="flex-1 text-left">{th.label}</span>
-                          {themeMode === th.key && <span style={{ color: th.ring }} className="text-xs">✓</span>}
+                          {themeMode === th.key && <span style={{ color: th.ring }} className="text-sm">✓</span>}
                         </button>
                       ))}
                     </div>
-                    <p className="text-[9px] text-slate-400 mt-2">{t("Current theme: ", "বর্তমান থিম: ")}<strong style={{ color: isCustomTheme ? (activeThemeStyle as any)['--theme-accent'] : undefined }}>{themeMode.charAt(0).toUpperCase() + themeMode.slice(1)}</strong></p>
+                    <p className="text-sm text-slate-400 mt-2">{t("Current theme: ", "বর্তমান থিম: ")}<strong style={{ color: isCustomTheme ? (activeThemeStyle as any)['--theme-accent'] : undefined }}>{themeMode.charAt(0).toUpperCase() + themeMode.slice(1)}</strong></p>
                   </div>
 
                   {/* Language */}
                   <div>
-                    <label className={`block text-[10px] font-bold mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Language", "ভাষা")}</label>
+                    <label className={`block text-sm font-bold mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Language", "ভাষা")}</label>
                     <div className="flex gap-2">
-                      <button onClick={() => handleLanguageChange("en")} className={`flex-1 py-1.5 rounded-lg text-[10px] font-black transition ${language === "en" ? 'bg-teal-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>🇬🇧 English</button>
-                      <button onClick={() => handleLanguageChange("bn")} className={`flex-1 py-1.5 rounded-lg text-[10px] font-black transition ${language === "bn" ? 'bg-teal-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>🇧🇩 বাংলা</button>
+                      <button onClick={() => handleLanguageChange("en")} className={`flex-1 py-1.5 rounded-lg text-sm font-black transition ${language === "en" ? 'bg-teal-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>🇬🇧 English</button>
+                      <button onClick={() => handleLanguageChange("bn")} className={`flex-1 py-1.5 rounded-lg text-sm font-black transition ${language === "bn" ? 'bg-teal-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>🇧🇩 বাংলা</button>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Login Credentials */}
-              <div className={`p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                <h3 className="text-xs font-black uppercase tracking-wider text-teal-500 mb-3">🔐 {t("Login Credentials", "লগইন তথ্য পরিবর্তন")}</h3>
+              <div className={`ccard cc-teal p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">🔐 {t("Login Credentials", "লগইন তথ্য পরিবর্তন")}</h3>
 
                 {!isCredentialsFormUnlocked ? (
                   <form onSubmit={handleVerifyCurrentPassword} className="flex gap-2 items-center">
@@ -3659,39 +3702,39 @@ export default function Home() {
                       placeholder={t("Enter current admin password to unlock...", "আনলক করতে বর্তমান পাসওয়ার্ড দিন...")}
                       value={currentPassCheck}
                       onChange={e => setCurrentPassCheck(e.target.value)}
-                      className={`px-3 py-1.5 text-xs rounded border outline-none flex-1 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-100 border-slate-200'}`}
+                      className={`px-3 py-1.5 text-sm rounded border outline-none flex-1 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-100 border-slate-200'}`}
                     />
-                    <button type="submit" className="bg-slate-600 text-white text-[10px] font-bold px-3 py-1.5 rounded uppercase transition">{t("Unlock", "আনলক")}</button>
+                    <button type="submit" className="bg-slate-600 text-white text-sm font-bold px-3 py-1.5 rounded uppercase transition">{t("Unlock", "আনলক")}</button>
                   </form>
                 ) : (
-                  <form onSubmit={handleSaveNewCredentials} className="flex flex-col gap-3 text-xs">
-                    <h4 className="text-[10px] font-black text-emerald-500 uppercase">✅ {t("Unlocked - Edit credentials below:", "আনলক হয়েছে - নিচে পরিবর্তন করুন:")}</h4>
+                  <form onSubmit={handleSaveNewCredentials} className="flex flex-col gap-3 text-sm">
+                    <h4 className="text-sm font-black text-emerald-500 uppercase">✅ {t("Unlocked - Edit credentials below:", "আনলক হয়েছে - নিচে পরিবর্তন করুন:")}</h4>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Admin Username", "অ্যাডমিন ইউজারনেম")}</label>
+                        <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Admin Username", "অ্যাডমিন ইউজারনেম")}</label>
                         <input type="text" value={newUsernameInput} onChange={e => setNewUsernameInput(e.target.value)} className={`w-full px-2 py-1.5 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                       </div>
                       <div>
-                        <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Admin Password", "অ্যাডমিন পাসওয়ার্ড")}</label>
+                        <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Admin Password", "অ্যাডমিন পাসওয়ার্ড")}</label>
                         <input type="text" value={newPasswordInput} onChange={e => setNewPasswordInput(e.target.value)} className={`w-full px-2 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                       </div>
                       <div>
-                        <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Staff Username", "স্টাফ ইউজারনেম")}</label>
+                        <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Staff Username", "স্টাফ ইউজারনেম")}</label>
                         <input type="text" value={newStaffUsernameInput} onChange={e => setNewStaffUsernameInput(e.target.value)} className={`w-full px-2 py-1.5 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                       </div>
                       <div>
-                        <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Staff Password", "স্টাফ পাসওয়ার্ড")}</label>
+                        <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Staff Password", "স্টাফ পাসওয়ার্ড")}</label>
                         <input type="text" value={newStaffPasswordInput} onChange={e => setNewStaffPasswordInput(e.target.value)} className={`w-full px-2 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                       </div>
                       <div className="col-span-2">
-                        <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Secret Code (for Forgot Password)", "সিক্রেট কোড (পাসওয়ার্ড ভুললে)")}</label>
+                        <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Secret Code (for Forgot Password)", "সিক্রেট কোড (পাসওয়ার্ড ভুললে)")}</label>
                         <input type="text" value={newSecretCodeInput} onChange={e => setNewSecretCodeInput(e.target.value)} className={`w-full px-2 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
-                        <p className="text-[9px] text-slate-400 mt-1">{t("Keep this code safe. Use it to reset your password if forgotten.", "এই কোডটি সুরক্ষিত রাখুন। পাসওয়ার্ড ভুললে এটি ব্যবহার করুন।")}</p>
+                        <p className="text-sm text-slate-400 mt-1">{t("Keep this code safe. Use it to reset your password if forgotten.", "এই কোডটি সুরক্ষিত রাখুন। পাসওয়ার্ড ভুললে এটি ব্যবহার করুন।")}</p>
                       </div>
                     </div>
                     <div className="flex gap-2 justify-end">
-                      <button type="button" onClick={() => setIsCredentialsFormUnlocked(false)} className={`px-3 py-1.5 text-[10px] font-bold rounded transition ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>{t("Cancel", "বাতিল")}</button>
-                      <button type="submit" className="bg-emerald-500 text-white font-black text-[10px] px-4 py-1.5 rounded uppercase tracking-wider shadow">{t("Save Credentials", "সংরক্ষণ করুন")}</button>
+                      <button type="button" onClick={() => setIsCredentialsFormUnlocked(false)} className={`px-3 py-1.5 text-sm font-bold rounded transition ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>{t("Cancel", "বাতিল")}</button>
+                      <button type="submit" className="bg-emerald-500 text-white font-black text-sm px-4 py-1.5 rounded uppercase tracking-wider shadow">{t("Save Credentials", "সংরক্ষণ করুন")}</button>
                     </div>
                   </form>
                 )}
@@ -3699,10 +3742,10 @@ export default function Home() {
 
               {/* Danger Zone */}
               {checkShouldRenderTabOption("backup_restore") && (
-                <div className={`p-4 rounded-xl border shadow-sm border-red-500/20 ${isDarkMode ? 'bg-red-500/5' : 'bg-red-50'}`}>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-red-500 mb-2">🚨 {t("Danger Zone", "বিপদ জোন")}</h3>
-                  <p className={`text-[11px] mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("This will delete ALL data and reset to factory defaults.", "এটি সব তথ্য মুছে ফেলবে।")}</p>
-                  <button onClick={resetDatabase} className="bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-2 rounded-xl uppercase tracking-wider transition">🗑️ {t("Factory Reset", "ফ্যাক্টরি রিসেট")}</button>
+                <div className={`ccard cc-indigo p-4 rounded-xl border shadow-sm border-red-500/20 ${isDarkMode ? 'bg-red-500/5' : 'bg-red-50'}`}>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-red-500 mb-2">🚨 {t("Danger Zone", "বিপদ জোন")}</h3>
+                  <p className={`text-sm mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("This will delete ALL data and reset to factory defaults.", "এটি সব তথ্য মুছে ফেলবে।")}</p>
+                  <button onClick={resetDatabase} className="bg-red-500 hover:bg-red-600 text-white font-black text-sm px-4 py-2 rounded-xl uppercase tracking-wider transition">🗑️ {t("Factory Reset", "ফ্যাক্টরি রিসেট")}</button>
                 </div>
               )}
 
@@ -3714,14 +3757,14 @@ export default function Home() {
               FIREBASE SETUP GUIDE (shown inside Settings)
           ========================================================= */}
           {activeTab === "settings" && checkShouldRenderTabOption("settings") && (
-            <div className={`mt-4 p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-              <h3 className="text-xs font-black uppercase tracking-wider text-blue-500 mb-1">☁️ {t("Cloud Sync Setup (Firebase)", "ক্লাউড সিঙ্ক সেটআপ (Firebase)")}</h3>
+            <div className={`ccard cc-green mt-4 p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <h3 className="text-sm font-black uppercase tracking-wider text-blue-500 mb-1">☁️ {t("Cloud Sync Setup (Firebase)", "ক্লাউড সিঙ্ক সেটআপ (Firebase)")}</h3>
               {isFirebaseConfigured() ? (
-                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold ${isDarkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-700'}`}>
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold ${isDarkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-700'}`}>
                   ✅ {t("Firebase is configured! Data syncs across all devices automatically.", "Firebase সেটআপ হয়ে গেছে! সব ডিভাইসে ডেটা অটো সিঙ্ক হচ্ছে।")}
                 </div>
               ) : (
-                <div className="flex flex-col gap-2 text-xs">
+                <div className="flex flex-col gap-2 text-sm">
                   <p className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
                     {t("Firebase is not configured yet. Follow the steps below to enable cross-device sync:", "Firebase এখনো সেটআপ হয়নি। নিচের ধাপ অনুসরণ করুন:")}
                   </p>
@@ -3732,7 +3775,7 @@ export default function Home() {
                     <li>{t('Project Settings (gear ⚙️) → Your apps → Web (</>) → Register → copy firebaseConfig', 'Project Settings (⚙️) → Your apps → Web → Register → firebaseConfig কপি করুন')}</li>
                     <li>{t("Open this file's code and replace YOUR_API_KEY and YOUR_DATABASE_URL at the top", "এই ফাইলের কোডের উপরে FIREBASE_CONFIG-এ YOUR_API_KEY ও YOUR_DATABASE_URL বসান")}</li>
                   </ol>
-                  <div className={`font-mono text-[10px] p-2 rounded-lg mt-1 select-all ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-slate-100 text-slate-700'}`}>
+                  <div className={`font-mono text-sm p-2 rounded-lg mt-1 select-all ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-slate-100 text-slate-700'}`}>
                     {`const FIREBASE_CONFIG = {\n  apiKey: "YOUR_API_KEY",\n  databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",\n};`}
                   </div>
                 </div>
@@ -3822,13 +3865,13 @@ export default function Home() {
             ];
             return (
               <div className="flex flex-col gap-5">
-                <div className={`p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-teal-500 mb-1">🛡️ {t("Staff Permissions", "স্টাফ অনুমতি")}</h3>
-                  <p className="text-[11px] text-slate-400 font-medium mb-5">{t("Toggle each feature on/off for staff. Admin always sees everything regardless.", "প্রতিটি ফিচার স্টাফের জন্য চালু/বন্ধ করুন। অ্যাডমিন সবসময় সব দেখতে পাবে।")}</p>
+                <div className={`ccard cc-amber p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-1">🛡️ {t("Staff Permissions", "স্টাফ অনুমতি")}</h3>
+                  <p className="text-sm text-slate-400 font-semibold mb-5">{t("Toggle each feature on/off for staff. Admin always sees everything regardless.", "প্রতিটি ফিচার স্টাফের জন্য চালু/বন্ধ করুন। অ্যাডমিন সবসময় সব দেখতে পাবে।")}</p>
                   <div className="flex flex-col gap-5">
                     {permGroups.map(group => (
                       <div key={group.label}>
-                        <h4 className={`text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-1.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        <h4 className={`text-sm font-black uppercase tracking-widest mb-2 flex items-center gap-1.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                           <span>{group.icon}</span><span>{group.label}</span>
                         </h4>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
@@ -3838,11 +3881,11 @@ export default function Home() {
                               <div
                                 key={key}
                                 onClick={() => toggleStaffPermissionField(key)}
-                                className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer select-none transition-all ${isOn ? 'border-teal-500 bg-teal-500/5' : isDarkMode ? 'bg-slate-900/40 border-slate-700/60 opacity-50' : 'bg-slate-50 border-slate-200 opacity-50'}`}
+                                className={`ccard cc-teal p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer select-none transition-all ${isOn ? 'border-teal-500 bg-teal-500/5' : isDarkMode ? 'bg-slate-900/40 border-slate-700/60 opacity-50' : 'bg-slate-50 border-slate-200 opacity-50'}`}
                               >
                                 <div className="flex items-center gap-2">
                                   <span className="text-sm">{isOn ? '✅' : '❌'}</span>
-                                  <span className={`text-xs font-bold ${isOn ? (isDarkMode ? 'text-white' : 'text-slate-700') : 'text-slate-400'}`}>{label}</span>
+                                  <span className={`text-sm font-bold ${isOn ? (isDarkMode ? 'text-white' : 'text-slate-700') : 'text-slate-400'}`}>{label}</span>
                                 </div>
                                 <div className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${isOn ? 'bg-teal-500' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}>
                                   <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${isOn ? 'translate-x-4' : 'translate-x-0'}`}></div>
@@ -3867,38 +3910,38 @@ export default function Home() {
       ========================================================= */}
       {showConfirmModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className={`max-w-md w-full rounded-2xl border p-4 shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'}`}>
-            <h3 className="text-xs font-black uppercase tracking-wider text-teal-500 border-b pb-2 mb-3 flex items-center justify-between">
+          <div className={`ccard cc-pink max-w-md w-full rounded-2xl border p-4 shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'}`}>
+            <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 border-b pb-2 mb-3 flex items-center justify-between">
               <span>🧾 {t("Confirm Invoice", "বিল নিশ্চিত করুন")}</span>
               <button onClick={() => setShowConfirmModal(false)} className="text-slate-400 hover:text-red-500 font-bold text-sm">✕</button>
             </h3>
 
-            <div className="flex flex-col gap-3 text-xs">
-              <div className="grid grid-cols-2 gap-2 bg-slate-500/5 p-2.5 rounded-xl text-[11px] font-semibold">
+            <div className="flex flex-col gap-3 text-sm">
+              <div className="grid grid-cols-2 gap-2 bg-slate-500/5 p-2.5 rounded-xl text-sm font-semibold">
                 <div><span className="text-slate-400 block">{t("Customer:", "গ্রাহক:")}</span><strong className="text-teal-500">{customerName || t("Walk-in Customer", "সাধারণ গ্রাহক")}</strong></div>
                 <div><span className="text-slate-400 block">{t("Items:", "আইটেম:")}</span><strong>{cart.reduce((s, i) => s + (parseInt(i.qty) || 0), 0)} {t("pcs", "টি")}</strong></div>
               </div>
 
-              <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+              <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-[11px] font-bold text-slate-400">{t("Total Payable:", "মোট পরিশোধযোগ্য:")}</span>
+                  <span className="text-sm font-bold text-slate-400">{t("Total Payable:", "মোট পরিশোধযোগ্য:")}</span>
                   <span className="font-mono text-base font-black text-teal-500">{currentFinalBill.toFixed(1)} {currencySymbol}</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Cash Given", "নগদ দিয়েছে")}</label>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Cash Given", "নগদ দিয়েছে")}</label>
                     <input
                       type="number"
                       placeholder={t("Amount...", "পরিমাণ...")}
                       value={calculatorInput}
                       onChange={e => { setCalculatorInput(e.target.value); setCashReceived(e.target.value); }}
-                      className={`w-full px-2.5 py-1.5 font-mono font-bold rounded border outline-none text-xs ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300'}`}
+                      className={`w-full px-2.5 py-1.5 font-mono font-bold rounded border outline-none text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300'}`}
                     />
                   </div>
                   <div>
-                    <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Change Back", "ফেরত দেওয়া")}</label>
-                    <div className={`w-full px-2.5 py-1.5 font-mono font-black text-xs rounded border ${liveRefundAmount >= 0 ? 'text-emerald-400 bg-emerald-500/5 border-emerald-500/10' : 'text-red-400 bg-red-500/5 border-red-500/10'}`}>
+                    <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Change Back", "ফেরত দেওয়া")}</label>
+                    <div className={`w-full px-2.5 py-1.5 font-mono font-black text-sm rounded border ${liveRefundAmount >= 0 ? 'text-emerald-400 bg-emerald-500/5 border-emerald-500/10' : 'text-red-400 bg-red-500/5 border-red-500/10'}`}>
                       {liveRefundAmount >= 0 ? `${liveRefundAmount.toFixed(1)} ${currencySymbol}` : t("Short!", "কম আছে!")}
                     </div>
                   </div>
@@ -3907,21 +3950,21 @@ export default function Home() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Payment Method", "পেমেন্ট পদ্ধতি")}</label>
-                  <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className={`w-full p-1.5 rounded border outline-none text-xs ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
+                  <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Payment Method", "পেমেন্ট পদ্ধতি")}</label>
+                  <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className={`w-full p-1.5 rounded border outline-none text-sm ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
                     <option value="Cash">💵 {t("Cash", "নগদ")}</option>
                     <option value="bKash/Nagad">📱 {t("bKash / Nagad", "বিকাশ / নগদ")}</option>
                     <option value="Card">💳 {t("Card", "কার্ড")}</option>
                   </select>
                 </div>
                 <div>
-                  <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Due Amount", "বাকি পরিমাণ")}</label>
-                  <input type="number" value={invoiceDue} onChange={e => setInvoiceDue(e.target.value)} className={`w-full p-1.5 font-mono rounded border outline-none text-xs ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`} />
+                  <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Due Amount", "বাকি পরিমাণ")}</label>
+                  <input type="number" value={invoiceDue} onChange={e => setInvoiceDue(e.target.value)} className={`w-full p-1.5 font-mono rounded border outline-none text-sm ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`} />
                 </div>
               </div>
 
               <div className="flex gap-2 justify-end pt-2 border-t mt-1">
-                <button onClick={() => setShowConfirmModal(false)} className={`px-4 py-2 text-[11px] font-bold rounded-xl transition ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{t("Cancel", "বাতিল")}</button>
+                <button onClick={() => setShowConfirmModal(false)} className={`px-4 py-2 text-sm font-bold rounded-xl transition ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{t("Cancel", "বাতিল")}</button>
                 <button
                   onClick={executeFinalCheckout}
                   disabled={liveRefundAmount < 0 && parseFloat(invoiceDue) === 0}
@@ -3941,28 +3984,28 @@ export default function Home() {
       {showReturnModal && selectedInvoiceForReturn && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className={`max-w-xl w-full rounded-2xl border p-4 shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'}`}>
-            <h3 className="text-xs font-black uppercase tracking-wider text-red-400 border-b pb-2 mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-black uppercase tracking-wider text-red-400 border-b pb-2 mb-3 flex items-center justify-between">
               <span>🔄 {t("Process Return", "ফেরত প্রক্রিয়া করুন")}</span>
               <button onClick={() => { setShowReturnModal(false); setSelectedInvoiceForReturn(null); }} className="text-slate-400 hover:text-white font-bold text-sm">✕</button>
             </h3>
 
-            <div className="flex flex-col gap-3 text-xs">
-              <div className="p-2.5 rounded-xl bg-slate-500/5 text-[11px] font-semibold flex justify-between items-center">
+            <div className="flex flex-col gap-3 text-sm">
+              <div className="p-2.5 rounded-xl bg-slate-500/5 text-sm font-semibold flex justify-between items-center">
                 <div>{t("Invoice:", "রশিদ:")} <strong className="text-teal-500 font-mono">{selectedInvoiceForReturn.invoiceId}</strong></div>
                 <div>{t("Customer:", "গ্রাহক:")} <strong>{selectedInvoiceForReturn.customer}</strong></div>
                 <div>{t("Bill:", "বিল:")} <strong className="font-mono text-teal-400">{selectedInvoiceForReturn.finalBill.toFixed(1)} {currencySymbol}</strong></div>
               </div>
 
               <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto">
-                <span className="text-[10px] font-black uppercase text-slate-400">{t("Select return quantities:", "ফেরত পরিমাণ বেছে নিন:")}</span>
+                <span className="text-sm font-black uppercase text-slate-400">{t("Select return quantities:", "ফেরত পরিমাণ বেছে নিন:")}</span>
                 {selectedInvoiceForReturn.items.map((item: any) => (
                   <div key={item.id} className={`p-2 rounded-lg border flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                     <div className="flex-1">
-                      <h5 className="font-bold text-[11px]">{item.name}</h5>
-                      <span className="text-[10px] text-slate-400 font-mono">{t("Bought:", "কেনা:")} {item.qty} @ {item.price}</span>
+                      <h5 className="font-bold text-sm">{item.name}</h5>
+                      <span className="text-sm text-slate-400 font-mono">{t("Bought:", "কেনা:")} {item.qty} @ {item.price}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-slate-400">{t("Return:", "ফেরত:")}</span>
+                      <span className="text-sm text-slate-400">{t("Return:", "ফেরত:")}</span>
                       <input type="number" min="0" max={item.qty} value={returnItemsQuantities[item.id] || 0} onChange={e => handleReturnItemQtyChange(item.id, item.qty, e.target.value)} className={`w-14 px-1 py-0.5 font-mono text-center font-bold text-red-400 bg-transparent rounded border outline-none ${isDarkMode ? 'border-slate-700' : 'border-slate-300'}`} />
                     </div>
                   </div>
@@ -3971,20 +4014,20 @@ export default function Home() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Refund Type", "ফেরত পদ্ধতি")}</label>
-                  <select value={returnActionType} onChange={e => setReturnActionType(e.target.value as any)} className={`w-full p-1.5 rounded border text-xs outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
+                  <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Refund Type", "ফেরত পদ্ধতি")}</label>
+                  <select value={returnActionType} onChange={e => setReturnActionType(e.target.value as any)} className={`w-full p-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
                     <option value="CASH_REFUND">💰 {t("Cash Refund", "নগদ ফেরত")}</option>
                     <option value="STORE_CREDIT">💳 {t("Store Credit", "স্টোর ক্রেডিট")}</option>
                   </select>
                 </div>
                 <div>
-                  <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Reason", "কারণ")}</label>
-                  <input type="text" placeholder={t("e.g. Defective product...", "যেমন: নষ্ট পণ্য...")} value={returnReason} onChange={e => setReturnReason(e.target.value)} className={`w-full p-1.5 rounded border text-xs outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`} />
+                  <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Reason", "কারণ")}</label>
+                  <input type="text" placeholder={t("e.g. Defective product...", "যেমন: নষ্ট পণ্য...")} value={returnReason} onChange={e => setReturnReason(e.target.value)} className={`w-full p-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`} />
                 </div>
               </div>
 
               <div className="flex gap-2 justify-end pt-2 border-t mt-2">
-                <button onClick={() => { setShowReturnModal(false); setSelectedInvoiceForReturn(null); }} className={`px-4 py-2 text-[11px] font-bold rounded-xl transition ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{t("Cancel", "বাতিল")}</button>
+                <button onClick={() => { setShowReturnModal(false); setSelectedInvoiceForReturn(null); }} className={`px-4 py-2 text-sm font-bold rounded-xl transition ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{t("Cancel", "বাতিল")}</button>
                 <button onClick={processInvoiceMedicineReturn} className="bg-red-500 hover:bg-red-600 text-white font-black px-5 py-2 rounded-xl uppercase tracking-wider shadow transition">
                   {t("Process Return", "ফেরত প্রক্রিয়া করুন")}
                 </button>
@@ -3999,22 +4042,22 @@ export default function Home() {
       ========================================================= */}
       {showReceipt && lastInvoice && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
-          <div className="max-w-sm w-full bg-white text-slate-950 p-5 rounded-xl shadow-2xl font-mono text-xs border border-slate-200 print:shadow-none print:border-none print:w-full print:p-0">
+          <div className="max-w-sm w-full bg-white text-slate-950 p-5 rounded-xl shadow-2xl font-mono text-sm border border-slate-200 print:shadow-none print:border-none print:w-full print:p-0">
 
             <div className="flex justify-between items-center border-b pb-2 mb-4 print:hidden">
-              <button onClick={triggerPrintReceipt} className="bg-teal-500 hover:bg-teal-600 text-white font-bold py-1 px-3 rounded uppercase tracking-wider text-[10px] transition shadow">🖨️ {t("Print", "প্রিন্ট")}</button>
-              <button onClick={() => setShowReceipt(false)} className="text-red-500 hover:underline font-bold text-[10px] uppercase">✕ {t("Close", "বন্ধ")}</button>
+              <button onClick={triggerPrintReceipt} className="bg-teal-500 hover:bg-teal-600 text-white font-bold py-1 px-3 rounded uppercase tracking-wider text-sm transition shadow">🖨️ {t("Print", "প্রিন্ট")}</button>
+              <button onClick={() => setShowReceipt(false)} className="text-red-500 hover:underline font-bold text-sm uppercase">✕ {t("Close", "বন্ধ")}</button>
             </div>
 
             <div className="text-center mb-4">
               <h3 className="font-black text-sm uppercase tracking-tight">{pharmacyName}</h3>
-              <p className="text-[10px] opacity-80 leading-snug">{pharmacySlogan}</p>
-              <p className="text-[10px] font-bold mt-0.5">{pharmacyAddress}</p>
+              <p className="text-sm opacity-80 leading-snug">{pharmacySlogan}</p>
+              <p className="text-sm font-bold mt-0.5">{pharmacyAddress}</p>
               <div className="border-b border-dashed border-slate-400 my-2"></div>
-              <h4 className="font-black text-[11px] tracking-wider uppercase">{t("SALES RECEIPT", "বিক্রয় রশিদ")}</h4>
+              <h4 className="font-black text-sm tracking-wider uppercase">{t("SALES RECEIPT", "বিক্রয় রশিদ")}</h4>
             </div>
 
-            <div className="flex flex-col gap-0.5 text-[10px] mb-3">
+            <div className="flex flex-col gap-0.5 text-sm mb-3">
               <div className="flex justify-between"><span>{t("Invoice ID:", "রশিদ নং:")}</span><span className="font-bold text-teal-600">{lastInvoice.invoiceId}</span></div>
               <div className="flex justify-between"><span>{t("Customer:", "গ্রাহক:")}</span><span className="font-bold">{lastInvoice.customer}</span></div>
               <div className="flex justify-between"><span>{t("Phone:", "ফোন:")}</span><span>{lastInvoice.phone}</span></div>
@@ -4024,7 +4067,7 @@ export default function Home() {
 
             <div className="border-b border-dashed border-slate-400 my-2"></div>
 
-            <table className="w-full text-left text-[10px] border-collapse mb-3">
+            <table className="w-full text-left text-sm border-collapse mb-3">
               <thead>
                 <tr className="font-black border-b border-slate-300">
                   <th className="py-1">{t("Item", "আইটেম")}</th>
@@ -4037,7 +4080,7 @@ export default function Home() {
                   <tr key={item.id}>
                     <td className="py-1">
                       <span className="block font-bold">{item.name}</span>
-                      <span className="text-[9px] opacity-70 italic">{t("Rate:", "মূল্য:")} {item.price}</span>
+                      <span className="text-sm opacity-70 italic">{t("Rate:", "মূল্য:")} {item.price}</span>
                     </td>
                     <td className="py-1 font-mono text-center">{item.qty}</td>
                     <td className="py-1 font-mono text-right">{((parseInt(item.qty) || 0) * item.price).toFixed(1)}</td>
@@ -4048,25 +4091,25 @@ export default function Home() {
 
             <div className="border-b border-dashed border-slate-400 my-2"></div>
 
-            <div className="flex flex-col gap-1 text-[11px] text-right font-semibold">
+            <div className="flex flex-col gap-1 text-sm text-right font-semibold">
               <div className="flex justify-between"><span className="text-slate-500">{t("Subtotal:", "মোট:")}</span><span className="font-mono">{lastInvoice.subTotal.toFixed(1)} {currencySymbol}</span></div>
               {lastInvoice.vat > 0 && <div className="flex justify-between"><span className="text-slate-500">{t("VAT:", "ভ্যাট:")}</span><span className="font-mono">+{lastInvoice.vat.toFixed(1)}</span></div>}
               {lastInvoice.discount > 0 && <div className="flex justify-between text-red-600"><span>{t("Discount:", "ছাড়:")}</span><span className="font-mono">-{lastInvoice.discount.toFixed(1)}</span></div>}
-              <div className="flex justify-between border-t border-dashed border-slate-400 pt-1 font-black text-xs text-slate-950">
+              <div className="flex justify-between border-t border-dashed border-slate-400 pt-1 font-black text-sm text-slate-950">
                 <span>{t("NET PAYABLE:", "মোট পরিশোধ:")}</span>
                 <span className="font-mono text-teal-600 font-black">{lastInvoice.finalBill.toFixed(1)} {currencySymbol}</span>
               </div>
               <div className="border-b border-slate-200 my-1"></div>
-              <div className="flex justify-between text-[10px] font-medium text-slate-600">
+              <div className="flex justify-between text-sm font-semibold text-slate-600">
                 <span>{t("Cash Received:", "নগদ পেয়েছি:")}</span>
                 <span className="font-mono">{(lastInvoice.cashReceived || lastInvoice.finalBill).toFixed(1)} {currencySymbol}</span>
               </div>
-              <div className="flex justify-between text-[10px] font-medium text-slate-600">
+              <div className="flex justify-between text-sm font-semibold text-slate-600">
                 <span>{t("Change Given:", "ফেরত দিয়েছি:")}</span>
                 <span className="font-mono">{Math.max(0, (lastInvoice.cashReceived || lastInvoice.finalBill) - lastInvoice.finalBill).toFixed(1)} {currencySymbol}</span>
               </div>
               {lastInvoice.due > 0 && (
-                <div className="flex justify-between text-[10px] font-black text-red-600">
+                <div className="flex justify-between text-sm font-black text-red-600">
                   <span>{t("UNPAID DUE:", "বাকি:")}</span>
                   <span className="font-mono">{lastInvoice.due.toFixed(1)} {currencySymbol}</span>
                 </div>
@@ -4074,7 +4117,7 @@ export default function Home() {
             </div>
 
             <div className="border-b border-dashed border-slate-400 my-3"></div>
-            <div className="text-center text-[10px] font-bold uppercase tracking-tight">
+            <div className="text-center text-sm font-bold uppercase tracking-tight">
               <p>{lastInvoice.footerMsg || receiptFooterMsg}</p>
             </div>
           </div>
@@ -4086,20 +4129,20 @@ export default function Home() {
       ========================================================= */}
       {duePaymentModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className={`max-w-sm w-full rounded-2xl border p-4 shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'}`}>
-            <h3 className="text-xs font-black uppercase tracking-wider text-teal-500 border-b pb-2 mb-3 flex items-center justify-between">
+          <div className={`ccard cc-rose max-w-sm w-full rounded-2xl border p-4 shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'}`}>
+            <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 border-b pb-2 mb-3 flex items-center justify-between">
               <span>💰 {t("Collect Payment", "পরিশোধ নিন")}</span>
               <button onClick={() => { setDuePaymentModal(null); setDuePayAmount(""); }} className="text-slate-400 hover:text-red-500 font-bold text-sm">✕</button>
             </h3>
 
-            <div className="flex flex-col gap-3 text-xs">
+            <div className="flex flex-col gap-3 text-sm">
               <div className="bg-slate-500/5 p-3 rounded-xl">
                 <div className="flex justify-between mb-1"><span className="text-slate-400">{t("Customer:", "গ্রাহক:")}</span><strong>{duePaymentModal.customerName}</strong></div>
                 <div className="flex justify-between"><span className="text-slate-400">{t("Outstanding Due:", "বাকি:")}</span><strong className="text-red-500 font-mono text-sm">{duePaymentModal.totalDue.toFixed(1)} {currencySymbol}</strong></div>
               </div>
 
               <div>
-                <label className={`block text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Payment Amount", "পরিশোধ পরিমাণ")}</label>
+                <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Payment Amount", "পরিশোধ পরিমাণ")}</label>
                 <input
                   type="number"
                   value={duePayAmount}
@@ -4108,14 +4151,14 @@ export default function Home() {
                   className={`w-full px-3 py-2 rounded-xl border text-sm font-mono outline-none ${isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                 />
                 {parseFloat(duePayAmount) > 0 && (
-                  <p className="text-[10px] text-emerald-500 mt-1 font-bold">
+                  <p className="text-sm text-emerald-500 mt-1 font-bold">
                     {t("Remaining after payment:", "পেমেন্টের পর বাকি:")} {Math.max(0, duePaymentModal.totalDue - parseFloat(duePayAmount)).toFixed(1)} {currencySymbol}
                   </p>
                 )}
               </div>
 
               <div className="flex gap-2 justify-end">
-                <button onClick={() => { setDuePaymentModal(null); setDuePayAmount(""); }} className={`px-4 py-2 text-[11px] font-bold rounded-xl transition ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{t("Cancel", "বাতিল")}</button>
+                <button onClick={() => { setDuePaymentModal(null); setDuePayAmount(""); }} className={`px-4 py-2 text-sm font-bold rounded-xl transition ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{t("Cancel", "বাতিল")}</button>
                 <button onClick={handleDuePayment} className="bg-teal-500 hover:bg-teal-600 text-white font-black px-5 py-2 rounded-xl uppercase tracking-wider shadow transition">
                   ✅ {t("Record Payment", "পেমেন্ট রেকর্ড")}
                 </button>

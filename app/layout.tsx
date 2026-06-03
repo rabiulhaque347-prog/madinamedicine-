@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -12,11 +12,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// ✅ themeColor must be in viewport export (not metadata) — fixes the warning
+export const viewport: Viewport = {
+  themeColor: "#2563eb",
+};
+
 export const metadata: Metadata = {
   title: "Madina Medicine Corner",
   description: "Professional Pharmacy POS System",
   manifest: "/manifest.json",
-  themeColor: "#2563eb",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
