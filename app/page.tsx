@@ -367,6 +367,10 @@ export default function Home() {
     due_list_view: true,
     bkash_nagad_view: true,
     report_view: true,
+    yearly_sales_view: true,
+    yearly_purchase_view: true,
+    yearly_profit_view: true,
+    yearly_due_view: true,
   });
 
   // ============================================================
@@ -1755,20 +1759,27 @@ export default function Home() {
 
   let computedDailyPurchaseAmount = 0;
   let computedMonthlyPurchaseAmount = 0;
+  let computedYearlyPurchaseAmount = 0;
   purchaseList.forEach(pLog => {
     const pLogDate = parseCustomDateString(pLog.dateString);
-    if (pLogDate.getFullYear() === currentEngineYearNum && pLogDate.getMonth() === currentEngineMonthNum) {
-      computedMonthlyPurchaseAmount += (pLog.totalCost || 0);
-      if (pLogDate.getDate() === currentEngineDayNum) computedDailyPurchaseAmount += (pLog.totalCost || 0);
+    if (pLogDate.getFullYear() === currentEngineYearNum) {
+      computedYearlyPurchaseAmount += (pLog.totalCost || 0);
+      if (pLogDate.getMonth() === currentEngineMonthNum) {
+        computedMonthlyPurchaseAmount += (pLog.totalCost || 0);
+        if (pLogDate.getDate() === currentEngineDayNum) computedDailyPurchaseAmount += (pLog.totalCost || 0);
+      }
     }
   });
 
   let computedDailySalesAmount = 0;
   let computedMonthlySalesAmount = 0;
+  let computedYearlySalesAmount = 0;
   let computedDailyProfitAmount = 0;
   let computedMonthlyProfitAmount = 0;
+  let computedYearlyProfitAmount = 0;
   let computedDailyDue = 0;
   let computedMonthlyDue = 0;
+  let computedYearlyDue = 0;
   let computedDailyBkash = 0;
   let computedMonthlyBkash = 0;
   let computedDailyDueCollection = 0;
@@ -1776,18 +1787,23 @@ export default function Home() {
 
   invoices.forEach(invLog => {
     const invLogDate = parseCustomDateString(invLog.dateString);
-    if (invLogDate.getFullYear() === currentEngineYearNum && invLogDate.getMonth() === currentEngineMonthNum) {
+    if (invLogDate.getFullYear() === currentEngineYearNum) {
       const fullBill = invLog.finalBill;
       const paidAmt = fullBill - (invLog.due || 0);
-      computedMonthlySalesAmount += fullBill;
-      computedMonthlyProfitAmount += (invLog.profit || 0);
-      computedMonthlyDue += (invLog.due || 0);
-      if (invLog.paymentMethod === "bKash/Nagad") computedMonthlyBkash += paidAmt;
-      if (invLogDate.getDate() === currentEngineDayNum) {
-        computedDailySalesAmount += fullBill;
-        computedDailyProfitAmount += (invLog.profit || 0);
-        computedDailyDue += (invLog.due || 0);
-        if (invLog.paymentMethod === "bKash/Nagad") computedDailyBkash += paidAmt;
+      computedYearlySalesAmount += fullBill;
+      computedYearlyProfitAmount += (invLog.profit || 0);
+      computedYearlyDue += (invLog.due || 0);
+      if (invLogDate.getMonth() === currentEngineMonthNum) {
+        computedMonthlySalesAmount += fullBill;
+        computedMonthlyProfitAmount += (invLog.profit || 0);
+        computedMonthlyDue += (invLog.due || 0);
+        if (invLog.paymentMethod === "bKash/Nagad") computedMonthlyBkash += paidAmt;
+        if (invLogDate.getDate() === currentEngineDayNum) {
+          computedDailySalesAmount += fullBill;
+          computedDailyProfitAmount += (invLog.profit || 0);
+          computedDailyDue += (invLog.due || 0);
+          if (invLog.paymentMethod === "bKash/Nagad") computedDailyBkash += paidAmt;
+        }
       }
     }
   });
@@ -2661,13 +2677,7 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Total Outstanding Due */}
-                <div className={`ccard cc-emerald p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                  <span className="block text-sm font-black text-red-500 uppercase tracking-widest mb-1">{t("Total Due (All Time)", "মোট বাকি")}</span>
-                  <div className="font-mono text-lg font-black text-red-500">{totalDueFromCustomers.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-sm text-slate-400 mt-1">{t("From", "থেকে")} {dueList.length} {t("customers", "গ্রাহক")}</div>
-                  <div className="absolute right-2 bottom-1 text-2xl opacity-10">👤</div>
-                </div>
+
 
                 {/* Today Due Collection */}
                 <div className={`ccard cc-blue p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
@@ -2684,6 +2694,46 @@ export default function Home() {
                   <div className="text-sm text-slate-400 mt-1">{t("Collected this month", "এই মাসে আদায়")}</div>
                   <div className="absolute right-2 bottom-1 text-2xl opacity-10">💰</div>
                 </div>
+
+                {/* Yearly Sale */}
+                {checkShouldRenderTabOption("yearly_sales_view") && (
+                  <div className={`ccard cc-violet p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <span className="block text-sm font-black text-violet-500 uppercase tracking-widest mb-1">{t("Yearly Sale", "বার্ষিক বিক্রয়")}</span>
+                    <div className="font-mono text-lg font-black text-violet-500">{computedYearlySalesAmount.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-sm text-slate-400 mt-1">{t("This year's total sales", "এই বছরের মোট বিক্রয়")}</div>
+                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">🗓️</div>
+                  </div>
+                )}
+
+                {/* Yearly Purchase */}
+                {checkShouldRenderTabOption("yearly_purchase_view") && (
+                  <div className={`ccard cc-orange p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <span className="block text-sm font-black text-orange-500 uppercase tracking-widest mb-1">{t("Yearly Purchase", "বার্ষিক ক্রয়")}</span>
+                    <div className="font-mono text-lg font-black text-orange-500">{computedYearlyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-sm text-slate-400 mt-1">{t("This year's total purchase", "এই বছরের মোট ক্রয়")}</div>
+                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">📦</div>
+                  </div>
+                )}
+
+                {/* Yearly Profit */}
+                {checkShouldRenderTabOption("yearly_profit_view") && (
+                  <div className={`ccard cc-green p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <span className="block text-sm font-black text-emerald-400 uppercase tracking-widest mb-1">{t("Yearly Profit", "বার্ষিক লাভ")}</span>
+                    <div className="font-mono text-lg font-black text-emerald-400">{computedYearlyProfitAmount.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-sm text-slate-400 mt-1">{t("This year's net profit", "এই বছরের নেট লাভ")}</div>
+                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">🏆</div>
+                  </div>
+                )}
+
+                {/* Yearly Due */}
+                {checkShouldRenderTabOption("yearly_due_view") && (
+                  <div className={`ccard cc-rose p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <span className="block text-sm font-black text-red-400 uppercase tracking-widest mb-1">{t("Yearly Due", "বার্ষিক বাকি")}</span>
+                    <div className="font-mono text-lg font-black text-red-400">{computedYearlyDue.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-sm text-slate-400 mt-1">{t("Total due this year", "এই বছরের মোট বাকি")}</div>
+                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">📋</div>
+                  </div>
+                )}
               </div>
 
               {/* Total Stock Value */}
@@ -3937,6 +3987,10 @@ export default function Home() {
                   { key: "category_wise_stock",     label: t("Category Stock View", "ক্যাটাগরি স্টক") },
                   { key: "financials_summary_card", label: t("Financial Summary", "আর্থিক সারসংক্ষেপ") },
                   { key: "revenue_chart_view",      label: t("Revenue Chart", "রাজস্ব চার্ট") },
+                  { key: "yearly_sales_view",       label: t("Yearly Sale", "বার্ষিক বিক্রয়") },
+                  { key: "yearly_purchase_view",    label: t("Yearly Purchase", "বার্ষিক ক্রয়") },
+                  { key: "yearly_profit_view",      label: t("Yearly Profit", "বার্ষিক লাভ") },
+                  { key: "yearly_due_view",         label: t("Yearly Due", "বার্ষিক বাকি") },
                 ]
               },
               {
