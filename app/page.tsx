@@ -2471,7 +2471,7 @@ export default function Home() {
 
               {/* Left: Product Search */}
               <div className="lg:col-span-7 flex flex-col gap-3">
-                <div className={`ccard cc-teal p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                <div className={`ccard cc-teal p-3 rounded-xl border ${isDarkMode ? 'bg-teal-950/50 border-teal-600' : 'bg-teal-50 border-teal-300 shadow-sm'}`}>
                   <div className="flex gap-2 flex-wrap">
                     <input
                       type="text"
@@ -2496,7 +2496,7 @@ export default function Home() {
                         key={med.id}
                         onClick={() => addToCart(med)}
                         disabled={med.stock === 0 || isExpired}
-                        className={`p-2.5 rounded-xl border ccard cc-teal text-left transition hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-teal-500/50' : 'bg-white border-slate-200 hover:border-teal-300 shadow-sm'}`}
+                        className={`p-2.5 rounded-xl border ccard cc-teal text-left transition hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-teal-950/50 border-teal-600 hover:border-teal-500/50' : 'bg-teal-50 border-teal-300 hover:border-teal-300 shadow-sm'}`}
                       >
                         <div className="font-black text-sm truncate mb-1">{med.name}</div>
                         <div className={`text-sm font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{med.category}</div>
@@ -2515,7 +2515,7 @@ export default function Home() {
 
               {/* Right: Cart */}
               <div className="lg:col-span-5">
-                <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-indigo-950/50 border-indigo-600' : 'bg-indigo-50 border-indigo-300 shadow-sm'}`}>
                   <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">🛒 {t("Cart", "কার্ট")} ({cart.length})</h3>
 
                   {/* Customer */}
@@ -2586,7 +2586,7 @@ export default function Home() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
 
                 {/* Daily Sale */}
-                <div className={`ccard cc-violet p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-card'], borderColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
+                <div className={`ccard cc-violet p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-violet-950/50 border-violet-600' : 'bg-violet-50 border-violet-300 shadow-sm'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-card'], borderColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
                   <span className="block text-sm font-black text-teal-500 uppercase tracking-widest mb-1">{t("Today's Sale", "আজকের বিক্রয়")}</span>
                   <div className="font-mono text-lg font-black text-teal-500">{computedDailySalesAmount.toFixed(1)} {currencySymbol}</div>
                   <div className="text-sm text-slate-400 mt-1">{t("Cash collected today", "আজ সংগ্রহ")}</div>
@@ -2594,7 +2594,7 @@ export default function Home() {
                 </div>
 
                 {/* Monthly Sale */}
-                <div className={`ccard cc-pink p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                <div className={`ccard cc-pink p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-pink-950/50 border-pink-600' : 'bg-pink-50 border-pink-300 shadow-sm'}`}>
                   <span className="block text-sm font-black text-blue-500 uppercase tracking-widest mb-1">{t("Monthly Sale", "মাসিক বিক্রয়")}</span>
                   <div className="font-mono text-lg font-black text-blue-500">{computedMonthlySalesAmount.toFixed(1)} {currencySymbol}</div>
                   <div className="text-sm text-slate-400 mt-1">{t("This month", "এই মাসে")}</div>
@@ -2603,7 +2603,7 @@ export default function Home() {
 
                 {/* Daily Profit */}
                 {checkShouldRenderTabOption("daily_profit_view") && (
-                  <div className={`ccard cc-rose p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-rose p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-rose-950/50 border-rose-600' : 'bg-rose-50 border-rose-300 shadow-sm'}`}>
                     <span className="block text-sm font-black text-emerald-500 uppercase tracking-widest mb-1">{t("Today's Profit", "আজকের লাভ")}</span>
                     <div className="font-mono text-lg font-black text-emerald-500">{computedDailyProfitAmount.toFixed(1)} {currencySymbol}</div>
                     <div className="text-sm text-slate-400 mt-1">{t("Net profit today", "আজ নেট লাভ")}</div>
@@ -2613,7 +2613,7 @@ export default function Home() {
 
                 {/* Monthly Profit */}
                 {checkShouldRenderTabOption("monthly_profit_view") && (
-                  <div className={`ccard cc-green p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-green p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-green-950/50 border-green-600' : 'bg-green-50 border-green-300 shadow-sm'}`}>
                     <span className="block text-sm font-black text-purple-500 uppercase tracking-widest mb-1">{t("Monthly Profit", "মাসিক লাভ")}</span>
                     <div className="font-mono text-lg font-black text-purple-500">{computedMonthlyProfitAmount.toFixed(1)} {currencySymbol}</div>
                     <div className="text-sm text-slate-400 mt-1">{t("Net profit this month", "মাসে নেট লাভ")}</div>
@@ -2623,7 +2623,7 @@ export default function Home() {
 
                 {/* Daily Purchase */}
                 {checkShouldRenderTabOption("daily_purchases_view") && (
-                  <div className={`ccard cc-slate p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-slate p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-500' : 'bg-slate-100 border-slate-400 shadow-sm'}`}>
                     <span className="block text-sm font-black text-rose-400 uppercase tracking-widest mb-1">{t("Today's Purchase", "আজকের ক্রয়")}</span>
                     <div className="font-mono text-lg font-black text-rose-400">{computedDailyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
                     <div className="text-sm text-slate-400 mt-1">{t("Purchased today", "আজ কেনা")}</div>
@@ -2633,7 +2633,7 @@ export default function Home() {
 
                 {/* Monthly Purchase */}
                 {checkShouldRenderTabOption("monthly_purchases_view") && (
-                  <div className={`ccard cc-cyan p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-cyan p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-cyan-950/50 border-cyan-600' : 'bg-cyan-50 border-cyan-300 shadow-sm'}`}>
                     <span className="block text-sm font-black text-amber-500 uppercase tracking-widest mb-1">{t("Monthly Purchase", "মাসিক ক্রয়")}</span>
                     <div className="font-mono text-lg font-black text-amber-500">{computedMonthlyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
                     <div className="text-sm text-slate-400 mt-1">{t("Purchased this month", "মাসে কেনা")}</div>
@@ -2642,7 +2642,7 @@ export default function Home() {
                 )}
 
                 {/* Daily Due */}
-                <div className={`ccard cc-purple p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                <div className={`ccard cc-purple p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-purple-950/50 border-purple-600' : 'bg-purple-50 border-purple-300 shadow-sm'}`}>
                   <span className="block text-sm font-black text-red-400 uppercase tracking-widest mb-1">{t("Today's Due", "আজকের বাকি")}</span>
                   <div className="font-mono text-lg font-black text-red-400">{computedDailyDue.toFixed(1)} {currencySymbol}</div>
                   <div className="text-sm text-slate-400 mt-1">{t("Due given today", "আজ বাকি দেওয়া")}</div>
@@ -2650,7 +2650,7 @@ export default function Home() {
                 </div>
 
                 {/* Monthly Due */}
-                <div className={`ccard cc-teal p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                <div className={`ccard cc-teal p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-teal-950/50 border-teal-600' : 'bg-teal-50 border-teal-300 shadow-sm'}`}>
                   <span className="block text-sm font-black text-orange-400 uppercase tracking-widest mb-1">{t("Monthly Due", "মাসিক বাকি")}</span>
                   <div className="font-mono text-lg font-black text-orange-400">{computedMonthlyDue.toFixed(1)} {currencySymbol}</div>
                   <div className="text-sm text-slate-400 mt-1">{t("Total due this month", "মাসে মোট বাকি")}</div>
@@ -2659,7 +2659,7 @@ export default function Home() {
 
                 {/* Daily bKash/Nagad */}
                 {checkShouldRenderTabOption("bkash_nagad_view") && (
-                  <div className={`ccard cc-indigo p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-indigo p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-indigo-950/50 border-indigo-600' : 'bg-indigo-50 border-indigo-300 shadow-sm'}`}>
                     <span className="block text-sm font-black text-pink-500 uppercase tracking-widest mb-1">{t("Today's bKash/Nagad", "আজকের বিকাশ/নগদ")}</span>
                     <div className="font-mono text-lg font-black text-pink-500">{computedDailyBkash.toFixed(1)} {currencySymbol}</div>
                     <div className="text-sm text-slate-400 mt-1">{t("Mobile payment today", "আজ মোবাইল পেমেন্ট")}</div>
@@ -2669,7 +2669,7 @@ export default function Home() {
 
                 {/* Monthly bKash/Nagad */}
                 {checkShouldRenderTabOption("bkash_nagad_view") && (
-                  <div className={`ccard cc-amber p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-amber p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-amber-950/50 border-amber-600' : 'bg-amber-50 border-amber-300 shadow-sm'}`}>
                     <span className="block text-sm font-black text-fuchsia-500 uppercase tracking-widest mb-1">{t("Monthly bKash/Nagad", "মাসিক বিকাশ/নগদ")}</span>
                     <div className="font-mono text-lg font-black text-fuchsia-500">{computedMonthlyBkash.toFixed(1)} {currencySymbol}</div>
                     <div className="text-sm text-slate-400 mt-1">{t("Mobile payment month", "মাসে মোবাইল পেমেন্ট")}</div>
@@ -2680,7 +2680,7 @@ export default function Home() {
 
 
                 {/* Today Due Collection */}
-                <div className={`ccard cc-blue p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                <div className={`ccard cc-blue p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-blue-950/50 border-blue-600' : 'bg-blue-50 border-blue-300 shadow-sm'}`}>
                   <span className="block text-sm font-black text-teal-600 uppercase tracking-widest mb-1">{t("Today's Due Collection", "আজকের বাকি আদায়")}</span>
                   <div className="font-mono text-lg font-black text-teal-600">{computedDailyDueCollection.toFixed(1)} {currencySymbol}</div>
                   <div className="text-sm text-slate-400 mt-1">{t("Collected today", "আজ আদায় হয়েছে")}</div>
@@ -2688,7 +2688,7 @@ export default function Home() {
                 </div>
 
                 {/* Monthly Due Collection */}
-                <div className={`ccard cc-red p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                <div className={`ccard cc-red p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-red-950/50 border-red-600' : 'bg-red-50 border-red-300 shadow-sm'}`}>
                   <span className="block text-sm font-black text-cyan-500 uppercase tracking-widest mb-1">{t("Monthly Due Collection", "মাসিক বাকি আদায়")}</span>
                   <div className="font-mono text-lg font-black text-cyan-500">{computedMonthlyDueCollection.toFixed(1)} {currencySymbol}</div>
                   <div className="text-sm text-slate-400 mt-1">{t("Collected this month", "এই মাসে আদায়")}</div>
@@ -2697,7 +2697,7 @@ export default function Home() {
 
                 {/* Yearly Sale */}
                 {checkShouldRenderTabOption("yearly_sales_view") && (
-                  <div className={`ccard cc-violet p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-violet p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-violet-950/50 border-violet-600' : 'bg-violet-50 border-violet-300 shadow-sm'}`}>
                     <span className="block text-sm font-black text-violet-500 uppercase tracking-widest mb-1">{t("Yearly Sale", "বার্ষিক বিক্রয়")}</span>
                     <div className="font-mono text-lg font-black text-violet-500">{computedYearlySalesAmount.toFixed(1)} {currencySymbol}</div>
                     <div className="text-sm text-slate-400 mt-1">{t("This year's total sales", "এই বছরের মোট বিক্রয়")}</div>
@@ -2707,7 +2707,7 @@ export default function Home() {
 
                 {/* Yearly Purchase */}
                 {checkShouldRenderTabOption("yearly_purchase_view") && (
-                  <div className={`ccard cc-orange p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-orange p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-orange-950/50 border-orange-600' : 'bg-orange-50 border-orange-300 shadow-sm'}`}>
                     <span className="block text-sm font-black text-orange-500 uppercase tracking-widest mb-1">{t("Yearly Purchase", "বার্ষিক ক্রয়")}</span>
                     <div className="font-mono text-lg font-black text-orange-500">{computedYearlyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
                     <div className="text-sm text-slate-400 mt-1">{t("This year's total purchase", "এই বছরের মোট ক্রয়")}</div>
@@ -2717,7 +2717,7 @@ export default function Home() {
 
                 {/* Yearly Profit */}
                 {checkShouldRenderTabOption("yearly_profit_view") && (
-                  <div className={`ccard cc-green p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-green p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-green-950/50 border-green-600' : 'bg-green-50 border-green-300 shadow-sm'}`}>
                     <span className="block text-sm font-black text-emerald-400 uppercase tracking-widest mb-1">{t("Yearly Profit", "বার্ষিক লাভ")}</span>
                     <div className="font-mono text-lg font-black text-emerald-400">{computedYearlyProfitAmount.toFixed(1)} {currencySymbol}</div>
                     <div className="text-sm text-slate-400 mt-1">{t("This year's net profit", "এই বছরের নেট লাভ")}</div>
@@ -2727,7 +2727,7 @@ export default function Home() {
 
                 {/* Yearly Due */}
                 {checkShouldRenderTabOption("yearly_due_view") && (
-                  <div className={`ccard cc-rose p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-rose p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-rose-950/50 border-rose-600' : 'bg-rose-50 border-rose-300 shadow-sm'}`}>
                     <span className="block text-sm font-black text-red-400 uppercase tracking-widest mb-1">{t("Yearly Due", "বার্ষিক বাকি")}</span>
                     <div className="font-mono text-lg font-black text-red-400">{computedYearlyDue.toFixed(1)} {currencySymbol}</div>
                     <div className="text-sm text-slate-400 mt-1">{t("Total due this year", "এই বছরের মোট বাকি")}</div>
@@ -2739,7 +2739,7 @@ export default function Home() {
               {/* Total Stock Value */}
               {checkShouldRenderTabOption("stock_value_calculator") && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className={`ccard cc-amber p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-amber p-3 rounded-xl border ${isDarkMode ? 'bg-amber-950/50 border-amber-600' : 'bg-amber-50 border-amber-300 shadow-sm'}`}>
                     <h4 className="text-sm font-black uppercase text-teal-500 mb-2">📦 {t("Total Stock", "মোট স্টক")}</h4>
                     <div className="flex flex-col gap-1 text-sm">
                       <div className="flex justify-between"><span className="text-slate-400">{t("Total Items:", "মোট আইটেম:")}</span><span className="font-mono font-black">{medicines.length}</span></div>
@@ -2751,7 +2751,7 @@ export default function Home() {
 
                   {/* Low Stock Alert */}
                   {checkShouldRenderTabOption("low_stock_alerts") && (
-                    <div className={`ccard cc-emerald p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <div className={`ccard cc-emerald p-3 rounded-xl border ${isDarkMode ? 'bg-emerald-950/50 border-emerald-600' : 'bg-emerald-50 border-emerald-300 shadow-sm'}`}>
                       <div className="flex items-center justify-between border-b pb-2 mb-2">
                         <h4 className="text-sm font-black uppercase text-amber-500">⚠️ {t("Low Stock", "কম স্টক")}</h4>
                         <span className="bg-amber-500 text-white font-mono text-sm px-1.5 py-0.5 rounded-full font-bold">{lowStockMedicines.length}</span>
@@ -2770,7 +2770,7 @@ export default function Home() {
 
                   {/* Expired */}
                   {checkShouldRenderTabOption("expired_meds_view") && (
-                    <div className={`ccard cc-blue p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                    <div className={`ccard cc-blue p-3 rounded-xl border ${isDarkMode ? 'bg-blue-950/50 border-blue-600' : 'bg-blue-50 border-blue-300 shadow-sm'}`}>
                       <div className="flex items-center justify-between border-b pb-2 mb-2">
                         <h4 className="text-sm font-black uppercase text-red-500">🚨 {t("Expired", "মেয়াদ শেষ")}</h4>
                         <span className="bg-red-500 text-white font-mono text-sm px-1.5 py-0.5 rounded-full font-bold">{expiredMedicines.length}</span>
@@ -2791,7 +2791,7 @@ export default function Home() {
 
               {/* Category Stock */}
               {checkShouldRenderTabOption("category_wise_stock") && (
-                <div className={`ccard cc-red p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                <div className={`ccard cc-red p-3 rounded-xl border ${isDarkMode ? 'bg-red-950/50 border-red-600' : 'bg-red-50 border-red-300 shadow-sm'}`}>
                   <h4 className="text-sm font-black uppercase text-teal-500 mb-3">📊 {t("Stock by Category", "ক্যাটাগরি অনুযায়ী স্টক")}</h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
                     {allCategories.map(cat => {
@@ -2929,7 +2929,7 @@ export default function Home() {
 
               {/* Left: Add Items */}
               <div className="xl:col-span-5 flex flex-col gap-3">
-                <div className={`ccard cc-orange p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className={`ccard cc-orange p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-orange-950/50 border-orange-600' : 'bg-orange-50 border-orange-300'}`}>
                   <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">📥 {t("Add Medicine to Purchase", "ক্রয়ে ওষুধ যোগ করুন")}</h3>
 
                   {/* Company Name */}
@@ -3049,7 +3049,7 @@ export default function Home() {
 
                 {/* Purchase Cart */}
                 {purchaseCart.length > 0 && (
-                  <div className={`ccard cc-orange p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className={`ccard cc-orange p-3 rounded-xl border ${isDarkMode ? 'bg-orange-950/50 border-orange-600' : 'bg-orange-50 border-orange-300 shadow-sm'}`}>
                     <h4 className="text-sm font-black uppercase text-teal-500 mb-2">📋 {t("Items Added", "যোগ করা আইটেম")} ({purchaseCart.length})</h4>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
@@ -3100,7 +3100,7 @@ export default function Home() {
               {/* Right: Purchase History */}
               {checkShouldRenderTabOption("purchase_reports") && (
                 <div className="xl:col-span-3">
-                  <div className={`ccard cc-emerald p-3 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <div className={`ccard cc-emerald p-3 rounded-xl border shadow-sm ${isDarkMode ? 'bg-emerald-950/50 border-emerald-600' : 'bg-emerald-50 border-emerald-300'}`}>
                     <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-2">{t("Purchase History", "ক্রয়ের ইতিহাস")}</h3>
                     {currentUserRole === "ADMIN" && (
                       <div className="mb-2 text-sm flex justify-between">
@@ -3365,7 +3365,7 @@ export default function Home() {
                   </div>
                 )}
 
-                <div className={`ccard cc-violet p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className={`ccard cc-violet p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-violet-950/50 border-violet-600' : 'bg-violet-50 border-violet-300'}`}>
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">📋 {t("Purchase History", "ক্রয়ের ইতিহাস")}</h3>
@@ -3479,7 +3479,7 @@ export default function Home() {
               TAB 5: INVOICES
           ========================================================= */}
           {activeTab === "invoices" && checkShouldRenderTabOption("invoices") && (
-            <div className={`ccard cc-pink p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`ccard cc-pink p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-pink-950/50 border-pink-600' : 'bg-pink-50 border-pink-300'}`}>
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-4">
                 <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">{t("Customer Invoices", "গ্রাহকের রশিদ")} ({invoices.length})</h3>
                 {checkShouldRenderTabOption("invoice_search") && (
@@ -3551,7 +3551,7 @@ export default function Home() {
               TAB 6: DUE LIST
           ========================================================= */}
           {activeTab === "due_list" && checkShouldRenderTabOption("due_list_view") && (
-            <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-rose-950/50 border-rose-600' : 'bg-rose-50 border-rose-300'}`}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">💳 {t("Customer Due List", "গ্রাহকের বাকি তালিকা")}</h3>
                 <div className="flex items-center gap-3">
@@ -3607,7 +3607,7 @@ export default function Home() {
               TAB 7: RETURNS
           ========================================================= */}
           {activeTab === "returns" && checkShouldRenderTabOption("returns") && (
-            <div className={`ccard cc-green p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`ccard cc-green p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-green-950/50 border-green-600' : 'bg-green-50 border-green-300'}`}>
               <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-2">🔄 {t("Returns & Exchanges", "ফেরত ও বিনিময়")}</h3>
               <p className="text-sm text-slate-400 mb-4">{t("Log of orders where a return or exchange was processed.", "যে সব অর্ডার ফেরত বা বিনিময় করা হয়েছে।")}</p>
 
@@ -3651,7 +3651,7 @@ export default function Home() {
               TAB: REPORT - Full Stock Report with Print
           ========================================================= */}
           {activeTab === "report" && checkShouldRenderTabOption("report_view") && (
-            <div className={`ccard cc-slate p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`ccard cc-slate p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-500' : 'bg-slate-100 border-slate-400'}`}>
               <div className="flex items-center justify-between mb-4 print:hidden">
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">📋 {t("Stock Report", "স্টক রিপোর্ট")}</h3>
@@ -3669,19 +3669,19 @@ export default function Home() {
 
               {/* Summary Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <div className={`ccard cc-blue p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-teal-50 border-teal-100'}`}>
+                <div className={`ccard cc-blue p-3 rounded-xl border text-center ${isDarkMode ? 'bg-blue-950/50 border-blue-600' : 'bg-blue-50 border-blue-300'}`}>
                   <p className={`text-sm font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-teal-600'}`}>{t("Total Items", "মোট আইটেম")}</p>
                   <p className="text-xl font-black text-teal-500">{medicines.length}</p>
                 </div>
-                <div className={`ccard cc-red p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-blue-50 border-blue-100'}`}>
+                <div className={`ccard cc-red p-3 rounded-xl border text-center ${isDarkMode ? 'bg-red-950/50 border-red-600' : 'bg-red-50 border-red-300'}`}>
                   <p className={`text-sm font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-blue-600'}`}>{t("Total Stock (pcs)", "মোট স্টক (পিস)")}</p>
                   <p className="text-xl font-black text-blue-500">{medicines.reduce((s, m) => s + m.stock, 0)}</p>
                 </div>
-                <div className={`ccard cc-orange p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-amber-50 border-amber-100'}`}>
+                <div className={`ccard cc-orange p-3 rounded-xl border text-center ${isDarkMode ? 'bg-orange-950/50 border-orange-600' : 'bg-orange-50 border-orange-300'}`}>
                   <p className={`text-sm font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-amber-600'}`}>{t("Buy Value", "ক্রয় মূল্য মোট")}</p>
                   <p className="text-xl font-black text-amber-500 font-mono">{totalStockValue.toFixed(0)} {currencySymbol}</p>
                 </div>
-                <div className={`ccard cc-violet p-3 rounded-xl border text-center ${isDarkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-emerald-50 border-emerald-100'}`}>
+                <div className={`ccard cc-violet p-3 rounded-xl border text-center ${isDarkMode ? 'bg-violet-950/50 border-violet-600' : 'bg-violet-50 border-violet-300'}`}>
                   <p className={`text-sm font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-emerald-600'}`}>{t("Sell Value", "বিক্রয় মূল্য মোট")}</p>
                   <p className="text-xl font-black text-emerald-500 font-mono">{totalStockRetailValue.toFixed(0)} {currencySymbol}</p>
                 </div>
@@ -3765,7 +3765,7 @@ export default function Home() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
               {/* Website Info */}
-              <div className={`ccard cc-cyan p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <div className={`ccard cc-cyan p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-cyan-950/50 border-cyan-600' : 'bg-cyan-50 border-cyan-300'}`}>
                 <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">🏪 {t("Pharmacy Info", "ফার্মেসির তথ্য")}</h3>
                 <div className="flex flex-col gap-3 text-sm">
                   <div>
@@ -3789,7 +3789,7 @@ export default function Home() {
               </div>
 
               {/* Advanced Config */}
-              <div className={`ccard cc-purple p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <div className={`ccard cc-purple p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-purple-950/50 border-purple-600' : 'bg-purple-50 border-purple-300'}`}>
                 <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">⚙️ {t("Advanced Settings", "উন্নত সেটিংস")}</h3>
                 <div className="flex flex-col gap-3 text-sm">
                   <div className="grid grid-cols-2 gap-3">
@@ -3861,7 +3861,7 @@ export default function Home() {
               </div>
 
               {/* Login Credentials */}
-              <div className={`ccard cc-teal p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <div className={`ccard cc-teal p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-teal-950/50 border-teal-600' : 'bg-teal-50 border-teal-300'}`}>
                 <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">🔐 {t("Login Credentials", "লগইন তথ্য পরিবর্তন")}</h3>
 
                 {!isCredentialsFormUnlocked ? (
@@ -3911,7 +3911,7 @@ export default function Home() {
 
               {/* Danger Zone */}
               {checkShouldRenderTabOption("backup_restore") && (
-                <div className={`ccard cc-indigo p-4 rounded-xl border shadow-sm border-red-500/20 ${isDarkMode ? 'bg-red-500/5' : 'bg-red-50'}`}>
+                <div className={`ccard cc-indigo p-4 rounded-xl border shadow-sm border-red-500/20 ${isDarkMode ? 'bg-indigo-950/50 border-indigo-600' : 'bg-indigo-50 border-indigo-300'}`}>
                   <h3 className="text-sm font-black uppercase tracking-wider text-red-500 mb-2">🚨 {t("Danger Zone", "বিপদ জোন")}</h3>
                   <p className={`text-sm mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("This will delete ALL data and reset to factory defaults.", "এটি সব তথ্য মুছে ফেলবে।")}</p>
                   <button onClick={resetDatabase} className="bg-red-500 hover:bg-red-600 text-white font-black text-sm px-4 py-2 rounded-xl uppercase tracking-wider transition">🗑️ {t("Factory Reset", "ফ্যাক্টরি রিসেট")}</button>
@@ -3926,7 +3926,7 @@ export default function Home() {
               FIREBASE SETUP GUIDE (shown inside Settings)
           ========================================================= */}
           {activeTab === "settings" && checkShouldRenderTabOption("settings") && (
-            <div className={`ccard cc-green mt-4 p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={`ccard cc-green mt-4 p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-green-950/50 border-green-600' : 'bg-green-50 border-green-300'}`}>
               <h3 className="text-sm font-black uppercase tracking-wider text-blue-500 mb-1">☁️ {t("Cloud Sync Setup (Firebase)", "ক্লাউড সিঙ্ক সেটআপ (Firebase)")}</h3>
               {isFirebaseConfigured() ? (
                 <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold ${isDarkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-700'}`}>
@@ -4038,7 +4038,7 @@ export default function Home() {
             ];
             return (
               <div className="flex flex-col gap-5">
-                <div className={`ccard cc-amber p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className={`ccard cc-amber p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-amber-950/50 border-amber-600' : 'bg-amber-50 border-amber-300'}`}>
                   <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-1">🛡️ {t("Staff Permissions", "স্টাফ অনুমতি")}</h3>
                   <p className="text-sm text-slate-400 font-semibold mb-5">{t("Toggle each feature on/off for staff. Admin always sees everything regardless.", "প্রতিটি ফিচার স্টাফের জন্য চালু/বন্ধ করুন। অ্যাডমিন সবসময় সব দেখতে পাবে।")}</p>
                   <div className="flex flex-col gap-5">
@@ -4083,7 +4083,7 @@ export default function Home() {
       ========================================================= */}
       {showConfirmModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className={`ccard cc-pink max-w-md w-full rounded-2xl border p-4 shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'}`}>
+          <div className={`ccard cc-pink max-w-md w-full rounded-2xl border p-4 shadow-2xl ${isDarkMode ? 'bg-pink-950/50 border-pink-600 text-white' : 'bg-pink-50 border-pink-300'}`}>
             <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 border-b pb-2 mb-3 flex items-center justify-between">
               <span>🧾 {t("Confirm Invoice", "বিল নিশ্চিত করুন")}</span>
               <button onClick={() => setShowConfirmModal(false)} className="text-slate-400 hover:text-red-500 font-bold text-sm">✕</button>
@@ -4095,7 +4095,7 @@ export default function Home() {
                 <div><span className="text-slate-400 block">{t("Items:", "আইটেম:")}</span><strong>{cart.reduce((s, i) => s + (parseInt(i.qty) || 0), 0)} {t("pcs", "টি")}</strong></div>
               </div>
 
-              <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+              <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-indigo-950/50 border-indigo-600' : 'bg-indigo-50 border-indigo-300'}`}>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-bold text-slate-400">{t("Total Payable:", "মোট পরিশোধযোগ্য:")}</span>
                   <span className="font-mono text-base font-black text-teal-500">{currentFinalBill.toFixed(1)} {currencySymbol}</span>
@@ -4302,7 +4302,7 @@ export default function Home() {
       ========================================================= */}
       {duePaymentModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className={`ccard cc-rose max-w-sm w-full rounded-2xl border p-4 shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'}`}>
+          <div className={`ccard cc-rose max-w-sm w-full rounded-2xl border p-4 shadow-2xl ${isDarkMode ? 'bg-rose-950/50 border-rose-600 text-white' : 'bg-rose-50 border-rose-300'}`}>
             <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 border-b pb-2 mb-3 flex items-center justify-between">
               <span>💰 {t("Collect Payment", "পরিশোধ নিন")}</span>
               <button onClick={() => { setDuePaymentModal(null); setDuePayAmount(""); }} className="text-slate-400 hover:text-red-500 font-bold text-sm">✕</button>
