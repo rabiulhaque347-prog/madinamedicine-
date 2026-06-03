@@ -384,6 +384,7 @@ export default function Home() {
   const [loginShake, setLoginShake] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toastQueue, setToastQueue] = useState<{id:number,msg:string,type:'success'|'error'|'info'}[]>([]);
   const toastIdRef = useRef(0);
 
@@ -2325,6 +2326,85 @@ export default function Home() {
           </div>
         </nav>
 
+        {/* MOBILE FULL MENU DRAWER — slides up when mobileMenuOpen */}
+        {mobileMenuOpen && (
+          <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end print:hidden" onClick={() => setMobileMenuOpen(false)}>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            <div
+              className={`relative rounded-t-2xl border-t p-4 pb-6 max-h-[80vh] overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
+              style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderTopColor: (activeThemeStyle as any)['--theme-border'] } : {}}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Drawer handle */}
+              <div className="w-10 h-1 rounded-full bg-slate-400/40 mx-auto mb-4" />
+              <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3 px-1">{t("All Menus", "সব মেনু")}</p>
+              <div className="grid grid-cols-3 gap-2">
+                {checkShouldRenderTabOption("pos") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("pos"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "pos" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">🛒</span><span>{t("Sell", "বিক্রয়")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("analytics") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("analytics"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "analytics" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">📊</span><span>{t("Dashboard", "ড্যাশবোর্ড")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("inventory") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("inventory"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "inventory" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">📦</span><span>{t("Stock", "স্টক")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("procurement") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("procurement"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "procurement" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">📥</span><span>{t("Stock In", "মাল কিনুন")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("procurement") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("new_product"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "new_product" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">➕</span><span>{t("New Product", "নতুন পণ্য")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("purchase_history") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("purchase_history"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "purchase_history" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">🧾</span><span>{t("Purchase Hist.", "ক্রয় ইতিহাস")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("invoices") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("invoices"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "invoices" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">🧾</span><span>{t("Invoices", "রশিদ")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("due_list_view") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("due_list"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "due_list" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">💳</span><span>{t("Due List", "বাকি তালিকা")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("report_view") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("report"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "report" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">📋</span><span>{t("Report", "রিপোর্ট")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("returns") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("returns"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "returns" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">🔄</span><span>{t("Returns", "ফেরত")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("settings") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("settings"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "settings" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">⚙️</span><span>{t("Settings", "সেটিংস")}</span>
+                  </button>
+                )}
+                {currentUserRole === "ADMIN" && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("modules_menu"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "modules_menu" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">🛡️</span><span>{t("Permissions", "অনুমতি")}</span>
+                  </button>
+                )}
+              </div>
+              <button onClick={() => setMobileMenuOpen(false)} className="w-full mt-4 py-2.5 rounded-xl text-sm font-black bg-slate-500/10 text-slate-500">{t("Close", "বন্ধ করুন")}</button>
+            </div>
+          </div>
+        )}
+
         {/* MOBILE BOTTOM NAVIGATION — visible only on mobile (md: hidden) */}
         <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-40 border-t flex items-center justify-around px-1 py-1.5 print:hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderTopColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
           {checkShouldRenderTabOption("pos") && (
@@ -2348,7 +2428,7 @@ export default function Home() {
           {checkShouldRenderTabOption("invoices") && (
             <button onClick={() => { playSound('tab'); setActiveTab("invoices"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "invoices" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               <span className="text-lg">🧾</span>
-              <span>{t("Bills", "রশিদ")}</span>
+              <span>{t("Invoices", "রশিদ")}</span>
             </button>
           )}
           {checkShouldRenderTabOption("due_list_view") && (
@@ -2357,12 +2437,11 @@ export default function Home() {
               <span>{t("Due", "বাকি")}</span>
             </button>
           )}
-          {checkShouldRenderTabOption("settings") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("settings"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "settings" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              <span className="text-lg">⚙️</span>
-              <span>{t("More", "আরো")}</span>
-            </button>
-          )}
+          {/* "More" button — always visible, opens full menu drawer */}
+          <button onClick={() => setMobileMenuOpen(true)} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${mobileMenuOpen ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <span className="text-lg">☰</span>
+            <span>{t("More", "আরো")}</span>
+          </button>
         </nav>
 
         {/* MAIN CONTENT */}
