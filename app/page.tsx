@@ -349,7 +349,7 @@ export default function Home() {
     discount_manager: true,
     receipt_customizer: true,
     user_role_switcher: false,
-    backup_restore: false,
+    backup_restore: true,
     advanced_analytics: true,
     medicine_suggestions_db: true,
     company_database: true,
@@ -626,6 +626,14 @@ export default function Home() {
   const [settingsSlogan, setSettingsSlogan] = useState("");
   const [settingsAddress, setSettingsAddress] = useState("");
   const [settingsLogo, setSettingsLogo] = useState("");
+
+  // ============================================================
+  // BACKUP & RESTORE STATES
+  // ============================================================
+  const [lastBackupTime, setLastBackupTime] = useState<string>(() => localStorage.getItem('madina_v7_last_backup') || "");
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const restoreFileRef = useRef<HTMLInputElement>(null);
 
   // ============================================================
   // HELPER: PARSE DATE
@@ -1698,6 +1706,166 @@ export default function Home() {
       alert(t("✅ System reset successful!", "✅ সিস্টেম রিসেট সম্পন্ন!"));
     }
   };
+
+  // ============================================================
+  // BACKUP & RESTORE FUNCTIONS
+  // ============================================================
+
+  // সব important data একটা object এ জড়ো করে JSON ফাইল বানাও
+  const buildBackupObject = () => {
+    const backupData: Record<string, any> = {};
+    for (const key of CLOUD_SYNC_KEYS) {
+      const val = localStorage.getItem(key);
+      if (val !== null) backupData[key] = val;
+    }
+    return backupData;
+  };
+
+  // JSON ফাইল ডাউনলোড করো (Browser download — PC/Android/iOS সব জায়গায় কাজ করে)
+  const handleDownloadBackup = () => {
+    setIsBackingUp(true);
+    try {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('bn-BD', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '-');
+      const filename = `MadinaPOS_Backup_${dateStr}_${timeStr}.json`;
+
+      const backupObj = {
+        _madina_backup_version: "v7",
+        _backup_date: now.toISOString(),
+        _backup_date_bn: now.toLocaleString('bn-BD'),
+        _pharmacy_name: pharmacyName,
+        data: buildBackupObject()
+      };
+
+      const blob = new Blob([JSON.stringify(backupObj, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      const nowStr = now.toLocaleString('bn-BD');
+      setLastBackupTime(nowStr);
+      localStorage.setItem('madina_v7_last_backup', nowStr);
+      playSound('save');
+      addToast(t(`✅ Backup downloaded: ${filename}`, `✅ ব্যাকআপ ডাউনলোড হয়েছে: ${filename}`), 'success');
+    } catch (err) {
+      addToast(t("❌ Backup failed! Try again.", "❌ ব্যাকআপ ব্যর্থ হয়েছে!"), 'error');
+    }
+    setIsBackingUp(false);
+  };
+
+  // Firebase এ আলাদা backup node এ push করো
+  const handleFirebaseBackup = async () => {
+    if (!isFirebaseConfigured()) {
+      addToast(t("⚠️ Firebase not configured!", "⚠️ Firebase সেটআপ করা নেই!"), 'error');
+      return;
+    }
+    setIsBackingUp(true);
+    try {
+      const now = new Date();
+      const backupObj = {
+        _backup_date: now.toISOString(),
+        _backup_date_bn: now.toLocaleString('bn-BD'),
+        _pharmacy_name: pharmacyName,
+        data: buildBackupObject()
+      };
+      const backupKey = `backup_${now.toISOString().slice(0,10)}`;
+      const url = `${FIREBASE_CONFIG.databaseURL}/madina_backups/${backupKey}.json?auth=${FIREBASE_CONFIG.apiKey}`;
+      const res = await fetchWithTimeout(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(backupObj),
+      }, 15000);
+      if (res.ok) {
+        const nowStr = now.toLocaleString('bn-BD');
+        setLastBackupTime(nowStr);
+        localStorage.setItem('madina_v7_last_backup', nowStr);
+        playSound('save');
+        addToast(t("☁️ Backup saved to Firebase cloud!", "☁️ Firebase ক্লাউডে ব্যাকআপ সংরক্ষিত!"), 'success');
+      } else {
+        addToast(t("❌ Firebase backup failed!", "❌ Firebase ব্যাকআপ ব্যর্থ!"), 'error');
+      }
+    } catch {
+      addToast(t("❌ No internet or Firebase error!", "❌ ইন্টারনেট নেই বা Firebase সমস্যা!"), 'error');
+    }
+    setIsBackingUp(false);
+  };
+
+  // JSON ফাইল থেকে রিস্টোর করো
+  const handleRestoreFromFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith('.json')) {
+      addToast(t("❌ Only .json backup files accepted!", "❌ শুধু .json ব্যাকআপ ফাইল গ্রহণযোগ্য!"), 'error');
+      return;
+    }
+    const confirmRestore = window.confirm(
+      t("⚠️ This will REPLACE all current data with backup data. Are you sure?",
+        "⚠️ এটি বর্তমান সব তথ্য মুছে ব্যাকআপের তথ্য দিয়ে প্রতিস্থাপন করবে। নিশ্চিত?")
+    );
+    if (!confirmRestore) { e.target.value = ""; return; }
+
+    setIsRestoring(true);
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target?.result as string);
+        if (!parsed._madina_backup_version || !parsed.data) {
+          addToast(t("❌ Invalid backup file!", "❌ ব্যাকআপ ফাইল সঠিক নয়!"), 'error');
+          setIsRestoring(false);
+          return;
+        }
+        // localStorage এ সব key restore করো
+        for (const [key, val] of Object.entries(parsed.data)) {
+          if (typeof val === 'string') {
+            localStorage.setItem(key, val);
+            if (CLOUD_SYNC_KEYS.includes(key)) fbSet(key, val);
+          }
+        }
+        const nowStr = new Date().toLocaleString('bn-BD');
+        setLastBackupTime(nowStr);
+        localStorage.setItem('madina_v7_last_backup', nowStr);
+        playSound('success');
+        addToast(t("✅ Data restored! Reloading...", "✅ ডেটা পুনরুদ্ধার হয়েছে! রিলোড হচ্ছে..."), 'success');
+        setTimeout(() => window.location.reload(), 1500);
+      } catch {
+        addToast(t("❌ Restore failed! File may be corrupted.", "❌ রিস্টোর ব্যর্থ! ফাইলটি নষ্ট হতে পারে।"), 'error');
+      }
+      setIsRestoring(false);
+      e.target.value = "";
+    };
+    reader.readAsText(file);
+  };
+
+  // Auto daily backup reminder — প্রতিদিন একবার remind করবে যদি আজ ব্যাকআপ না হয়
+  useEffect(() => {
+    const checkDailyBackupReminder = () => {
+      const last = localStorage.getItem('madina_v7_last_backup');
+      if (!last) return; // প্রথমবার install এ remind করব না
+      try {
+        const lastDate = new Date(last);
+        const today = new Date();
+        const diffHours = (today.getTime() - lastDate.getTime()) / (1000 * 60 * 60);
+        if (diffHours >= 24) {
+          addToast(
+            t("💾 Reminder: Last backup was over 24 hours ago! Please backup now.",
+              "💾 স্মরণ করিয়ে দিচ্ছি: ২৪ ঘণ্টারও বেশি সময় ব্যাকআপ হয়নি! এখনই ব্যাকআপ করুন।"),
+            'info'
+          );
+        }
+      } catch {}
+    };
+    // লগইন করলে একবার চেক করো
+    if (isLoggedIn) {
+      const timer = setTimeout(checkDailyBackupReminder, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoggedIn]);
 
   // ============================================================
   // COMPUTED VALUES
@@ -3908,6 +4076,82 @@ export default function Home() {
                   </form>
                 )}
               </div>
+
+              {/* Backup & Restore Section */}
+              {checkShouldRenderTabOption("backup_restore") && (
+                <div className={`ccard cc-blue p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-blue-950/50 border-blue-600' : 'bg-blue-50 border-blue-300'}`}>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-blue-500 mb-1 flex items-center gap-2">
+                    💾 {t("Backup & Restore", "ব্যাকআপ ও পুনরুদ্ধার")}
+                  </h3>
+                  <p className={`text-sm mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {t("Keep your data safe across all devices. Download a JSON backup and store it in Google Drive, Email, or any safe location.", "সব ডিভাইসে ডেটা নিরাপদ রাখুন। JSON ব্যাকআপ ডাউনলোড করে Google Drive, Email বা যেকোনো নিরাপদ জায়গায় রাখুন।")}
+                  </p>
+
+                  {/* Last Backup Status */}
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm mb-3 ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-200'}`}>
+                    <span className="text-xl">🕐</span>
+                    <div>
+                      <span className={`font-bold block text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{t("Last Backup:", "শেষ ব্যাকআপ:")}</span>
+                      <span className={`text-sm font-mono ${lastBackupTime ? 'text-emerald-500 font-bold' : 'text-red-400'}`}>
+                        {lastBackupTime || t("⚠️ No backup yet!", "⚠️ এখনো ব্যাকআপ হয়নি!")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Triple Safety Guide */}
+                  <div className={`rounded-lg p-3 mb-3 text-sm ${isDarkMode ? 'bg-emerald-950/40 border border-emerald-700' : 'bg-emerald-50 border border-emerald-200'}`}>
+                    <p className="font-black text-emerald-500 mb-1.5">🛡️ {t("Triple Safety System", "তিন স্তরের নিরাপত্তা")}</p>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2"><span className="text-emerald-500">✅</span><span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{t("Firebase Cloud — auto syncs 24/7", "Firebase Cloud — সবসময় অটো সিঙ্ক")}</span></div>
+                      <div className="flex items-center gap-2"><span className="text-blue-500">✅</span><span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{t("Download JSON → save to Google Drive or Email", "JSON ডাউনলোড → Google Drive বা Email এ রাখুন")}</span></div>
+                      <div className="flex items-center gap-2"><span className="text-purple-500">✅</span><span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{t("Firebase Backup Node — extra cloud snapshot", "Firebase Backup Node — আলাদা ক্লাউড কপি")}</span></div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    {/* Download JSON */}
+                    <button
+                      onClick={handleDownloadBackup}
+                      disabled={isBackingUp}
+                      className="flex items-center gap-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white font-black text-sm px-4 py-2 rounded-xl uppercase tracking-wider shadow transition"
+                    >
+                      {isBackingUp ? '⏳' : '⬇️'} {t("Download Backup", "ব্যাকআপ ডাউনলোড")}
+                    </button>
+
+                    {/* Firebase Backup */}
+                    {isFirebaseConfigured() && (
+                      <button
+                        onClick={handleFirebaseBackup}
+                        disabled={isBackingUp}
+                        className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-black text-sm px-4 py-2 rounded-xl uppercase tracking-wider shadow transition"
+                      >
+                        {isBackingUp ? '⏳' : '☁️'} {t("Cloud Backup", "ক্লাউড ব্যাকআপ")}
+                      </button>
+                    )}
+
+                    {/* Restore */}
+                    <button
+                      onClick={() => restoreFileRef.current?.click()}
+                      disabled={isRestoring}
+                      className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white font-black text-sm px-4 py-2 rounded-xl uppercase tracking-wider shadow transition"
+                    >
+                      {isRestoring ? '⏳' : '⬆️'} {t("Restore from File", "ফাইল থেকে রিস্টোর")}
+                    </button>
+                    <input
+                      ref={restoreFileRef}
+                      type="file"
+                      accept=".json"
+                      onChange={handleRestoreFromFile}
+                      className="hidden"
+                    />
+                  </div>
+
+                  <p className={`text-sm mt-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                    💡 {t("Tip: After downloading, upload to Google Drive or send to your email for safekeeping.", "টিপস: ডাউনলোড করার পর Google Drive এ আপলোড করুন বা নিজের ইমেইলে পাঠান।")}
+                  </p>
+                </div>
+              )}
 
               {/* Danger Zone */}
               {checkShouldRenderTabOption("backup_restore") && (
