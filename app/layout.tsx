@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,7 +13,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// ✅ themeColor must be in viewport export (not metadata) — fixes the warning
 export const viewport: Viewport = {
   themeColor: "#2563eb",
 };
@@ -40,17 +40,15 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         {children}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js');
-                });
-              }
-            `,
-          }}
-        />
+        <Script id="service-worker" strategy="afterInteractive">
+          {`
+            if ('serviceWorker' in navigator) {
+              window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js');
+              });
+            }
+          `}
+        </Script>
       </body>
     </html>
   );

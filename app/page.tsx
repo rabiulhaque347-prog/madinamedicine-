@@ -630,7 +630,10 @@ export default function Home() {
   // ============================================================
   // BACKUP & RESTORE STATES
   // ============================================================
-  const [lastBackupTime, setLastBackupTime] = useState<string>(() => localStorage.getItem('madina_v7_last_backup') || "");
+  const [lastBackupTime, setLastBackupTime] = useState<string>(() => {
+    if (typeof window === 'undefined') return "";
+    return localStorage.getItem('madina_v7_last_backup') || "";
+  });
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const restoreFileRef = useRef<HTMLInputElement>(null);
