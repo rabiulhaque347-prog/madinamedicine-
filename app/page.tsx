@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
 // ============================================================
@@ -206,83 +206,168 @@ const createSound = (type: 'success' | 'click' | 'error' | 'add' | 'login' | 'no
 };
 
 
+// Static data - defined outside component to avoid recreation on every render
+const defaultMedicines = [
+  { id: 1, name: "Napa Extend (500mg)", category: "Tablet", buyPrice: 11, price: 15, stock: 120, expire: "2027-12-01", generic: "Paracetamol", rack: "A-2", supplier: "Beximco Pharmaceuticals Ltd.", lowStockAlert: 10 },
+  { id: 2, name: "Ace Plus", category: "Tablet", buyPrice: 9, price: 12, stock: 4, expire: "2026-09-15", generic: "Paracetamol + Caffeine", rack: "A-2", supplier: "Square Pharmaceuticals Ltd.", lowStockAlert: 10 },
+  { id: 3, name: "Seclo 20mg", category: "Capsule", buyPrice: 5, price: 7, stock: 200, expire: "2025-04-10", generic: "Omeprazole", rack: "B-1", supplier: "Incepta Pharmaceuticals Ltd.", lowStockAlert: 10 },
+  { id: 4, name: "Tusca Syrup", category: "Syrup", buyPrice: 65, price: 85, stock: 45, expire: "2027-01-20", generic: "Dextromethorphan", rack: "C-4", supplier: "Sandoz", lowStockAlert: 10 }
+];
+
+const initialMedicineCompanies = [
+  "Square Pharmaceuticals Ltd.", "Incepta Pharmaceuticals Ltd.", "Beximco Pharmaceuticals Ltd.",
+  "Opsonin Pharma Ltd.", "Renata Limited", "The ACME Laboratories Ltd.",
+  "Healthcare Pharmaceuticals Ltd.", "Aristopharma Ltd.", "Eskayef Pharmaceuticals Ltd. (SK+F)",
+  "Popular Pharmaceuticals Ltd.", "Radiant Pharmaceuticals Ltd.", "Beacon Pharmaceuticals Ltd.",
+  "Ibn Sina Pharmaceutical Industry Ltd.", "Drug International Ltd.", "General Pharmaceuticals Ltd.",
+  "Ziska Pharmaceuticals Ltd.", "Nuvista Pharma Limited", "Delta Pharma Limited",
+  "Pacific Pharmaceuticals Ltd.", "Orion Pharma Ltd.", "Globe Pharmaceuticals Ltd.",
+  "Saniee Pharma", "Astra Biopharmaceuticals Ltd.", "White Horse Pharmaceuticals",
+  "Asiatic Laboratories Ltd.", "JMI Syringes & Medical Devices Ltd.", "Sharif Pharmaceuticals Ltd.",
+  "Somatec Pharmaceuticals Ltd.", "Techno Drugs Ltd.", "Zenith Pharmaceuticals Ltd.",
+  "Navana Pharmaceuticals Ltd.", "Biopharma Ltd.", "Nipro JMI Pharma Ltd.",
+  "Medimet Pharmaceuticals Ltd.", "Supreme Pharmaceuticals Ltd.", "Alco Pharma Ltd.",
+  "Amico Laboratories Ltd.", "Veritas Pharmaceuticals Ltd.", "Team Pharmaceuticals Ltd.",
+  "Euro Pharma Ltd.", "Avenz Pharma", "Ad-din Pharmaceuticals Ltd.", "Al-Madina Pharma",
+  "Ambee Pharmaceuticals Ltd.", "Apollo Pharmaceutical", "Biochem Laboratories Ltd.",
+  "Central Pharmaceuticals Ltd.", "Doctor Tims Pharma", "Eden Pharmaceuticals",
+  "G A Company", "Gaco Pharmaceuticals", "Hallmark Pharmaceuticals",
+  "Hudson Pharmaceuticals Ltd.", "Kemiko Pharmaceuticals Ltd.", "Libra Pharmaceutics Ltd.",
+  "Millennium Pharmaceuticals Ltd.", "Modern Pharmaceuticals Ltd.", "National Laboratories Ltd.",
+  "Nipa Pharmaceuticals Ltd.", "Novartis Bangladesh Ltd.", "One Pharma Ltd.",
+  "Organic Health Care", "Pharma Asia Ltd.", "Pharmadesh Chemical Industries",
+  "Premier Pharmaceuticals", "Proteon Pharmaceuticals", "Rephco Pharmaceuticals Ltd.",
+  "Rangs Pharmaceuticals Ltd.", "Salton Pharmaceuticals", "Silva Pharmaceuticals Ltd.",
+  "Skylab Pharmaceutical Ltd.", "Standard Laboratories Ltd.", "Sunman Pharma",
+  "Unimed Unihealth Pharmaceuticals", "Ziska Clinical Data Corp"
+];
+
+const initialMedicineNamesList = [
+  "Napa 500mg", "Napa Extend", "Ace 500mg", "Ace Plus", "Fast 500mg", "Reset 500mg",
+  "Seclo 20mg", "Losec 20mg", "Sompraz 20mg", "Sompraz 40mg", "Sergel 20mg", "Sergel 40mg",
+  "Finix 20mg", "Proceptin 20mg", "Maxpro 20mg", "Maxpro 40mg", "Alatrol 10mg", "Histacin",
+  "Fexo 120mg", "Fexo 180mg", "Telfast 120mg", "Provair 10mg", "Monas 10mg", "Avelox 400mg",
+  "Zimax 500mg", "Azithrocin 500mg", "Tridosil 500mg", "Fixit 200mg", "Ciprocin 500mg",
+  "Xelbio 500mg", "Pantobex 20mg", "Pantonix 20mg", "Pantonix 40mg",
+  "Bizoran 5/20", "Camlosart 5/20", "Angilock 50mg", "Osartil 50mg", "Corgard 40mg",
+  "Bizoran 5/40", "Cardizen 30mg", "Amlopin 5mg", "Moduretic", "Lasix 40mg", "Fruselac",
+  "Atova 10mg", "Torvax 10mg", "Lipiget 10mg", "Rovista 10mg", "Rosuva 10mg", "Ezetimibe",
+  "Metfo 500mg", "Comet 500mg", "Secrin 2mg", "Amaryl 2mg", "Glimus 2mg", "Galvus Met 50/500",
+  "Tusca Syrup", "Adryl Syrup", "Corex Syrup", "Peditrin Syrup", "Ambrolit Syrup", "Brozedex Syrup",
+  "Filwel Silver", "Bextram Gold", "Revital", "Square Vitamin C", "Ceevit", "Zincil Syrup",
+  "Entacyd", "Avomine", "Emistat 8mg", "Ondemet 8mg", "Joytrip", "Motigut 10mg", "Omidon 10mg",
+  "Fenadin 120mg", "Tufnil 200mg", "Napa Extra", "Eoril 20mg", "Gaviscon Suspension", "Pepto-Bismol",
+  "Amocil 250mg", "Amoxil 500mg", "Moxilin Capsule", "Fimoxyl 500mg", "Aritro 500mg", "Zithrox 500mg",
+  "Cef-3 Capsule", "Cef-3 Syrup", "Triocim 1gm", "Xorimax 500mg", "Zinnat 500mg", "Cefurox 500mg",
+  "Fluclox 500mg", "Phylopen 500mg", "Anclog 75mg", "Plagrin 75mg", "Ecosprin 75mg", "Atrin 75mg",
+  "Clobit 75mg", "Rosuvas 10mg", "Lipirex 10mg", "Statix 10mg", "Zocor 10mg", "Pravachol 20mg",
+  "Secrin 1mg", "Diapro 80mg", "Combid 2/500", "Janumet 50/500", "Trajenta 5mg", "Jardiance 10mg",
+  "Avandia 4mg", "Actos 15mg", "Duet 2mg", "Glimer 2mg", "Glucophage 800mg", "Glibenclamide 5mg",
+  "Xenical 120mg", "Lasix Injection", "Dytor 10mg", "Aldactone 25mg",
+  "Concor 5mg", "Biselect 5mg", "Cardon 6.25mg", "Carvida 6.25mg", "Tenormin 50mg", "Betaloc 50mg",
+  "Inderal 10mg", "Sorbitrate 5mg", "Monocard 20mg", "Nitroglycerin Spray", "Nitrocard SR", "Adalat 20mg",
+  "Norvasc 5mg", "Camlodin 5mg", "Zanidip 10mg", "Nimotop Tablet", "Serc 16mg", "Betahistine Incepta",
+  "Stugeron 25mg", "Cinaron 25mg", "Vertigon 25mg", "Aricept 5mg", "Memantine Renata", "Ebixa 10mg",
+  "Neubac", "Maxbac", "Targocid", "Vancomycin", "Linezolid Incepta", "Zyvox 600mg", "Meropenem 1gm",
+  "Inem 1gm", "Tienam 500mg", "Zosyn Injection", "Tazocin 4.5gm", "Sulbin 1.5gm", "Unasyn 375mg"
+];
+
+// All medicine categories
+const allCategories = [
+  "Tablet", "Capsule", "Syrup", "Injection", "Cream", "Ointment", "Lotion",
+  "Solution", "Shampoo", "Inhaler", "Refill", "Toothpaste", "Toothbrush",
+  "Diaper", "OTC", "Pad", "Powder", "Suspension", "Tissue", "Water",
+  "Juice", "Belt", "Ball", "Suppository", "Chocolate", "Pack", "Piece", "Box"
+];
+
+// Theme CSS variable injection (static - defined outside component)
+const themeStyles: Record<string, React.CSSProperties> = {
+  light: {},
+  dark: {},
+  ocean: {
+    '--theme-bg': '#0a1628',
+    '--theme-bg2': '#0d2040',
+    '--theme-card': '#0f2952',
+    '--theme-border': '#1e3a6e',
+    '--theme-text': '#b8d4f8',
+    '--theme-accent': '#38bdf8',
+    '--theme-accent2': '#0284c7',
+  } as React.CSSProperties,
+  forest: {
+    '--theme-bg': '#0a1a0f',
+    '--theme-bg2': '#0d2318',
+    '--theme-card': '#0f2d1e',
+    '--theme-border': '#1e4d33',
+    '--theme-text': '#a7f3c0',
+    '--theme-accent': '#34d399',
+    '--theme-accent2': '#059669',
+  } as React.CSSProperties,
+  royal: {
+    '--theme-bg': '#160a28',
+    '--theme-bg2': '#1e0d40',
+    '--theme-card': '#270f52',
+    '--theme-border': '#3d1a8a',
+    '--theme-text': '#d4b8f8',
+    '--theme-accent': '#a78bfa',
+    '--theme-accent2': '#7c3aed',
+  } as React.CSSProperties,
+  sunset: {
+    '--theme-bg': '#1a0a05',
+    '--theme-bg2': '#2a1005',
+    '--theme-card': '#3a1508',
+    '--theme-border': '#7c2d12',
+    '--theme-text': '#fcd5b0',
+    '--theme-accent': '#fb923c',
+    '--theme-accent2': '#ea580c',
+  } as React.CSSProperties,
+  cherry: {
+    '--theme-bg': '#1a0510',
+    '--theme-bg2': '#270a18',
+    '--theme-card': '#380d22',
+    '--theme-border': '#7c1d45',
+    '--theme-text': '#fdb8d4',
+    '--theme-accent': '#f472b6',
+    '--theme-accent2': '#db2777',
+  } as React.CSSProperties,
+  midnight: {
+    '--theme-bg': '#050508',
+    '--theme-bg2': '#0a0a12',
+    '--theme-card': '#0f0f1e',
+    '--theme-border': '#1a1a3a',
+    '--theme-text': '#c8c8e8',
+    '--theme-accent': '#818cf8',
+    '--theme-accent2': '#4f46e5',
+  } as React.CSSProperties,
+  nordic: {
+    '--theme-bg': '#1a1f2e',
+    '--theme-bg2': '#1e2535',
+    '--theme-card': '#252d42',
+    '--theme-border': '#2e3a56',
+    '--theme-text': '#cdd6f4',
+    '--theme-accent': '#89dceb',
+    '--theme-accent2': '#74c7ec',
+  } as React.CSSProperties,
+  lava: {
+    '--theme-bg': '#110805',
+    '--theme-bg2': '#1c0e07',
+    '--theme-card': '#28130a',
+    '--theme-border': '#6b1e09',
+    '--theme-text': '#ffd5b0',
+    '--theme-accent': '#f97316',
+    '--theme-accent2': '#c2410c',
+  } as React.CSSProperties,
+  glacier: {
+    '--theme-bg': '#f0f6ff',
+    '--theme-bg2': '#e4eeff',
+    '--theme-card': '#ffffff',
+    '--theme-border': '#c7d9f5',
+    '--theme-text': '#1e3a5f',
+    '--theme-accent': '#2563eb',
+    '--theme-accent2': '#1d4ed8',
+  } as React.CSSProperties,
+}
+
 export default function Home() {
-
-  // ============================================================
-  // DEFAULT DATA
-  // ============================================================
-  const defaultMedicines = [
-    { id: 1, name: "Napa Extend (500mg)", category: "Tablet", buyPrice: 11, price: 15, stock: 120, expire: "2027-12-01", generic: "Paracetamol", rack: "A-2", supplier: "Beximco Pharmaceuticals Ltd.", lowStockAlert: 10 },
-    { id: 2, name: "Ace Plus", category: "Tablet", buyPrice: 9, price: 12, stock: 4, expire: "2026-09-15", generic: "Paracetamol + Caffeine", rack: "A-2", supplier: "Square Pharmaceuticals Ltd.", lowStockAlert: 10 },
-    { id: 3, name: "Seclo 20mg", category: "Capsule", buyPrice: 5, price: 7, stock: 200, expire: "2025-04-10", generic: "Omeprazole", rack: "B-1", supplier: "Incepta Pharmaceuticals Ltd.", lowStockAlert: 10 },
-    { id: 4, name: "Tusca Syrup", category: "Syrup", buyPrice: 65, price: 85, stock: 45, expire: "2027-01-20", generic: "Dextromethorphan", rack: "C-4", supplier: "Sandoz", lowStockAlert: 10 }
-  ];
-
-  const initialMedicineCompanies = [
-    "Square Pharmaceuticals Ltd.", "Incepta Pharmaceuticals Ltd.", "Beximco Pharmaceuticals Ltd.",
-    "Opsonin Pharma Ltd.", "Renata Limited", "The ACME Laboratories Ltd.",
-    "Healthcare Pharmaceuticals Ltd.", "Aristopharma Ltd.", "Eskayef Pharmaceuticals Ltd. (SK+F)",
-    "Popular Pharmaceuticals Ltd.", "Radiant Pharmaceuticals Ltd.", "Beacon Pharmaceuticals Ltd.",
-    "Ibn Sina Pharmaceutical Industry Ltd.", "Drug International Ltd.", "General Pharmaceuticals Ltd.",
-    "Ziska Pharmaceuticals Ltd.", "Nuvista Pharma Limited", "Delta Pharma Limited",
-    "Pacific Pharmaceuticals Ltd.", "Orion Pharma Ltd.", "Globe Pharmaceuticals Ltd.",
-    "Saniee Pharma", "Astra Biopharmaceuticals Ltd.", "White Horse Pharmaceuticals",
-    "Asiatic Laboratories Ltd.", "JMI Syringes & Medical Devices Ltd.", "Sharif Pharmaceuticals Ltd.",
-    "Somatec Pharmaceuticals Ltd.", "Techno Drugs Ltd.", "Zenith Pharmaceuticals Ltd.",
-    "Navana Pharmaceuticals Ltd.", "Biopharma Ltd.", "Nipro JMI Pharma Ltd.",
-    "Medimet Pharmaceuticals Ltd.", "Supreme Pharmaceuticals Ltd.", "Alco Pharma Ltd.",
-    "Amico Laboratories Ltd.", "Veritas Pharmaceuticals Ltd.", "Team Pharmaceuticals Ltd.",
-    "Euro Pharma Ltd.", "Avenz Pharma", "Ad-din Pharmaceuticals Ltd.", "Al-Madina Pharma",
-    "Ambee Pharmaceuticals Ltd.", "Apollo Pharmaceutical", "Biochem Laboratories Ltd.",
-    "Central Pharmaceuticals Ltd.", "Doctor Tims Pharma", "Eden Pharmaceuticals",
-    "G A Company", "Gaco Pharmaceuticals", "Hallmark Pharmaceuticals",
-    "Hudson Pharmaceuticals Ltd.", "Kemiko Pharmaceuticals Ltd.", "Libra Pharmaceutics Ltd.",
-    "Millennium Pharmaceuticals Ltd.", "Modern Pharmaceuticals Ltd.", "National Laboratories Ltd.",
-    "Nipa Pharmaceuticals Ltd.", "Novartis Bangladesh Ltd.", "One Pharma Ltd.",
-    "Organic Health Care", "Pharma Asia Ltd.", "Pharmadesh Chemical Industries",
-    "Premier Pharmaceuticals", "Proteon Pharmaceuticals", "Rephco Pharmaceuticals Ltd.",
-    "Rangs Pharmaceuticals Ltd.", "Salton Pharmaceuticals", "Silva Pharmaceuticals Ltd.",
-    "Skylab Pharmaceutical Ltd.", "Standard Laboratories Ltd.", "Sunman Pharma",
-    "Unimed Unihealth Pharmaceuticals", "Ziska Clinical Data Corp"
-  ];
-
-  const initialMedicineNamesList = [
-    "Napa 500mg", "Napa Extend", "Ace 500mg", "Ace Plus", "Fast 500mg", "Reset 500mg",
-    "Seclo 20mg", "Losec 20mg", "Sompraz 20mg", "Sompraz 40mg", "Sergel 20mg", "Sergel 40mg",
-    "Finix 20mg", "Proceptin 20mg", "Maxpro 20mg", "Maxpro 40mg", "Alatrol 10mg", "Histacin",
-    "Fexo 120mg", "Fexo 180mg", "Telfast 120mg", "Provair 10mg", "Monas 10mg", "Avelox 400mg",
-    "Zimax 500mg", "Azithrocin 500mg", "Tridosil 500mg", "Fixit 200mg", "Ciprocin 500mg",
-    "Xelbio 500mg", "Pantobex 20mg", "Pantonix 20mg", "Pantonix 40mg",
-    "Bizoran 5/20", "Camlosart 5/20", "Angilock 50mg", "Osartil 50mg", "Corgard 40mg",
-    "Bizoran 5/40", "Cardizen 30mg", "Amlopin 5mg", "Moduretic", "Lasix 40mg", "Fruselac",
-    "Atova 10mg", "Torvax 10mg", "Lipiget 10mg", "Rovista 10mg", "Rosuva 10mg", "Ezetimibe",
-    "Metfo 500mg", "Comet 500mg", "Secrin 2mg", "Amaryl 2mg", "Glimus 2mg", "Galvus Met 50/500",
-    "Tusca Syrup", "Adryl Syrup", "Corex Syrup", "Peditrin Syrup", "Ambrolit Syrup", "Brozedex Syrup",
-    "Filwel Silver", "Bextram Gold", "Revital", "Square Vitamin C", "Ceevit", "Zincil Syrup",
-    "Entacyd", "Avomine", "Emistat 8mg", "Ondemet 8mg", "Joytrip", "Motigut 10mg", "Omidon 10mg",
-    "Fenadin 120mg", "Tufnil 200mg", "Napa Extra", "Eoril 20mg", "Gaviscon Suspension", "Pepto-Bismol",
-    "Amocil 250mg", "Amoxil 500mg", "Moxilin Capsule", "Fimoxyl 500mg", "Aritro 500mg", "Zithrox 500mg",
-    "Cef-3 Capsule", "Cef-3 Syrup", "Triocim 1gm", "Xorimax 500mg", "Zinnat 500mg", "Cefurox 500mg",
-    "Fluclox 500mg", "Phylopen 500mg", "Anclog 75mg", "Plagrin 75mg", "Ecosprin 75mg", "Atrin 75mg",
-    "Clobit 75mg", "Rosuvas 10mg", "Lipirex 10mg", "Statix 10mg", "Zocor 10mg", "Pravachol 20mg",
-    "Secrin 1mg", "Diapro 80mg", "Combid 2/500", "Janumet 50/500", "Trajenta 5mg", "Jardiance 10mg",
-    "Avandia 4mg", "Actos 15mg", "Duet 2mg", "Glimer 2mg", "Glucophage 800mg", "Glibenclamide 5mg",
-    "Xenical 120mg", "Lasix Injection", "Dytor 10mg", "Aldactone 25mg",
-    "Concor 5mg", "Biselect 5mg", "Cardon 6.25mg", "Carvida 6.25mg", "Tenormin 50mg", "Betaloc 50mg",
-    "Inderal 10mg", "Sorbitrate 5mg", "Monocard 20mg", "Nitroglycerin Spray", "Nitrocard SR", "Adalat 20mg",
-    "Norvasc 5mg", "Camlodin 5mg", "Zanidip 10mg", "Nimotop Tablet", "Serc 16mg", "Betahistine Incepta",
-    "Stugeron 25mg", "Cinaron 25mg", "Vertigon 25mg", "Aricept 5mg", "Memantine Renata", "Ebixa 10mg",
-    "Neubac", "Maxbac", "Targocid", "Vancomycin", "Linezolid Incepta", "Zyvox 600mg", "Meropenem 1gm",
-    "Inem 1gm", "Tienam 500mg", "Zosyn Injection", "Tazocin 4.5gm", "Sulbin 1.5gm", "Unasyn 375mg"
-  ];
-
-  // All medicine categories
-  const allCategories = [
-    "Tablet", "Capsule", "Syrup", "Injection", "Cream", "Ointment", "Lotion",
-    "Solution", "Shampoo", "Inhaler", "Refill", "Toothpaste", "Toothbrush",
-    "Diaper", "OTC", "Pad", "Powder", "Suspension", "Tissue", "Water",
-    "Juice", "Belt", "Ball", "Suppository", "Chocolate", "Pack", "Piece", "Box"
-  ];
 
   // ============================================================
   // LOGIN STATE
@@ -320,7 +405,7 @@ export default function Home() {
   // ============================================================
   const [language, setLanguage] = useState<"en" | "bn">("en");
 
-  const t = (en: string, bn: string) => language === "bn" ? bn : en;
+  const t = useCallback((en: string, bn: string) => language === "bn" ? bn : en, [language]);
 
   // ============================================================
   // ROLE & PERMISSIONS
@@ -372,6 +457,15 @@ export default function Home() {
     yearly_purchase_view: true,
     yearly_profit_view: true,
     yearly_due_view: true,
+    // New permission keys for full staff control
+    daily_sale_view: true,
+    monthly_sale_view: true,
+    daily_due_view: true,
+    monthly_due_view: true,
+    monthly_due_collection_view: true,
+    daily_due_collection_view: true,
+    monthly_discount_view: true,
+    yearly_discount_view: true,
   });
 
   // ============================================================
@@ -439,92 +533,7 @@ export default function Home() {
   // isDarkMode is derived: true for all non-light themes' dark-style backgrounds
   const isDarkMode = themeMode !== "light";
 
-  // Theme CSS variable injection
-  const themeStyles: Record<string, React.CSSProperties> = {
-    light: {},
-    dark: {},
-    ocean: {
-      '--theme-bg': '#0a1628',
-      '--theme-bg2': '#0d2040',
-      '--theme-card': '#0f2952',
-      '--theme-border': '#1e3a6e',
-      '--theme-text': '#b8d4f8',
-      '--theme-accent': '#38bdf8',
-      '--theme-accent2': '#0284c7',
-    } as React.CSSProperties,
-    forest: {
-      '--theme-bg': '#0a1a0f',
-      '--theme-bg2': '#0d2318',
-      '--theme-card': '#0f2d1e',
-      '--theme-border': '#1e4d33',
-      '--theme-text': '#a7f3c0',
-      '--theme-accent': '#34d399',
-      '--theme-accent2': '#059669',
-    } as React.CSSProperties,
-    royal: {
-      '--theme-bg': '#160a28',
-      '--theme-bg2': '#1e0d40',
-      '--theme-card': '#270f52',
-      '--theme-border': '#3d1a8a',
-      '--theme-text': '#d4b8f8',
-      '--theme-accent': '#a78bfa',
-      '--theme-accent2': '#7c3aed',
-    } as React.CSSProperties,
-    sunset: {
-      '--theme-bg': '#1a0a05',
-      '--theme-bg2': '#2a1005',
-      '--theme-card': '#3a1508',
-      '--theme-border': '#7c2d12',
-      '--theme-text': '#fcd5b0',
-      '--theme-accent': '#fb923c',
-      '--theme-accent2': '#ea580c',
-    } as React.CSSProperties,
-    cherry: {
-      '--theme-bg': '#1a0510',
-      '--theme-bg2': '#270a18',
-      '--theme-card': '#380d22',
-      '--theme-border': '#7c1d45',
-      '--theme-text': '#fdb8d4',
-      '--theme-accent': '#f472b6',
-      '--theme-accent2': '#db2777',
-    } as React.CSSProperties,
-    midnight: {
-      '--theme-bg': '#050508',
-      '--theme-bg2': '#0a0a12',
-      '--theme-card': '#0f0f1e',
-      '--theme-border': '#1a1a3a',
-      '--theme-text': '#c8c8e8',
-      '--theme-accent': '#818cf8',
-      '--theme-accent2': '#4f46e5',
-    } as React.CSSProperties,
-    nordic: {
-      '--theme-bg': '#1a1f2e',
-      '--theme-bg2': '#1e2535',
-      '--theme-card': '#252d42',
-      '--theme-border': '#2e3a56',
-      '--theme-text': '#cdd6f4',
-      '--theme-accent': '#89dceb',
-      '--theme-accent2': '#74c7ec',
-    } as React.CSSProperties,
-    lava: {
-      '--theme-bg': '#110805',
-      '--theme-bg2': '#1c0e07',
-      '--theme-card': '#28130a',
-      '--theme-border': '#6b1e09',
-      '--theme-text': '#ffd5b0',
-      '--theme-accent': '#f97316',
-      '--theme-accent2': '#c2410c',
-    } as React.CSSProperties,
-    glacier: {
-      '--theme-bg': '#f0f6ff',
-      '--theme-bg2': '#e4eeff',
-      '--theme-card': '#ffffff',
-      '--theme-border': '#c7d9f5',
-      '--theme-text': '#1e3a5f',
-      '--theme-accent': '#2563eb',
-      '--theme-accent2': '#1d4ed8',
-    } as React.CSSProperties,
-  };
+;
 
   const themeClass = (lightCls: string, darkCls: string) => {
     if (themeMode === 'light') return lightCls;
@@ -631,10 +640,7 @@ export default function Home() {
   // ============================================================
   // BACKUP & RESTORE STATES
   // ============================================================
-  const [lastBackupTime, setLastBackupTime] = useState<string>(() => {
-    if (typeof window === 'undefined') return "";
-    return localStorage.getItem('madina_v7_last_backup') || "";
-  });
+  const [lastBackupTime, setLastBackupTime] = useState<string>("");
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const restoreFileRef = useRef<HTMLInputElement>(null);
@@ -662,6 +668,7 @@ export default function Home() {
   // ============================================================
   useEffect(() => {
     setIsMounted(true);
+    setLastBackupTime(localStorage.getItem('madina_v7_last_backup') || "");
 
     // Session is always device-local (login expires at midnight)
     const savedSession = localStorage.getItem('madina_v7_session');
@@ -1391,7 +1398,7 @@ export default function Home() {
     setShowConfirmModal(true);
   };
 
-  const currentSubTotal = cart.reduce((sum, item) => sum + (item.price * (parseInt(item.qty) || 0)), 0);
+  const currentSubTotal = useMemo(() => cart.reduce((sum, item) => sum + (item.price * (parseInt(item.qty) || 0)), 0), [cart]);
   const calculatedVatAmount = (currentSubTotal * (parseFloat(vatPercentage) || 0)) / 100;
   const activeDiscountAmount = discountType === "PERCENT"
     ? (currentSubTotal * (parseFloat(discountValue) || 0)) / 100
@@ -1872,32 +1879,32 @@ export default function Home() {
   }, [isLoggedIn]);
 
   // ============================================================
-  // COMPUTED VALUES
+  // COMPUTED VALUES — wrapped in useMemo to prevent recalculation on every render
   // ============================================================
-  const grandTotalPurchaseCost = purchaseList.reduce((sum, item) => sum + (item.totalCost || 0), 0);
-  const grandTotalPurchaseDue = purchaseList.reduce((sum, item) => sum + (item.due || 0), 0);
-  const bulkCartTotalCost = purchaseCart.reduce((sum, item) => sum + item.totalCost, 0);
-  const bulkCartCalculatedDue = Math.max(0, bulkCartTotalCost - (parseFloat(pAmountPaid) || 0));
+  const grandTotalPurchaseCost = useMemo(() => purchaseList.reduce((sum, item) => sum + (item.totalCost || 0), 0), [purchaseList]);
+  const grandTotalPurchaseDue = useMemo(() => purchaseList.reduce((sum, item) => sum + (item.due || 0), 0), [purchaseList]);
+  const bulkCartTotalCost = useMemo(() => purchaseCart.reduce((sum, item) => sum + item.totalCost, 0), [purchaseCart]);
+  const bulkCartCalculatedDue = useMemo(() => Math.max(0, bulkCartTotalCost - (parseFloat(pAmountPaid) || 0)), [bulkCartTotalCost, pAmountPaid]);
 
-  const filteredMedicines = medicines.filter(med => {
+  const filteredMedicines = useMemo(() => medicines.filter(med => {
     const matchesSearch = med.name.toLowerCase().includes(searchTerm.toLowerCase()) || (med.generic || "").toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === "All" || med.category === selectedCategory;
     return matchesSearch && matchesCategory;
-  });
+  }), [medicines, searchTerm, selectedCategory]);
 
-  const filteredInvoices = invoices.filter(inv => {
+  const filteredInvoices = useMemo(() => invoices.filter(inv => {
     const query = searchInvoiceQuery.toLowerCase();
     return inv.invoiceId.toLowerCase().includes(query) || inv.customer.toLowerCase().includes(query) || inv.phone.toLowerCase().includes(query);
-  });
+  }), [invoices, searchInvoiceQuery]);
 
-  const activeThreshold = parseInt(lowStockThreshold) || 10;
-  const lowStockMedicines = medicines.filter(m => m.stock <= (m.lowStockAlert || activeThreshold));
-  const expiredMedicines = medicines.filter(m => new Date(m.expire) < new Date());
+  const activeThreshold = useMemo(() => parseInt(lowStockThreshold) || 10, [lowStockThreshold]);
+  const lowStockMedicines = useMemo(() => medicines.filter(m => m.stock <= (m.lowStockAlert || activeThreshold)), [medicines, activeThreshold]);
+  const expiredMedicines = useMemo(() => medicines.filter(m => new Date(m.expire) < new Date()), [medicines]);
 
-  const countStockByCategory = (cat: string) => medicines.filter(m => m.category === cat).reduce((sum, item) => sum + item.stock, 0);
-  const totalStockValue = medicines.reduce((sum, m) => sum + (m.buyPrice * m.stock), 0);
-  const totalStockRetailValue = medicines.reduce((sum, m) => sum + (m.price * m.stock), 0);
-  const totalDueFromCustomers = dueList.reduce((sum, d) => sum + d.totalDue, 0);
+  const countStockByCategory = useCallback((cat: string) => medicines.filter(m => m.category === cat).reduce((sum, item) => sum + item.stock, 0), [medicines]);
+  const totalStockValue = useMemo(() => medicines.reduce((sum, m) => sum + (m.buyPrice * m.stock), 0), [medicines]);
+  const totalStockRetailValue = useMemo(() => medicines.reduce((sum, m) => sum + (m.price * m.stock), 0), [medicines]);
+  const totalDueFromCustomers = useMemo(() => dueList.reduce((sum, d) => sum + d.totalDue, 0), [dueList]);
 
   const triggerPrintReceipt = () => { playSound('print'); window.print(); };
 
@@ -1921,74 +1928,101 @@ export default function Home() {
   };
 
   // ============================================================
-  // ANALYTICS — todayKey ensures daily stats recalculate at midnight
+  // ANALYTICS — useMemo ensures recalculation only when data/date changes
   // ============================================================
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const currentEngineDate = new Date(todayKey); // re-evaluated when todayKey changes at midnight
-  const currentEngineDayNum = currentEngineDate.getDate();
-  const currentEngineMonthNum = currentEngineDate.getMonth();
-  const currentEngineYearNum = currentEngineDate.getFullYear();
+  const analyticsData = useMemo(() => {
+    const currentEngineDate = new Date(todayKey);
+    const currentEngineDayNum = currentEngineDate.getDate();
+    const currentEngineMonthNum = currentEngineDate.getMonth();
+    const currentEngineYearNum = currentEngineDate.getFullYear();
 
-  let computedDailyPurchaseAmount = 0;
-  let computedMonthlyPurchaseAmount = 0;
-  let computedYearlyPurchaseAmount = 0;
-  purchaseList.forEach(pLog => {
-    const pLogDate = parseCustomDateString(pLog.dateString);
-    if (pLogDate.getFullYear() === currentEngineYearNum) {
-      computedYearlyPurchaseAmount += (pLog.totalCost || 0);
-      if (pLogDate.getMonth() === currentEngineMonthNum) {
-        computedMonthlyPurchaseAmount += (pLog.totalCost || 0);
-        if (pLogDate.getDate() === currentEngineDayNum) computedDailyPurchaseAmount += (pLog.totalCost || 0);
-      }
-    }
-  });
-
-  let computedDailySalesAmount = 0;
-  let computedMonthlySalesAmount = 0;
-  let computedYearlySalesAmount = 0;
-  let computedDailyProfitAmount = 0;
-  let computedMonthlyProfitAmount = 0;
-  let computedYearlyProfitAmount = 0;
-  let computedDailyDue = 0;
-  let computedMonthlyDue = 0;
-  let computedYearlyDue = 0;
-  let computedDailyBkash = 0;
-  let computedMonthlyBkash = 0;
-  let computedDailyDueCollection = 0;
-  let computedMonthlyDueCollection = 0;
-
-  invoices.forEach(invLog => {
-    const invLogDate = parseCustomDateString(invLog.dateString);
-    if (invLogDate.getFullYear() === currentEngineYearNum) {
-      const fullBill = invLog.finalBill;
-      const paidAmt = fullBill - (invLog.due || 0);
-      computedYearlySalesAmount += fullBill;
-      computedYearlyProfitAmount += (invLog.profit || 0);
-      computedYearlyDue += (invLog.due || 0);
-      if (invLogDate.getMonth() === currentEngineMonthNum) {
-        computedMonthlySalesAmount += fullBill;
-        computedMonthlyProfitAmount += (invLog.profit || 0);
-        computedMonthlyDue += (invLog.due || 0);
-        if (invLog.paymentMethod === "bKash/Nagad") computedMonthlyBkash += paidAmt;
-        if (invLogDate.getDate() === currentEngineDayNum) {
-          computedDailySalesAmount += fullBill;
-          computedDailyProfitAmount += (invLog.profit || 0);
-          computedDailyDue += (invLog.due || 0);
-          if (invLog.paymentMethod === "bKash/Nagad") computedDailyBkash += paidAmt;
+    let computedDailyPurchaseAmount = 0;
+    let computedMonthlyPurchaseAmount = 0;
+    let computedYearlyPurchaseAmount = 0;
+    purchaseList.forEach(pLog => {
+      const pLogDate = parseCustomDateString(pLog.dateString);
+      if (pLogDate.getFullYear() === currentEngineYearNum) {
+        computedYearlyPurchaseAmount += (pLog.totalCost || 0);
+        if (pLogDate.getMonth() === currentEngineMonthNum) {
+          computedMonthlyPurchaseAmount += (pLog.totalCost || 0);
+          if (pLogDate.getDate() === currentEngineDayNum) computedDailyPurchaseAmount += (pLog.totalCost || 0);
         }
       }
-    }
-  });
+    });
 
-  dueCollectionLog.forEach(cLog => {
-    const cDate = new Date(cLog.date);
-    if (cDate.getFullYear() === currentEngineYearNum && cDate.getMonth() === currentEngineMonthNum) {
-      computedMonthlyDueCollection += (cLog.amount || 0);
-      if (cDate.getDate() === currentEngineDayNum) {
-        computedDailyDueCollection += (cLog.amount || 0);
+    let computedDailySalesAmount = 0;
+    let computedMonthlySalesAmount = 0;
+    let computedYearlySalesAmount = 0;
+    let computedDailyProfitAmount = 0;
+    let computedMonthlyProfitAmount = 0;
+    let computedYearlyProfitAmount = 0;
+    let computedDailyDue = 0;
+    let computedMonthlyDue = 0;
+    let computedYearlyDue = 0;
+    let computedDailyBkash = 0;
+    let computedMonthlyBkash = 0;
+    let computedDailyDueCollection = 0;
+    let computedMonthlyDueCollection = 0;
+    let computedDailyDiscount = 0;
+    let computedMonthlyDiscount = 0;
+    let computedYearlyDiscount = 0;
+
+    invoices.forEach(invLog => {
+      const invLogDate = parseCustomDateString(invLog.dateString);
+      if (invLogDate.getFullYear() === currentEngineYearNum) {
+        const fullBill = invLog.finalBill;
+        const paidAmt = fullBill - (invLog.due || 0);
+        computedYearlySalesAmount += fullBill;
+        computedYearlyProfitAmount += (invLog.profit || 0);
+        computedYearlyDue += (invLog.due || 0);
+        computedYearlyDiscount += (invLog.discount || 0);
+        if (invLogDate.getMonth() === currentEngineMonthNum) {
+          computedMonthlySalesAmount += fullBill;
+          computedMonthlyProfitAmount += (invLog.profit || 0);
+          computedMonthlyDue += (invLog.due || 0);
+          computedMonthlyDiscount += (invLog.discount || 0);
+          if (invLog.paymentMethod === "bKash/Nagad") computedMonthlyBkash += paidAmt;
+          if (invLogDate.getDate() === currentEngineDayNum) {
+            computedDailySalesAmount += fullBill;
+            computedDailyProfitAmount += (invLog.profit || 0);
+            computedDailyDue += (invLog.due || 0);
+            computedDailyDiscount += (invLog.discount || 0);
+            if (invLog.paymentMethod === "bKash/Nagad") computedDailyBkash += paidAmt;
+          }
+        }
       }
-    }
-  });
+    });
+
+    dueCollectionLog.forEach(cLog => {
+      const cDate = new Date(cLog.date);
+      if (cDate.getFullYear() === currentEngineYearNum && cDate.getMonth() === currentEngineMonthNum) {
+        computedMonthlyDueCollection += (cLog.amount || 0);
+        if (cDate.getDate() === currentEngineDayNum) {
+          computedDailyDueCollection += (cLog.amount || 0);
+        }
+      }
+    });
+
+    return {
+      computedDailyPurchaseAmount, computedMonthlyPurchaseAmount, computedYearlyPurchaseAmount,
+      computedDailySalesAmount, computedMonthlySalesAmount, computedYearlySalesAmount,
+      computedDailyProfitAmount, computedMonthlyProfitAmount, computedYearlyProfitAmount,
+      computedDailyDue, computedMonthlyDue, computedYearlyDue,
+      computedDailyBkash, computedMonthlyBkash,
+      computedDailyDueCollection, computedMonthlyDueCollection,
+      computedDailyDiscount, computedMonthlyDiscount, computedYearlyDiscount,
+    };
+  }, [todayKey, invoices, purchaseList, dueCollectionLog]);
+
+  const {
+    computedDailyPurchaseAmount, computedMonthlyPurchaseAmount, computedYearlyPurchaseAmount,
+    computedDailySalesAmount, computedMonthlySalesAmount, computedYearlySalesAmount,
+    computedDailyProfitAmount, computedMonthlyProfitAmount, computedYearlyProfitAmount,
+    computedDailyDue, computedMonthlyDue, computedYearlyDue,
+    computedDailyBkash, computedMonthlyBkash,
+    computedDailyDueCollection, computedMonthlyDueCollection,
+    computedDailyDiscount, computedMonthlyDiscount, computedYearlyDiscount,
+  } = analyticsData;
 
   // ============================================================
   // HYDRATION GUARD
@@ -2376,8 +2410,8 @@ export default function Home() {
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-md font-black text-sm">{pharmacyLogo}</div>
           <div>
             <h1 className="font-black text-sm tracking-tight uppercase flex items-center gap-1.5">
-              <span>{pharmacyName}</span>
-              <span className="text-sm font-bold bg-teal-500/10 text-teal-500 px-1.5 py-0.5 rounded-full lowercase">v8.0</span>
+              <span className="truncate max-w-[100px] sm:max-w-[180px] md:max-w-none">{pharmacyName}</span>
+              <span className="text-sm font-bold bg-teal-500/10 text-teal-500 px-1.5 py-0.5 rounded-full lowercase shrink-0">v8.0</span>
             </h1>
             <p className={`text-sm font-semibold opacity-60 hidden sm:block ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{pharmacySlogan}</p>
           </div>
@@ -2409,8 +2443,8 @@ export default function Home() {
 
           {/* Language Toggle */}
           <div className={`flex items-center p-0.5 rounded-lg border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
-            <button onClick={() => handleLanguageChange("en")} className={`px-2 py-1 rounded-md text-sm font-black transition ${language === "en" ? 'bg-teal-500 text-white' : 'text-slate-400'}`}>EN</button>
-            <button onClick={() => handleLanguageChange("bn")} className={`px-2 py-1 rounded-md text-sm font-black transition ${language === "bn" ? 'bg-teal-500 text-white' : 'text-slate-400'}`}>বাং</button>
+            <button onClick={() => handleLanguageChange("en")} className={`px-1.5 sm:px-2 py-1 rounded-md text-xs sm:text-sm font-black transition ${language === "en" ? 'bg-teal-500 text-white' : 'text-slate-400'}`}>EN</button>
+            <button onClick={() => handleLanguageChange("bn")} className={`px-1.5 sm:px-2 py-1 rounded-md text-xs sm:text-sm font-black transition ${language === "bn" ? 'bg-teal-500 text-white' : 'text-slate-400'}`}>বাং</button>
           </div>
 
           <button onClick={() => handleToggleTheme(!isDarkMode)} className={`p-1.5 rounded-lg border transition ${isDarkMode ? 'bg-slate-800 border-slate-700 text-amber-400 hover:bg-slate-700' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`} title={`Theme: ${themeMode}`}>
@@ -2423,7 +2457,7 @@ export default function Home() {
             <span className="block font-mono text-sm opacity-70">{liveDate}</span>
           </div>
 
-          <button onClick={handleLogout} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-3 py-2 rounded-lg transition uppercase">{t("Logout", "লগআউট")}</button>
+          <button onClick={handleLogout} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition uppercase"><span className="hidden sm:inline">{t("Logout", "লগআউট")}</span><span className="sm:hidden">✕</span></button>
         </div>
       </header>
 
@@ -2682,7 +2716,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[60vh] overflow-y-auto">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[45vh] sm:max-h-[55vh] md:max-h-[60vh] overflow-y-auto">
                   {filteredMedicines.map(med => {
                     const isExpired = new Date(med.expire) < new Date();
                     const isLowStock = med.stock <= (med.lowStockAlert || activeThreshold);
@@ -2726,7 +2760,7 @@ export default function Home() {
                   </div>
 
                   {/* Cart Items */}
-                  <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto mb-3">
+                  <div className="flex flex-col gap-1.5 max-h-36 sm:max-h-48 overflow-y-auto mb-3">
                     {cart.map(item => (
                       <div key={item.id} className={`flex items-center gap-2 p-2 rounded-lg ${isDarkMode ? 'bg-slate-900/60' : 'bg-slate-50'}`}>
                         <div className="flex-1 min-w-0">
@@ -2781,6 +2815,7 @@ export default function Home() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
 
                 {/* Daily Sale */}
+                {checkShouldRenderTabOption("daily_sale_view") && (
                 <div className={`ccard cc-violet p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-violet-950/50 border-violet-500' : 'border-emerald-600'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-card'], borderColor: (activeThemeStyle as any)['--theme-border'] } : (!isDarkMode ? { background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' } : {})}>
                   <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#a7f3d0'} : {color:'#6ee7b7'}}>{t("Today's Sale", "আজকের বিক্রয়")}</span>
                   <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#6ee7b7'}}>{computedDailySalesAmount.toFixed(1)} {currencySymbol}</div>
@@ -2822,8 +2857,10 @@ export default function Home() {
                     </svg>
                   </div>
                 </div>
+                )}
 
                 {/* Monthly Sale */}
+                {checkShouldRenderTabOption("monthly_sale_view") && (
                 <div className={`ccard cc-pink p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-pink-950/50 border-blue-500' : 'border-blue-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)' } : {}}>
                   <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#bfdbfe'} : {color:'#93c5fd'}}>{t("Monthly Sale", "মাসিক বিক্রয়")}</span>
                   <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#93c5fd'}}>{computedMonthlySalesAmount.toFixed(1)} {currencySymbol}</div>
@@ -2867,6 +2904,7 @@ export default function Home() {
                     </svg>
                   </div>
                 </div>
+                )}
 
                 {/* Daily Profit */}
                 {checkShouldRenderTabOption("daily_profit_view") && (
@@ -3041,6 +3079,7 @@ export default function Home() {
                 )}
 
                 {/* Daily Due */}
+                {checkShouldRenderTabOption("daily_due_view") && (
                 <div className={`ccard cc-purple p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-purple-950/50 border-red-500' : 'border-red-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #b91c1c 0%, #dc2626 100%)' } : {}}>
                   <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fecaca'} : {color:'#fca5a5'}}>{t("Today's Due", "আজকের বাকি")}</span>
                   <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fca5a5'}}>{computedDailyDue.toFixed(1)} {currencySymbol}</div>
@@ -3074,8 +3113,10 @@ export default function Home() {
                     </svg>
                   </div>
                 </div>
+                )}
 
                 {/* Monthly Due */}
+                {checkShouldRenderTabOption("monthly_due_view") && (
                 <div className={`ccard cc-teal p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-teal-950/50 border-pink-500' : 'border-pink-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #be185d 0%, #db2777 100%)' } : {}}>
                   <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fce7f3'} : {color:'#f9a8d4'}}>{t("Monthly Due", "মাসিক বাকি")}</span>
                   <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#f9a8d4'}}>{computedMonthlyDue.toFixed(1)} {currencySymbol}</div>
@@ -3116,6 +3157,7 @@ export default function Home() {
                     </svg>
                   </div>
                 </div>
+                )}
 
                 {/* Daily bKash/Nagad */}
                 {checkShouldRenderTabOption("bkash_nagad_view") && (
@@ -3201,6 +3243,7 @@ export default function Home() {
 
 
                 {/* Today Due Collection */}
+                {checkShouldRenderTabOption("daily_due_collection_view") && (
                 <div className={`ccard cc-blue p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-blue-950/50 border-teal-500' : 'border-teal-800'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)' } : {}}>
                   <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#a7f3d0'} : {color:'#6ee7b7'}}>{t("Today's Due Collection", "আজকের বাকি আদায়")}</span>
                   <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#6ee7b7'}}>{computedDailyDueCollection.toFixed(1)} {currencySymbol}</div>
@@ -3233,8 +3276,10 @@ export default function Home() {
                     </svg>
                   </div>
                 </div>
+                )}
 
                 {/* Monthly Due Collection */}
+                {checkShouldRenderTabOption("monthly_due_collection_view") && (
                 <div className={`ccard cc-red p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-red-950/50 border-slate-500' : 'border-slate-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%)' } : {}}>
                   <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#bfdbfe'} : {color:'#93c5fd'}}>{t("Monthly Due Collection", "মাসিক বাকি আদায়")}</span>
                   <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#93c5fd'}}>{computedMonthlyDueCollection.toFixed(1)} {currencySymbol}</div>
@@ -3272,6 +3317,7 @@ export default function Home() {
                     </svg>
                   </div>
                 </div>
+                )}
 
                 {/* Yearly Sale */}
                 {checkShouldRenderTabOption("yearly_sales_view") && (
@@ -3432,6 +3478,195 @@ export default function Home() {
                 )}
               </div>
 
+              {/* ── Discount Summary Cards ── */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+
+                {/* Today's Discount */}
+                <div className={`ccard cc-fuchsia p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-fuchsia-950/50 border-fuchsia-500' : 'border-fuchsia-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #86198f 0%, #a21caf 100%)' } : {}}>
+                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fae8ff'} : {color:'#f0abfc'}}>{t("Today's Discount", "আজকের ছাড়")}</span>
+                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#f0abfc'}}>{computedDailyDiscount.toFixed(1)} {currencySymbol}</div>
+                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf4ff'} : {color:'#6b7280'}}>{t("Discount given today", "আজ ছাড় দেওয়া হয়েছে")}</div>
+                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <style>{`
+                        @keyframes tagWiggle{0%,100%{transform:rotate(-6deg) scale(1)}50%{transform:rotate(6deg) scale(1.08)}}
+                        @keyframes pctPop{0%,100%{transform:scale(1);opacity:0.9}50%{transform:scale(1.15);opacity:1}}
+                        @keyframes sparkD1{0%,100%{transform:scale(0);opacity:0}40%,60%{transform:scale(1.3);opacity:1}}
+                        #dtag{animation:tagWiggle 2s ease-in-out infinite;transform-origin:32px 34px;will-change:transform}
+                        #dpct{animation:pctPop 1.6s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                        #dsp1{animation:sparkD1 1.8s 0.2s ease-in-out infinite;transform-origin:10px 12px;will-change:transform}
+                        #dsp2{animation:sparkD1 1.8s 0.8s ease-in-out infinite;transform-origin:52px 14px;will-change:transform}
+                      `}</style>
+                      <g id="dtag">
+                        <path d="M10 14 L10 30 L32 52 L54 30 L54 14 Q54 8 48 8 L16 8 Q10 8 10 14Z" fill="white" fillOpacity="0.88"/>
+                        <circle cx="22" cy="20" r="4" fill="#86198f" fillOpacity="0.6"/>
+                        <path d="M22 30 L42 18" stroke="#86198f" strokeWidth="2.5" strokeLinecap="round"/>
+                        <circle cx="42" cy="38" r="3.5" fill="#86198f" fillOpacity="0.6"/>
+                      </g>
+                      <g id="dpct"><text x="24" y="36" fontSize="13" fontWeight="900" fill="#86198f" fillOpacity="0.75">%</text></g>
+                      <g id="dsp1"><text x="6" y="14" fontSize="11">✦</text></g>
+                      <g id="dsp2"><text x="48" y="16" fontSize="10">★</text></g>
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Monthly Discount */}
+                {checkShouldRenderTabOption("monthly_discount_view") && (
+                <div className={`ccard cc-pink p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-pink-950/50 border-pink-500' : 'border-pink-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #9d174d 0%, #be185d 100%)' } : {}}>
+                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fce7f3'} : {color:'#f9a8d4'}}>{t("Monthly Discount", "মাসিক ছাড়")}</span>
+                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#f9a8d4'}}>{computedMonthlyDiscount.toFixed(1)} {currencySymbol}</div>
+                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf2f8'} : {color:'#6b7280'}}>{t("Discount given this month", "এই মাসে ছাড় দেওয়া হয়েছে")}</div>
+                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <style>{`
+                        @keyframes calTagFloat{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-7px) rotate(3deg)}}
+                        @keyframes mPctSpin{0%,100%{transform:rotate(0deg) scale(1)}50%{transform:rotate(10deg) scale(1.1)}}
+                        #mcal{animation:calTagFloat 2.2s ease-in-out infinite;transform-origin:32px 36px;will-change:transform}
+                        #mpct{animation:mPctSpin 2s ease-in-out infinite;transform-origin:40px 40px;will-change:transform}
+                      `}</style>
+                      <g id="mcal">
+                        <rect x="8" y="14" width="40" height="38" rx="5" fill="white" fillOpacity="0.88"/>
+                        <rect x="8" y="14" width="40" height="12" rx="5" fill="white" fillOpacity="0.4"/>
+                        <rect x="14" y="8" width="5" height="10" rx="2.5" fill="white"/>
+                        <rect x="37" y="8" width="5" height="10" rx="2.5" fill="white"/>
+                        <path d="M20 38 L36 26" stroke="#9d174d" strokeWidth="2.5" strokeLinecap="round"/>
+                        <circle cx="22" cy="36" r="3.5" fill="#9d174d" fillOpacity="0.6"/>
+                        <circle cx="36" cy="28" r="3" fill="#9d174d" fillOpacity="0.6"/>
+                      </g>
+                      <g id="mpct">
+                        <rect x="38" y="36" width="20" height="20" rx="4" fill="#fbbf24" fillOpacity="0.9"/>
+                        <text x="41" y="52" fontSize="13" fontWeight="900" fill="white">%</text>
+                      </g>
+                    </svg>
+                  </div>
+                </div>
+                )}
+
+                {/* Yearly Discount */}
+                {checkShouldRenderTabOption("yearly_discount_view") && (
+                <div className={`ccard cc-rose p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-rose-950/50 border-rose-400' : 'border-rose-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%)' } : {}}>
+                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fecaca'} : {color:'#fca5a5'}}>{t("Yearly Discount", "বার্ষিক ছাড়")}</span>
+                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fca5a5'}}>{computedYearlyDiscount.toFixed(1)} {currencySymbol}</div>
+                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fee2e2'} : {color:'#6b7280'}}>{t("Total discount this year", "এই বছরের মোট ছাড়")}</div>
+                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <style>{`
+                        @keyframes yrRibbon{0%,100%{transform:rotate(-4deg) scale(1)}50%{transform:rotate(4deg) scale(1.06)}}
+                        @keyframes yrBadge{0%,100%{opacity:0.85;transform:scale(1)}50%{opacity:1;transform:scale(1.08)}}
+                        @keyframes yrShine{0%{opacity:0.1}50%{opacity:0.5}100%{opacity:0.1}}
+                        #yrib{animation:yrRibbon 2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                        #ybdg{animation:yrBadge 2s 0.4s ease-in-out infinite;transform-origin:42px 20px;will-change:transform}
+                        #ysh{animation:yrShine 2s ease-in-out infinite}
+                      `}</style>
+                      <g id="yrib">
+                        <path d="M32 6 C18 6 8 16 8 30 C8 44 18 56 32 56 C46 56 56 44 56 30 C56 16 46 6 32 6Z" fill="white" fillOpacity="0.15"/>
+                        <path d="M32 10 C20 10 12 19 12 30 C12 41 20 52 32 52 C44 52 52 41 52 30 C52 19 44 10 32 10Z" fill="white" fillOpacity="0.82"/>
+                        <ellipse id="ysh" cx="24" cy="24" rx="6" ry="10" fill="white" fillOpacity="0.2" transform="rotate(-20 24 24)"/>
+                        <path d="M20 40 L44 20" stroke="#7f1d1d" strokeWidth="3" strokeLinecap="round"/>
+                        <circle cx="22" cy="38" r="5" fill="#7f1d1d" fillOpacity="0.7"/>
+                        <circle cx="42" cy="22" r="4.5" fill="#7f1d1d" fillOpacity="0.7"/>
+                        <text x="19" y="42" fontSize="8" fontWeight="900" fill="white">%</text>
+                        <text x="39" y="26" fontSize="8" fontWeight="900" fill="white">%</text>
+                      </g>
+                      <g id="ybdg">
+                        <circle cx="50" cy="14" r="10" fill="#fbbf24"/>
+                        <text x="44" y="19" fontSize="12" fontWeight="900" fill="white">৳</text>
+                      </g>
+                    </svg>
+                  </div>
+                </div>
+                )}
+
+              </div>
+
+              {/* ── Last 7 Days Sales Graph (pure SVG) ── */}
+              {(() => {
+                const bnDay = ['রবি','সোম','মঙ্গল','বুধ','বৃহঃ','শুক্র','শনি'];
+                const enDay = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                const today = new Date(todayKey);
+                const weekDays = Array.from({ length: 7 }, (_, i) => {
+                  const d = new Date(today); d.setDate(today.getDate() - (6 - i)); return d;
+                });
+                const weekSales = weekDays.map(day =>
+                  invoices.reduce((s, inv) => {
+                    const d = parseCustomDateString(inv.dateString);
+                    return (d.getFullYear()===day.getFullYear()&&d.getMonth()===day.getMonth()&&d.getDate()===day.getDate()) ? s+(inv.finalBill||0) : s;
+                  }, 0)
+                );
+                const totalWeek = weekSales.reduce((a,b)=>a+b,0);
+                const maxVal = Math.max(...weekSales, 1);
+                const maxIdx = weekSales.indexOf(Math.max(...weekSales));
+                const CHART_H = 130;
+                const BAR_W = 44;
+                const GAP = 18;
+                const TOTAL_W = 7 * BAR_W + 6 * GAP;
+                const fmtAmt = (v: number) => v.toFixed(0);
+                const gridLines = [0, 0.25, 0.5, 0.75, 1.0];
+                return (
+                  <div className={`rounded-2xl border p-4 ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+                      <div>
+                        <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-400'}`}>{t("Last 7 Days Sales","গত ৭ দিনের বিক্রয়")}</p>
+                        <p className={`text-2xl font-black font-mono leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                          {currencySymbol}{fmtAmt(totalWeek)}
+                        </p>
+                      </div>
+                      <div className="flex gap-3 text-xs font-semibold items-center flex-wrap">
+                        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded inline-block" style={{background:'#1D9E75'}}/><span className={isDarkMode?'text-slate-400':'text-slate-500'}>{t("Today","আজ")}</span></span>
+                        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded inline-block" style={{background:'#BA7517'}}/><span className={isDarkMode?'text-slate-400':'text-slate-500'}>{t("Highest","সর্বোচ্চ")}</span></span>
+                        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded inline-block" style={{background: isDarkMode?'#334155':'#B5D4F4'}}/><span className={isDarkMode?'text-slate-400':'text-slate-500'}>{t("Others","অন্যান্য")}</span></span>
+                      </div>
+                    </div>
+                    {/* SVG Chart */}
+                    <svg viewBox={`0 0 ${TOTAL_W} ${CHART_H + 52}`} width="100%" style={{display:'block',overflow:'visible'}}>
+                      {/* Grid lines */}
+                      {gridLines.map(pct => {
+                        const y = CHART_H - pct * CHART_H;
+                        return (
+                          <line key={pct} x1={0} y1={y} x2={TOTAL_W} y2={y}
+                            stroke={isDarkMode ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)'}
+                            strokeWidth="1" strokeDasharray={pct===0?'none':'4 3'} />
+                        );
+                      })}
+                      {/* Bars */}
+                      {weekSales.map((sale, i) => {
+                        const x = i * (BAR_W + GAP);
+                        const barH = maxVal > 0 ? Math.max((sale / maxVal) * CHART_H, sale > 0 ? 6 : 2) : 2;
+                        const y = CHART_H - barH;
+                        const isToday = i === 6;
+                        const isMax = i === maxIdx && sale > 0;
+                        const fill = isToday ? (isDarkMode?'#085041':'#E1F5EE') : isMax ? (isDarkMode?'#633806':'#FAEEDA') : (isDarkMode?'#1e293b':'#E6F1FB');
+                        const stroke = isToday ? '#1D9E75' : isMax ? '#BA7517' : (isDarkMode?'#334155':'#B5D4F4');
+                        const strokeW = (isToday||isMax) ? 1.5 : 1;
+                        const labelCol = isToday ? '#0F6E56' : isMax ? '#854F0B' : (isDarkMode?'#94a3b8':'#64748b');
+                        const dayLabel = t(enDay[weekDays[i].getDay()], bnDay[weekDays[i].getDay()]);
+                        const dateLabel = `${weekDays[i].getDate()}/${weekDays[i].getMonth()+1}`;
+                        return (
+                          <g key={i}>
+                            <rect x={x} y={y} width={BAR_W} height={barH} rx="5" fill={fill} stroke={stroke} strokeWidth={strokeW}/>
+                            {/* Amount above bar */}
+                            <text x={x + BAR_W/2} y={y - 5} textAnchor="middle" fontSize="10" fontWeight="600" fill={labelCol}>
+                              {currencySymbol}{fmtAmt(sale)}
+                            </text>
+                            {/* Day name */}
+                            <text x={x + BAR_W/2} y={CHART_H + 18} textAnchor="middle" fontSize="11" fontWeight="600" fill={labelCol}>
+                              {dayLabel}
+                            </text>
+                            {/* Date */}
+                            <text x={x + BAR_W/2} y={CHART_H + 33} textAnchor="middle" fontSize="10" fill={isDarkMode?'#475569':'#94a3b8'}>
+                              {dateLabel}
+                            </text>
+                          </g>
+                        );
+                      })}
+                      {/* Baseline */}
+                      <line x1={0} y1={CHART_H} x2={TOTAL_W} y2={CHART_H} stroke={isDarkMode?'rgba(255,255,255,0.15)':'rgba(0,0,0,0.1)'} strokeWidth="1"/>
+                    </svg>
+                  </div>
+                );
+              })()}
+
               {/* Total Stock Value */}
               {checkShouldRenderTabOption("stock_value_calculator") && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -3524,7 +3759,7 @@ export default function Home() {
                 </div>
 
                 <div className="overflow-x-auto w-full">
-                  <table className="w-full text-left text-sm border-collapse">
+                  <table className="w-full text-left text-sm border-collapse" style={{minWidth:'700px'}}>
                     <thead>
                       <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                         <th className="p-2.5">#</th>
@@ -3748,7 +3983,7 @@ export default function Home() {
                   <div className={`ccard cc-orange p-3 rounded-xl border ${isDarkMode ? 'bg-orange-950/50 border-orange-600' : 'bg-orange-200 border-orange-400 shadow-sm'}`}>
                     <h4 className="text-sm font-black uppercase text-teal-500 mb-2">📋 {t("Items Added", "যোগ করা আইটেম")} ({purchaseCart.length})</h4>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="w-full text-sm" style={{minWidth:'500px'}}>
                         <thead>
                           <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                             <th className="p-1 text-left">{t("Medicine", "ওষুধ")}</th>
@@ -4112,7 +4347,7 @@ export default function Home() {
 
                           {/* Items Table */}
                           <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm border-collapse">
+                            <table className="w-full text-left text-sm border-collapse" style={{minWidth:'500px'}}>
                               <thead>
                                 <tr className={`font-black text-sm uppercase tracking-wider ${isDarkMode ? 'text-slate-500 border-b border-slate-700/50' : 'text-slate-400 border-b border-slate-200'}`}>
                                   <th className="px-4 py-1.5">{t("Medicine", "ওষুধ")}</th>
@@ -4184,7 +4419,7 @@ export default function Home() {
               </div>
 
               <div className="overflow-x-auto w-full">
-                <table className="w-full text-left text-sm border-collapse">
+                <table className="w-full text-left text-sm border-collapse" style={{minWidth:'600px'}}>
                   <thead>
                     <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                       <th className="p-2.5">{t("Invoice #", "রশিদ নং")}</th>
@@ -4262,7 +4497,7 @@ export default function Home() {
                 <div className="text-center py-12 text-slate-400 italic text-sm">{t("No outstanding dues.", "কোনো বাকি নেই।")}</div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm border-collapse">
+                  <table className="w-full text-left text-sm border-collapse" style={{minWidth:'500px'}}>
                     <thead>
                       <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                         <th className="p-2.5">#</th>
@@ -4308,7 +4543,7 @@ export default function Home() {
               <p className="text-sm text-slate-400 mb-4">{t("Log of orders where a return or exchange was processed.", "যে সব অর্ডার ফেরত বা বিনিময় করা হয়েছে।")}</p>
 
               <div className="overflow-x-auto w-full">
-                <table className="w-full text-left text-sm border-collapse">
+                <table className="w-full text-left text-sm border-collapse" style={{minWidth:'600px'}}>
                   <thead>
                     <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                       <th className="p-2.5">{t("Invoice #", "রশিদ নং")}</th>
@@ -4385,7 +4620,7 @@ export default function Home() {
 
               {/* Full Medicine Table */}
               <div className="overflow-x-auto w-full">
-                <table className="w-full text-left text-sm border-collapse">
+                <table className="w-full text-left text-sm border-collapse" style={{minWidth:'600px'}}>
                   <thead>
                     <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                       <th className="p-2.5">#</th>
@@ -4574,7 +4809,7 @@ export default function Home() {
                 ) : (
                   <form onSubmit={handleSaveNewCredentials} className="flex flex-col gap-3 text-sm">
                     <h4 className="text-sm font-black text-emerald-500 uppercase">✅ {t("Unlocked - Edit credentials below:", "আনলক হয়েছে - নিচে পরিবর্তন করুন:")}</h4>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Admin Username", "অ্যাডমিন ইউজারনেম")}</label>
                         <input type="text" value={newUsernameInput} onChange={e => setNewUsernameInput(e.target.value)} className={`w-full px-2 py-1.5 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
@@ -4748,10 +4983,16 @@ export default function Home() {
                 label: t("Dashboard Cards", "ড্যাশবোর্ড কার্ড"),
                 icon: "📊",
                 items: [
+                  { key: "daily_sale_view",         label: t("Today's Sale", "আজকের বিক্রয়") },
+                  { key: "monthly_sale_view",       label: t("Monthly Sale", "মাসিক বিক্রয়") },
                   { key: "daily_profit_view",       label: t("Today's Profit", "আজকের লাভ") },
                   { key: "monthly_profit_view",     label: t("Monthly Profit", "মাসিক লাভ") },
                   { key: "daily_purchases_view",    label: t("Today's Purchase", "আজকের ক্রয়") },
                   { key: "monthly_purchases_view",  label: t("Monthly Purchase", "মাসিক ক্রয়") },
+                  { key: "daily_due_view",          label: t("Today's Due", "আজকের বাকি") },
+                  { key: "monthly_due_view",        label: t("Monthly Due", "মাসিক বাকি") },
+                  { key: "daily_due_collection_view",  label: t("Today's Due Collection", "আজকের বাকি আদায়") },
+                  { key: "monthly_due_collection_view", label: t("Monthly Due Collection", "মাসিক বাকি আদায়") },
                   { key: "bkash_nagad_view",        label: t("bKash/Nagad Stats", "বিকাশ/নগদ তথ্য") },
                   { key: "low_stock_alerts",        label: t("Low Stock Alerts", "কম স্টক সতর্কতা") },
                   { key: "expired_meds_view",       label: t("Expired Medicines", "মেয়াদ শেষ ওষুধ") },
@@ -4763,6 +5004,8 @@ export default function Home() {
                   { key: "yearly_purchase_view",    label: t("Yearly Purchase", "বার্ষিক ক্রয়") },
                   { key: "yearly_profit_view",      label: t("Yearly Profit", "বার্ষিক লাভ") },
                   { key: "yearly_due_view",         label: t("Yearly Due", "বার্ষিক বাকি") },
+                  { key: "monthly_discount_view",   label: t("Monthly Discount", "মাসিক ছাড়") },
+                  { key: "yearly_discount_view",    label: t("Yearly Discount", "বার্ষিক ছাড়") },
                 ]
               },
               {
@@ -4854,8 +5097,8 @@ export default function Home() {
           MODAL 1: CHECKOUT CONFIRMATION
       ========================================================= */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className={`ccard cc-pink max-w-md w-full rounded-2xl border p-4 shadow-2xl ${isDarkMode ? 'bg-pink-950/50 border-pink-600 text-white' : 'bg-pink-50 border-pink-300'}`}>
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className={`ccard cc-pink max-w-md w-full rounded-2xl border p-4 shadow-2xl my-4 ${isDarkMode ? 'bg-pink-950/50 border-pink-600 text-white' : 'bg-pink-50 border-pink-300'}`}>
             <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 border-b pb-2 mb-3 flex items-center justify-between">
               <span>🧾 {t("Confirm Invoice", "বিল নিশ্চিত করুন")}</span>
               <button onClick={() => setShowConfirmModal(false)} className="text-slate-400 hover:text-red-500 font-bold text-sm">✕</button>
@@ -4873,7 +5116,7 @@ export default function Home() {
                   <span className="font-mono text-base font-black text-teal-500">{currentFinalBill.toFixed(1)} {currencySymbol}</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Cash Given", "নগদ দিয়েছে")}</label>
                     <input
@@ -4927,8 +5170,8 @@ export default function Home() {
           MODAL 2: RETURN PROCESSING
       ========================================================= */}
       {showReturnModal && selectedInvoiceForReturn && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className={`max-w-xl w-full rounded-2xl border p-4 shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'}`}>
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className={`max-w-xl w-full rounded-2xl border p-4 shadow-2xl my-4 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200'}`}>
             <h3 className="text-sm font-black uppercase tracking-wider text-red-400 border-b pb-2 mb-3 flex items-center justify-between">
               <span>🔄 {t("Process Return", "ফেরত প্রক্রিয়া করুন")}</span>
               <button onClick={() => { setShowReturnModal(false); setSelectedInvoiceForReturn(null); }} className="text-slate-400 hover:text-white font-bold text-sm">✕</button>
