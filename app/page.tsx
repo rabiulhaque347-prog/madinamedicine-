@@ -725,12 +725,34 @@ export default function Home() {
       if (savedProfit) setTotalProfit(parseFloat(savedProfit));
 
       const savedCompanies = g('madina_v7_companies');
-      if (savedCompanies) setBdMedicineCompanies(JSON.parse(savedCompanies));
-      else if (allowSeedDefaults) { setBdMedicineCompanies(initialMedicineCompanies); cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies)); }
+      if (savedCompanies) {
+        const parsed = JSON.parse(savedCompanies);
+        // If saved list is empty array, restore the default list
+        if (Array.isArray(parsed) && parsed.length === 0) {
+          setBdMedicineCompanies(initialMedicineCompanies);
+          cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
+        } else {
+          setBdMedicineCompanies(parsed);
+        }
+      } else if (allowSeedDefaults) {
+        setBdMedicineCompanies(initialMedicineCompanies);
+        cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
+      }
 
       const savedMedNames = g('madina_v7_mednames');
-      if (savedMedNames) setBdMedicineNamesList(JSON.parse(savedMedNames));
-      else if (allowSeedDefaults) { setBdMedicineNamesList(initialMedicineNamesList); cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList)); }
+      if (savedMedNames) {
+        const parsed = JSON.parse(savedMedNames);
+        // If saved list is empty array, restore the default list
+        if (Array.isArray(parsed) && parsed.length === 0) {
+          setBdMedicineNamesList(initialMedicineNamesList);
+          cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
+        } else {
+          setBdMedicineNamesList(parsed);
+        }
+      } else if (allowSeedDefaults) {
+        setBdMedicineNamesList(initialMedicineNamesList);
+        cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
+      }
 
       const savedMedMeta = g('madina_v7_medmeta');
       if (savedMedMeta) setBdMedNameMetadata(JSON.parse(savedMedMeta));
@@ -793,18 +815,31 @@ export default function Home() {
     if (isFirebaseConfigured()) {
       setSyncStatus('syncing');
       fbGetAll().then(cloudData => {
-        if (cloudData && Object.keys(cloudData).length > 0) {
+        // Check if cloud has actual business data (not just an empty object)
+        const cloudHasMeds = !!(cloudData && cloudData['madina_v7_meds']);
+        const cloudHasAnyData = !!(cloudData && Object.keys(cloudData).length > 0);
+
+        if (cloudHasAnyData && cloudHasMeds) {
           // Cloud has real data — write to localStorage and apply (no seeding needed)
           for (const k of CLOUD_SYNC_KEYS) {
             if (cloudData[k]) localStorage.setItem(k, cloudData[k]);
           }
           applyData(cloudData, false);
           setSyncStatus('synced');
-        } else {
-          // Cloud is truly empty (brand new database) — safe to seed defaults now
-          if (!localHasMeds) {
-            applyData(localData, true);
+        } else if (localHasMeds) {
+          // Cloud is empty/deleted but LOCAL has data — push local data back to Firebase
+          const localSnapshot: Record<string, string | null> = {};
+          for (const k of CLOUD_SYNC_KEYS) localSnapshot[k] = localStorage.getItem(k);
+          applyData(localSnapshot, false);
+          // Re-push all local keys back to Firebase so other devices get them
+          for (const k of CLOUD_SYNC_KEYS) {
+            const val = localStorage.getItem(k);
+            if (val) fbSet(k, val);
           }
+          setSyncStatus('synced');
+        } else {
+          // Cloud is truly empty AND local is also empty — seed defaults
+          applyData(localData, true);
           setSyncStatus('offline');
         }
         // Auto-clear the synced indicator after 3 seconds
@@ -1698,9 +1733,12 @@ export default function Home() {
     if (confirmPass !== adminPassword) return alert(t("❌ Authentication Failed!", "❌ পাসওয়ার্ড ভুল!"));
     if (confirm(t("⚠️ Delete ALL data?", "⚠️ সব তথ্য মুছে ফেলবেন?"))) {
       localStorage.clear();
+
+      // Set default state values
       setMedicines(defaultMedicines);
       setBdMedicineCompanies(initialMedicineCompanies);
       setBdMedicineNamesList(initialMedicineNamesList);
+      setBdMedNameMetadata([]);
       setTotalSales(0); setTotalProfit(0);
       setInvoices([]); setCart([]); setPurchaseList([]); setDueList([]); setDueCollectionLog([]);
       setPharmacyName("Madina Medicine Corner");
@@ -1713,6 +1751,32 @@ export default function Home() {
       setAdminUsername("admin"); setAdminPassword("2026");
       setStaffUsername("staff"); setStaffPassword("staff123");
       setSecretCode("MADINA2026");
+
+      // Push default data to localStorage AND Firebase so all devices reset properly
+      cloudSet('madina_v7_meds', JSON.stringify(defaultMedicines));
+      cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
+      cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
+      cloudSet('madina_v7_medmeta', JSON.stringify([]));
+      cloudSet('madina_v7_invoices', JSON.stringify([]));
+      cloudSet('madina_v7_purchases', JSON.stringify([]));
+      cloudSet('madina_v7_due_list', JSON.stringify([]));
+      cloudSet('madina_v7_due_collection_log', JSON.stringify([]));
+      cloudSet('madina_v7_sales', '0');
+      cloudSet('madina_v7_profit', '0');
+      cloudSet('madina_v7_admin_user', 'admin');
+      cloudSet('madina_v7_admin_pass', '2026');
+      cloudSet('madina_v7_staff_user', 'staff');
+      cloudSet('madina_v7_staff_pass', 'staff123');
+      cloudSet('madina_v7_secret_code', 'MADINA2026');
+      cloudSet('madina_v7_name', 'Madina Medicine Corner');
+      cloudSet('madina_v7_slogan', 'Professional Pharmacy POS System');
+      cloudSet('madina_v7_address', 'Chaumuhani Bazar, Cumilla');
+      cloudSet('madina_v7_logo', 'M+');
+      cloudSet('madina_v7_currency', '৳');
+      cloudSet('madina_v7_vat', '0');
+      cloudSet('madina_v7_threshold', '10');
+      cloudSet('madina_v7_footer', 'ধন্যবাদ, আবার আসবেন!');
+
       setIsLoggedIn(false);
       alert(t("✅ System reset successful!", "✅ সিস্টেম রিসেট সম্পন্ন!"));
     }
