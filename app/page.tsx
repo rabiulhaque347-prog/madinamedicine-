@@ -64,7 +64,7 @@ const isFirebaseConfigured = () =>
   !!FIREBASE_CONFIG.databaseURL;
 
 const fbUrl = (key: string) =>
-  `${FIREBASE_CONFIG.databaseURL}/madina_data/${key}.json?auth=${FIREBASE_CONFIG.apiKey}`;
+  `${FIREBASE_CONFIG.databaseURL}/madina_data/${key}.json`;
 
 // Fetch with timeout — works on slow mobile data connections
 const fetchWithTimeout = (url: string, options: RequestInit = {}, timeoutMs = 10000): Promise<Response> => {
@@ -130,7 +130,7 @@ const fbGetAll = async (): Promise<Record<string, string> | null> => {
   if (!isFirebaseConfigured()) return null;
   try {
     const res = await fetchWithTimeout(
-      `${FIREBASE_CONFIG.databaseURL}/madina_data.json?auth=${FIREBASE_CONFIG.apiKey}`,
+      `${FIREBASE_CONFIG.databaseURL}/madina_data.json`,
       {},
       12000
     );
@@ -160,7 +160,7 @@ const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => v
   if (!isFirebaseConfigured() || typeof window === 'undefined' || typeof EventSource === 'undefined') {
     return () => {};
   }
-  const url = `${FIREBASE_CONFIG.databaseURL}/madina_data.json?auth=${FIREBASE_CONFIG.apiKey}`;
+  const url = `${FIREBASE_CONFIG.databaseURL}/madina_data.json`;
   let es: EventSource | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
@@ -1967,7 +1967,7 @@ export default function Home() {
         data: buildBackupObject()
       };
       const backupKey = `backup_${now.toISOString().slice(0,10)}`;
-      const url = `${FIREBASE_CONFIG.databaseURL}/madina_backups/${backupKey}.json?auth=${FIREBASE_CONFIG.apiKey}`;
+      const url = `${FIREBASE_CONFIG.databaseURL}/madina_backups/${backupKey}.json`;
       const res = await fetchWithTimeout(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
