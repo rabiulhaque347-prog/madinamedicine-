@@ -3603,12 +3603,12 @@ export default function Home() {
                 const fmtAmt = (v: number) => v.toFixed(0);
                 const gridLines = [0, 0.25, 0.5, 0.75, 1.0];
                 return (
-                  <div className={`rounded-2xl border p-4 ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <div className={`rounded-2xl border p-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
                     {/* Header */}
-                    <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+                    <div className="flex items-start justify-between mb-2 flex-wrap gap-1">
                       <div>
-                        <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-400'}`}>{t("Last 7 Days Sales","গত ৭ দিনের বিক্রয়")}</p>
-                        <p className={`text-2xl font-black font-mono leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                        <p className={`text-xs font-bold uppercase tracking-widest mb-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-400'}`}>{t("Last 7 Days Sales","গত ৭ দিনের বিক্রয়")}</p>
+                        <p className={`text-lg font-black font-mono leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                           {currencySymbol}{fmtAmt(totalWeek)}
                         </p>
                       </div>
@@ -3619,7 +3619,7 @@ export default function Home() {
                       </div>
                     </div>
                     {/* SVG Chart */}
-                    <svg viewBox={`0 0 ${TOTAL_W} ${CHART_H + 52}`} width="100%" style={{display:'block',overflow:'visible'}}>
+                    <svg viewBox={`0 0 ${TOTAL_W} ${CHART_H + 42}`} width="100%" style={{display:'block',overflow:'visible',maxHeight:'240px'}}>
                       {/* Grid lines */}
                       {gridLines.map(pct => {
                         const y = CHART_H - pct * CHART_H;
@@ -3646,15 +3646,15 @@ export default function Home() {
                           <g key={i}>
                             <rect x={x} y={y} width={BAR_W} height={barH} rx="5" fill={fill} stroke={stroke} strokeWidth={strokeW}/>
                             {/* Amount above bar */}
-                            <text x={x + BAR_W/2} y={y - 5} textAnchor="middle" fontSize="10" fontWeight="600" fill={labelCol}>
+                            <text x={x + BAR_W/2} y={y - 4} textAnchor="middle" fontSize="9" fontWeight="600" fill={labelCol}>
                               {currencySymbol}{fmtAmt(sale)}
                             </text>
                             {/* Day name */}
-                            <text x={x + BAR_W/2} y={CHART_H + 18} textAnchor="middle" fontSize="11" fontWeight="600" fill={labelCol}>
+                            <text x={x + BAR_W/2} y={CHART_H + 15} textAnchor="middle" fontSize="10" fontWeight="600" fill={labelCol}>
                               {dayLabel}
                             </text>
                             {/* Date */}
-                            <text x={x + BAR_W/2} y={CHART_H + 33} textAnchor="middle" fontSize="10" fill={isDarkMode?'#475569':'#94a3b8'}>
+                            <text x={x + BAR_W/2} y={CHART_H + 28} textAnchor="middle" fontSize="9" fill={isDarkMode?'#475569':'#94a3b8'}>
                               {dateLabel}
                             </text>
                           </g>
