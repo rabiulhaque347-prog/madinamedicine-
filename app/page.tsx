@@ -145,6 +145,73 @@ const fbGetAll = async (): Promise<Record<string, string> | null> => {
   } catch { return null; }
 };
 
+// Delete a single key from Firebase
+const fbDelete = async (key: string): Promise<void> => {
+  if (!isFirebaseConfigured()) return;
+  try {
+    await fetchWithTimeout(fbUrl(key), { method: 'DELETE' });
+  } catch { /* ignore */ }
+};
+
+// ── Firebase Real-time Listener via SSE ─────────────────────
+// Returns an unsubscribe function. Calls onChange(data) whenever
+// ANY key under /madina_data changes on Firebase (from any device).
+const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => void) => {
+  if (!isFirebaseConfigured() || typeof window === 'undefined' || typeof EventSource === 'undefined') {
+    return () => {};
+  }
+  const url = `${FIREBASE_CONFIG.databaseURL}/madina_data.json?auth=${FIREBASE_CONFIG.apiKey}`;
+  let es: EventSource | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
+
+  const connect = () => {
+    if (stopped) return;
+    es = new EventSource(url);
+    es.addEventListener('put', (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data);
+        // payload.path is '/' for full refresh or '/key' for single key
+        const raw = payload.data;
+        if (!raw || typeof raw !== 'object') return;
+        const result: Record<string, string> = {};
+        for (const k of CLOUD_SYNC_KEYS) {
+          if (typeof raw[k] === 'string') result[k] = raw[k];
+        }
+        if (Object.keys(result).length > 0) onChange(result);
+      } catch { /* malformed event */ }
+    });
+    es.addEventListener('patch', (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data);
+        const raw = payload.data;
+        if (!raw || typeof raw !== 'object') return;
+        const result: Record<string, string> = {};
+        for (const k of CLOUD_SYNC_KEYS) {
+          if (typeof raw[k] === 'string') result[k] = raw[k];
+        }
+        if (Object.keys(result).length > 0) onChange(result);
+      } catch { /* malformed event */ }
+    });
+    es.onerror = () => {
+      es?.close();
+      es = null;
+      if (!stopped) {
+        retryTimer = setTimeout(connect, 5000); // retry in 5s
+      }
+    };
+  };
+
+  connect();
+
+  return () => {
+    stopped = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    es?.close();
+    es = null;
+  };
+};
+
 // Wrapped localStorage.setItem that ALSO writes to Firebase
 const cloudSet = (key: string, value: string) => {
   localStorage.setItem(key, value);
@@ -858,6 +925,56 @@ export default function Home() {
       }
     }
   }, []);
+
+  // ============================================================
+  // FIREBASE REAL-TIME LISTENER — Live sync across all devices
+  // Whenever any device saves data, this device auto-updates.
+  // ============================================================
+  useEffect(() => {
+    if (!isMounted) return;
+
+    const unsubscribe = fbListenAll((cloudData) => {
+      setSyncStatus('syncing');
+
+      const apply = (key: string, setter: (v: any) => void, parse: (s: string) => any = JSON.parse) => {
+        if (cloudData[key] !== undefined) {
+          localStorage.setItem(key, cloudData[key]);
+          try { setter(parse(cloudData[key])); } catch { /* skip malformed */ }
+        }
+      };
+
+      apply('madina_v7_meds', setMedicines);
+      apply('madina_v7_invoices', setInvoices);
+      apply('madina_v7_purchases', setPurchaseList);
+      apply('madina_v7_due_list', setDueList);
+      apply('madina_v7_due_collection_log', setDueCollectionLog);
+      apply('madina_v7_sales', setTotalSales, parseFloat);
+      apply('madina_v7_profit', setTotalProfit, parseFloat);
+      apply('madina_v7_companies', setBdMedicineCompanies);
+      apply('madina_v7_mednames', setBdMedicineNamesList);
+      apply('madina_v7_medmeta', setBdMedNameMetadata);
+      apply('madina_v7_name', (v: string) => { setPharmacyName(v); setSettingsName(v); }, (s: string) => s);
+      apply('madina_v7_slogan', (v: string) => { setPharmacySlogan(v); setSettingsSlogan(v); }, (s: string) => s);
+      apply('madina_v7_address', (v: string) => { setPharmacyAddress(v); setSettingsAddress(v); }, (s: string) => s);
+      apply('madina_v7_logo', (v: string) => { setPharmacyLogo(v); setSettingsLogo(v); }, (s: string) => s);
+      apply('madina_v7_currency', setCurrencySymbol, (s: string) => s);
+      apply('madina_v7_vat', setVatPercentage, (s: string) => s);
+      apply('madina_v7_threshold', setLowStockThreshold, (s: string) => s);
+      apply('madina_v7_footer', setReceiptFooterMsg, (s: string) => s);
+      apply('madina_v7_admin_user', (v: string) => { setAdminUsername(v); setNewUsernameInput(v); }, (s: string) => s);
+      apply('madina_v7_admin_pass', (v: string) => { setAdminPassword(v); setNewPasswordInput(v); }, (s: string) => s);
+      apply('madina_v7_staff_user', (v: string) => { setStaffUsername(v); setNewStaffUsernameInput(v); }, (s: string) => s);
+      apply('madina_v7_staff_pass', (v: string) => { setStaffPassword(v); setNewStaffPasswordInput(v); }, (s: string) => s);
+      apply('madina_v7_secret_code', (v: string) => { setSecretCode(v); setNewSecretCodeInput(v); }, (s: string) => s);
+      apply('madina_v7_staff_perms', (v: any) => setStaffVisibleModules((prev: any) => ({ ...prev, ...v })));
+
+      setSyncStatus('synced');
+      setTimeout(() => setSyncStatus('idle'), 3000);
+    });
+
+    return () => unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMounted]);
 
   // ============================================================
   // LIVE CLOCK
