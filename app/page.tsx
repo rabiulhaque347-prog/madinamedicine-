@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { TrendingUp, TrendingDown } from 'lucide-react';
 
 // ============================================================
 // MADINA MEDICINE CORNER - PROFESSIONAL PHARMACY POS SYSTEM
@@ -2057,6 +2058,13 @@ export default function Home() {
           .animate-toast-in { animation: toast-in 0.35s cubic-bezier(0.22,1,0.36,1) forwards; }
           .animate-badge-pop { animation: badge-pop 0.3s ease; }
           .btn-press:active { transform: scale(0.96) !important; transition: transform 0.1s; }
+          @keyframes dashEmojiFloat { 0%,100%{transform:translateY(0) rotate(0deg)} 50%{transform:translateY(-8px) rotate(6deg)} }
+          @keyframes dashEmojiPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.2)} }
+          @keyframes dashEmojiRise { 0%,100%{transform:translateY(0) scale(1)} 40%{transform:translateY(-10px) scale(1.15)} 60%{transform:translateY(-10px) scale(1.15)} }
+          @keyframes dashEmojiWiggle { 0%,100%{transform:rotate(0deg)} 20%{transform:rotate(-12deg)} 40%{transform:rotate(12deg)} 60%{transform:rotate(-8deg)} 80%{transform:rotate(8deg)} }
+          @keyframes dashEmojiShake { 0%,100%{transform:translateX(0) rotate(0deg)} 25%{transform:translateX(-5px) rotate(-8deg)} 75%{transform:translateX(5px) rotate(8deg)} }
+          @keyframes dashEmojiSpin { 0%{transform:rotate(0deg) scale(1)} 50%{transform:rotate(180deg) scale(1.1)} 100%{transform:rotate(360deg) scale(1)} }
+          @keyframes dashEmojiPop { 0%,100%{transform:scale(1) translateY(0)} 30%{transform:scale(1.25) translateY(-5px)} 60%{transform:scale(0.9) translateY(2px)} }
         `}</style>
 
         {/* Floating particles background */}
@@ -2236,6 +2244,22 @@ export default function Home() {
         .btn-press:active { transform: scale(0.95) !important; }
         .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
         .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+        @keyframes emoji-bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+        @keyframes emoji-spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+        @keyframes emoji-pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.3)} }
+        @keyframes emoji-float { 0%,100%{transform:translateY(0) rotate(-5deg)} 50%{transform:translateY(-10px) rotate(5deg)} }
+        @keyframes emoji-rise { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-10px) scale(1.2)} }
+        @keyframes emoji-shake { 0%,100%{transform:rotate(0deg)} 25%{transform:rotate(-15deg)} 75%{transform:rotate(15deg)} }
+        @keyframes emoji-swing { 0%,100%{transform:rotate(-10deg)} 50%{transform:rotate(10deg)} }
+        @keyframes emoji-pop { 0%,100%{transform:scale(1)} 30%{transform:scale(1.35)} 60%{transform:scale(0.9)} }
+        .anim-bounce { animation: emoji-bounce 1.2s ease-in-out infinite; display:inline-block; }
+        .anim-spin   { animation: emoji-spin 3s linear infinite; display:inline-block; }
+        .anim-pulse  { animation: emoji-pulse 1.5s ease-in-out infinite; display:inline-block; }
+        .anim-float  { animation: emoji-float 2s ease-in-out infinite; display:inline-block; }
+        .anim-rise   { animation: emoji-rise 1.8s ease-in-out infinite; display:inline-block; }
+        .anim-shake  { animation: emoji-shake 0.8s ease-in-out infinite; display:inline-block; }
+        .anim-swing  { animation: emoji-swing 1.4s ease-in-out infinite; display:inline-block; }
+        .anim-pop    { animation: emoji-pop 1.6s ease-in-out infinite; display:inline-block; }
         /* ── Colorful card border system ── */
         .ccard { border-width: 2px !important; border-style: solid !important; }
         .cc-teal    { border-color: #0d9488 !important; }
@@ -2642,7 +2666,7 @@ export default function Home() {
 
               {/* Left: Product Search */}
               <div className="lg:col-span-7 flex flex-col gap-3">
-                <div className={`ccard cc-teal p-3 rounded-xl border ${isDarkMode ? 'bg-teal-950/50 border-teal-600' : 'bg-teal-50 border-teal-300 shadow-sm'}`}>
+                <div className={`ccard cc-teal p-3 rounded-xl border ${isDarkMode ? 'bg-teal-950/50 border-teal-600' : 'bg-teal-200 border-teal-400 shadow-sm'}`}>
                   <div className="flex gap-2 flex-wrap">
                     <input
                       type="text"
@@ -2686,7 +2710,7 @@ export default function Home() {
 
               {/* Right: Cart */}
               <div className="lg:col-span-5">
-                <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-indigo-950/50 border-indigo-600' : 'bg-indigo-50 border-indigo-300 shadow-sm'}`}>
+                <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-indigo-950/50 border-indigo-600' : 'bg-indigo-200 border-indigo-400 shadow-sm'}`}>
                   <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">🛒 {t("Cart", "কার্ট")} ({cart.length})</h3>
 
                   {/* Customer */}
@@ -2757,152 +2781,653 @@ export default function Home() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
 
                 {/* Daily Sale */}
-                <div className={`ccard cc-violet p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-violet-950/50 border-violet-600' : 'bg-violet-50 border-violet-300 shadow-sm'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-card'], borderColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
-                  <span className="block text-sm font-black text-teal-500 uppercase tracking-widest mb-1">{t("Today's Sale", "আজকের বিক্রয়")}</span>
-                  <div className="font-mono text-lg font-black text-teal-500">{computedDailySalesAmount.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-sm text-slate-400 mt-1">{t("Cash collected today", "আজ সংগ্রহ")}</div>
-                  <div className="absolute right-2 bottom-1 text-2xl opacity-10">💰</div>
+                <div className={`ccard cc-violet p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-violet-950/50 border-violet-500' : 'border-emerald-600'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-card'], borderColor: (activeThemeStyle as any)['--theme-border'] } : (!isDarkMode ? { background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' } : {})}>
+                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#a7f3d0'} : {color:'#6ee7b7'}}>{t("Today's Sale", "আজকের বিক্রয়")}</span>
+                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#6ee7b7'}}>{computedDailySalesAmount.toFixed(1)} {currencySymbol}</div>
+                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#d1fae5'} : {color:'#6b7280'}}>{t("Cash collected today", "আজ সংগ্রহ")}</div>
+                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <style>{`
+                        @keyframes bagFloat{0%,100%{transform:translateY(0) rotate(-2deg) scale(1)}50%{transform:translateY(-8px) rotate(2deg) scale(1.04)}}
+                        @keyframes bagGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                        @keyframes coinSpin1{0%{transform:translateY(-18px) scaleX(1);opacity:0}15%{opacity:1}40%{transform:translateY(2px) scaleX(-1);opacity:1}70%{transform:translateY(10px) scaleX(1);opacity:1}85%,100%{transform:translateY(14px);opacity:0}}
+                        @keyframes coinSpin2{0%{transform:translateY(-14px) scaleX(1);opacity:0}20%{opacity:1}45%{transform:translateY(2px) scaleX(-1);opacity:1}75%{transform:translateY(8px) scaleX(1);opacity:1}90%,100%{opacity:0}}
+                        @keyframes coinSpin3{0%{transform:translateY(-20px) scaleX(1);opacity:0}10%{opacity:1}38%{transform:translateY(2px) scaleX(-1);opacity:1}65%{transform:translateY(12px) scaleX(1);opacity:1}80%,100%{opacity:0}}
+                        @keyframes shimmer{0%,100%{opacity:0.15}50%{opacity:0.55}}
+                        @keyframes sparkle1{0%,100%{transform:scale(0) rotate(0deg);opacity:0}40%,60%{transform:scale(1.2) rotate(180deg);opacity:1}}
+                        @keyframes sparkle2{0%,100%{transform:scale(0) rotate(0deg);opacity:0}30%,70%{transform:scale(1) rotate(90deg);opacity:0.9}}
+                        #mbag{animation:bagFloat 2s ease-in-out infinite,bagGlow 2s ease-in-out infinite;transform-origin:32px 38px;will-change:transform}
+                        #c1{animation:coinSpin1 2s 0.1s ease-in infinite;transform-origin:20px 18px;will-change:transform}
+                        #c2{animation:coinSpin2 2s 0.55s ease-in infinite;transform-origin:36px 14px;will-change:transform}
+                        #c3{animation:coinSpin3 2s 0.9s ease-in infinite;transform-origin:44px 22px;will-change:transform}
+                        #sh1{animation:shimmer 2s 0s ease-in-out infinite}
+                        #sh2{animation:shimmer 2s 0.4s ease-in-out infinite}
+                        #sp1{animation:sparkle1 2s 0.2s ease-in-out infinite;transform-origin:12px 12px;will-change:transform}
+                        #sp2{animation:sparkle2 2s 0.8s ease-in-out infinite;transform-origin:50px 10px;will-change:transform}
+                      `}</style>
+                      <g id="mbag">
+                        <ellipse cx="32" cy="42" rx="18" ry="14" fill="white" fillOpacity="0.92"/>
+                        <ellipse id="sh1" cx="26" cy="38" rx="6" ry="9" fill="white" fillOpacity="0.15" transform="rotate(-15 26 38)"/>
+                        <rect x="25" y="23" width="14" height="11" rx="4" fill="white" fillOpacity="0.85"/>
+                        <path d="M27 23 C27 14.5 37 14.5 37 23" stroke="white" strokeWidth="3" fill="none" strokeLinecap="round"/>
+                        <text x="32" y="47" textAnchor="middle" fontSize="13" fill="#059669" fontWeight="900">৳</text>
+                        <ellipse id="sh2" cx="38" cy="44" rx="4" ry="6" fill="white" fillOpacity="0.1" transform="rotate(20 38 44)"/>
+                      </g>
+                      <ellipse id="c1" cx="20" cy="18" rx="5" ry="3.5" fill="#fbbf24" stroke="#f59e0b" strokeWidth="0.8"/>
+                      <text id="c1" x="18" y="21" fontSize="7" fill="#92400e" fontWeight="bold">$</text>
+                      <ellipse id="c2" cx="36" cy="14" rx="4" ry="2.8" fill="#fde68a" stroke="#fbbf24" strokeWidth="0.8"/>
+                      <ellipse id="c3" cx="44" cy="22" rx="3.5" ry="2.5" fill="#fcd34d" stroke="#f59e0b" strokeWidth="0.7"/>
+                      <g id="sp1"><path d="M12 8 L13 12 L16 12 L13.5 14 L14.5 18 L12 16 L9.5 18 L10.5 14 L8 12 L11 12 Z" fill="white" fillOpacity="0.9"/></g>
+                      <g id="sp2"><path d="M50 6 L51 9 L54 9 L51.8 11 L52.5 14 L50 12.5 L47.5 14 L48.2 11 L46 9 L49 9 Z" fill="#fde68a" fillOpacity="0.9"/></g>
+                    </svg>
+                  </div>
                 </div>
 
                 {/* Monthly Sale */}
-                <div className={`ccard cc-pink p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-pink-950/50 border-pink-600' : 'bg-pink-50 border-pink-300 shadow-sm'}`}>
-                  <span className="block text-sm font-black text-blue-500 uppercase tracking-widest mb-1">{t("Monthly Sale", "মাসিক বিক্রয়")}</span>
-                  <div className="font-mono text-lg font-black text-blue-500">{computedMonthlySalesAmount.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-sm text-slate-400 mt-1">{t("This month", "এই মাসে")}</div>
-                  <div className="absolute right-2 bottom-1 text-2xl opacity-10">📅</div>
+                <div className={`ccard cc-pink p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-pink-950/50 border-blue-500' : 'border-blue-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)' } : {}}>
+                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#bfdbfe'} : {color:'#93c5fd'}}>{t("Monthly Sale", "মাসিক বিক্রয়")}</span>
+                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#93c5fd'}}>{computedMonthlySalesAmount.toFixed(1)} {currencySymbol}</div>
+                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#dbeafe'} : {color:'#6b7280'}}>{t("This month", "এই মাসে")}</div>
+                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <style>{`
+                        @keyframes calFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-6px) scale(1.05)}}
+                        @keyframes calGlow{0%,100%{opacity:0.85}50%{opacity:1}}
+                        @keyframes dateFlip{0%,30%{opacity:1;transform:scaleY(1)}40%{opacity:0;transform:scaleY(0)}50%{opacity:1;transform:scaleY(1)}100%{opacity:1}}
+                        @keyframes ringRotate{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+                        @keyframes dotPulse{0%,100%{opacity:0.3;transform:scale(1)}50%{opacity:1;transform:scale(1.4)}}
+                        @keyframes pageFlip{0%,60%{transform:scaleY(1)}70%{transform:scaleY(0)}80%{transform:scaleY(1)}100%{transform:scaleY(1)}}
+                        #cal{animation:calFloat 2.2s ease-in-out infinite,calGlow 2.2s ease-in-out infinite;transform-origin:32px 36px;will-change:transform}
+                        #dt{animation:dateFlip 3s 0.5s ease-in-out infinite;transform-origin:32px 42px;will-change:transform}
+                        #ring{animation:ringRotate 8s linear infinite;transform-origin:32px 32px;will-change:transform}
+                        #d1{animation:dotPulse 1.2s 0s ease-in-out infinite;will-change:transform}
+                        #d2{animation:dotPulse 1.2s 0.3s ease-in-out infinite;will-change:transform}
+                        #d3{animation:dotPulse 1.2s 0.6s ease-in-out infinite;will-change:transform}
+                        #page{animation:pageFlip 3s 1s ease-in-out infinite;transform-origin:32px 30px;will-change:transform}
+                      `}</style>
+                      <g id="ring">
+                        <circle cx="32" cy="32" r="28" stroke="white" strokeWidth="0.5" strokeOpacity="0.2" strokeDasharray="4 6" fill="none"/>
+                        <circle cx="32" cy="4" r="2.5" fill="white" fillOpacity="0.5"/>
+                        <circle cx="60" cy="32" r="2" fill="white" fillOpacity="0.3"/>
+                        <circle cx="32" cy="60" r="2" fill="white" fillOpacity="0.3"/>
+                      </g>
+                      <g id="cal">
+                        <rect x="9" y="16" width="46" height="38" rx="5" fill="white" fillOpacity="0.88"/>
+                        <rect x="9" y="16" width="46" height="13" rx="5" fill="white" fillOpacity="0.4"/>
+                        <rect x="9" y="24" width="46" height="5" fill="white" fillOpacity="0.4"/>
+                        <rect x="19" y="9" width="5" height="12" rx="2.5" fill="white"/>
+                        <rect x="40" y="9" width="5" height="12" rx="2.5" fill="white"/>
+                        <g id="page">
+                          <text id="dt" x="32" y="44" textAnchor="middle" fontSize="15" fill="#1d4ed8" fontWeight="900">15</text>
+                        </g>
+                        <circle id="d1" cx="17" cy="34" r="2.5" fill="#1d4ed8" fillOpacity="0.5"/>
+                        <circle id="d2" cx="32" cy="34" r="2.5" fill="#1d4ed8" fillOpacity="0.5"/>
+                        <circle id="d3" cx="47" cy="34" r="2.5" fill="#1d4ed8" fillOpacity="0.5"/>
+                      </g>
+                    </svg>
+                  </div>
                 </div>
 
                 {/* Daily Profit */}
                 {checkShouldRenderTabOption("daily_profit_view") && (
-                  <div className={`ccard cc-rose p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-rose-950/50 border-rose-600' : 'bg-rose-50 border-rose-300 shadow-sm'}`}>
-                    <span className="block text-sm font-black text-emerald-500 uppercase tracking-widest mb-1">{t("Today's Profit", "আজকের লাভ")}</span>
-                    <div className="font-mono text-lg font-black text-emerald-500">{computedDailyProfitAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-sm text-slate-400 mt-1">{t("Net profit today", "আজ নেট লাভ")}</div>
-                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">📈</div>
+                  <div className={`ccard cc-rose p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-rose-950/50 border-emerald-500' : 'border-teal-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #0f766e 0%, #0d9488 100%)' } : {}}>
+                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#99f6e4'} : {color:'#5eead4'}}>{t("Today's Profit", "আজকের লাভ")}</span>
+                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#5eead4'}}>{computedDailyProfitAmount.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ccfbf1'} : {color:'#6b7280'}}>{t("Net profit today", "আজ নেট লাভ")}</div>
+                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <style>{`
+                          @keyframes b1grow{0%,100%{transform:scaleY(0.6)}50%{transform:scaleY(1.15)}}
+                          @keyframes b2grow{0%,100%{transform:scaleY(0.7)}50%{transform:scaleY(1.2)}}
+                          @keyframes b3grow{0%,100%{transform:scaleY(0.8)}50%{transform:scaleY(1.25)}}
+                          @keyframes arrDash{0%,100%{transform:translate(0,0) scale(1)}40%{transform:translate(6px,-7px) scale(1.1)}60%{transform:translate(6px,-7px) scale(1.1)}}
+                          @keyframes baseGlow{0%,100%{opacity:0.4}50%{opacity:0.9}}
+                          @keyframes shimBars{0%{opacity:0.1}50%{opacity:0.5}100%{opacity:0.1}}
+                          @keyframes particle{0%{transform:translate(0,0);opacity:0.8}100%{transform:translate(var(--px),var(--py));opacity:0}}
+                          #b1{animation:b1grow 1.8s 0s ease-in-out infinite;transform-origin:14px 48px;will-change:transform}
+                          #b2{animation:b2grow 1.8s 0.2s ease-in-out infinite;transform-origin:27px 48px;will-change:transform}
+                          #b3{animation:b3grow 1.8s 0.4s ease-in-out infinite;transform-origin:40px 48px;will-change:transform}
+                          #arr{animation:arrDash 1.6s ease-in-out infinite;will-change:transform}
+                          #base{animation:baseGlow 1.8s ease-in-out infinite}
+                          #p1{--px:-8px;--py:-12px;animation:particle 1.2s 0.3s ease-out infinite;transform-origin:44px 14px;will-change:transform}
+                          #p2{--px:8px;--py:-10px;animation:particle 1.2s 0.7s ease-out infinite;transform-origin:44px 14px;will-change:transform}
+                          #p3{--px:2px;--py:-14px;animation:particle 1.2s 1.1s ease-out infinite;transform-origin:44px 14px;will-change:transform}
+                        `}</style>
+                        <rect id="base" x="6" y="50" width="52" height="2.5" rx="1.2" fill="white"/>
+                        <rect id="b1" x="8" y="34" width="12" height="16" rx="2.5" fill="white" fillOpacity="0.55"/>
+                        <rect id="b2" x="26" y="26" width="12" height="24" rx="2.5" fill="white" fillOpacity="0.7"/>
+                        <rect id="b3" x="44" y="14" width="12" height="36" rx="2.5" fill="white" fillOpacity="0.88"/>
+                        <rect x="9" y="35" width="4" height="14" rx="1" fill="white" fillOpacity="0.25" id="sh1"/>
+                        <rect x="27" y="27" width="4" height="22" rx="1" fill="white" fillOpacity="0.25"/>
+                        <rect x="45" y="15" width="4" height="34" rx="1" fill="white" fillOpacity="0.25"/>
+                        <g id="arr">
+                          <path d="M38 11 L50 6 M50 6 L44 6 M50 6 L50 12" stroke="#fbbf24" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        </g>
+                        <circle id="p1" cx="44" cy="14" r="2" fill="#fbbf24"/>
+                        <circle id="p2" cx="44" cy="14" r="1.5" fill="white" fillOpacity="0.8"/>
+                        <circle id="p3" cx="44" cy="14" r="2.5" fill="#fde68a" fillOpacity="0.6"/>
+                      </svg>
+                    </div>
                   </div>
                 )}
 
                 {/* Monthly Profit */}
                 {checkShouldRenderTabOption("monthly_profit_view") && (
-                  <div className={`ccard cc-green p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-green-950/50 border-green-600' : 'bg-green-50 border-green-300 shadow-sm'}`}>
-                    <span className="block text-sm font-black text-purple-500 uppercase tracking-widest mb-1">{t("Monthly Profit", "মাসিক লাভ")}</span>
-                    <div className="font-mono text-lg font-black text-purple-500">{computedMonthlyProfitAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-sm text-slate-400 mt-1">{t("Net profit this month", "মাসে নেট লাভ")}</div>
-                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">📊</div>
+                  <div className={`ccard cc-green p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-green-950/50 border-purple-500' : 'border-purple-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)' } : {}}>
+                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#ddd6fe'} : {color:'#c4b5fd'}}>{t("Monthly Profit", "মাসিক লাভ")}</span>
+                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#c4b5fd'}}>{computedMonthlyProfitAmount.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ede9fe'} : {color:'#6b7280'}}>{t("Net profit this month", "মাসে নেট লাভ")}</div>
+                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <style>{`
+                          @keyframes rktLaunch{0%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-13px) rotate(-3deg)}65%{transform:translateY(-13px) rotate(3deg)}}
+                          @keyframes fireFlick{0%,100%{transform:scaleY(1) scaleX(1)}25%{transform:scaleY(1.6) scaleX(0.7)}50%{transform:scaleY(0.8) scaleX(1.25)}75%{transform:scaleY(1.5) scaleX(0.75)}}
+                          @keyframes smoke1Up{0%{transform:translateY(0) scale(0.8);opacity:0.5}100%{transform:translateY(-22px) scale(1.8);opacity:0}}
+                          @keyframes smoke2Up{0%{transform:translateY(0) scale(0.7);opacity:0.4}100%{transform:translateY(-18px) scale(1.5);opacity:0}}
+                          @keyframes orbitDot{0%{transform:rotate(0deg) translateX(20px) rotate(0deg);opacity:0.6}100%{transform:rotate(360deg) translateX(20px) rotate(-360deg);opacity:0.6}}
+                          @keyframes orbitDot2{0%{transform:rotate(120deg) translateX(18px) rotate(-120deg);opacity:0.4}100%{transform:rotate(480deg) translateX(18px) rotate(-480deg);opacity:0.4}}
+                          @keyframes rktGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          #rkt{animation:rktLaunch 2s ease-in-out infinite,rktGlow 2s ease-in-out infinite;transform-origin:32px 40px;will-change:transform}
+                          #fire{animation:fireFlick 0.18s linear infinite;transform-origin:32px 48px;will-change:transform}
+                          #sm1{animation:smoke1Up 0.8s 0s ease-out infinite;will-change:transform}
+                          #sm2{animation:smoke2Up 0.8s 0.28s ease-out infinite;will-change:transform}
+                          #od1{animation:orbitDot 4s linear infinite;transform-origin:32px 28px;will-change:transform}
+                          #od2{animation:orbitDot2 4s linear infinite;transform-origin:32px 28px;will-change:transform}
+                        `}</style>
+                        <circle id="od1" cx="32" cy="28" r="2.5" fill="white" fillOpacity="0.4"/>
+                        <circle id="od2" cx="32" cy="28" r="2" fill="#fbbf24" fillOpacity="0.5"/>
+                        <g id="rkt">
+                          <path d="M32 6 C32 6 22 20 22 34 L42 34 C42 20 32 6 32 6Z" fill="white" fillOpacity="0.92"/>
+                          <rect x="26" y="32" width="12" height="9" fill="white" fillOpacity="0.75"/>
+                          <path d="M22 34 L13 43 L22 43Z" fill="white" fillOpacity="0.6"/>
+                          <path d="M42 34 L51 43 L42 43Z" fill="white" fillOpacity="0.6"/>
+                          <circle cx="32" cy="20" r="5" fill="#7c3aed" fillOpacity="0.75"/>
+                          <circle cx="32" cy="20" r="2.5" fill="white" fillOpacity="0.5"/>
+                          <g id="fire">
+                            <path d="M25 41 C25 41 22 51 32 56 C42 51 39 41 39 41Z" fill="#fbbf24"/>
+                            <path d="M27 42 C27 42 25 49 32 53 C39 49 37 42 37 42Z" fill="#f97316"/>
+                            <path d="M29 43 C29 43 28 48 32 51 C36 48 35 43 35 43Z" fill="#fef3c7" fillOpacity="0.8"/>
+                          </g>
+                        </g>
+                        <circle id="sm1" cx="28" cy="58" r="4" fill="white" fillOpacity="0.35"/>
+                        <circle id="sm2" cx="36" cy="60" r="3.5" fill="white" fillOpacity="0.25"/>
+                      </svg>
+                    </div>
                   </div>
                 )}
 
                 {/* Daily Purchase */}
                 {checkShouldRenderTabOption("daily_purchases_view") && (
-                  <div className={`ccard cc-slate p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-500' : 'bg-slate-100 border-slate-400 shadow-sm'}`}>
-                    <span className="block text-sm font-black text-rose-400 uppercase tracking-widest mb-1">{t("Today's Purchase", "আজকের ক্রয়")}</span>
-                    <div className="font-mono text-lg font-black text-rose-400">{computedDailyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-sm text-slate-400 mt-1">{t("Purchased today", "আজ কেনা")}</div>
-                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">📥</div>
+                  <div className={`ccard cc-slate p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-slate-800 border-orange-500' : 'border-orange-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)' } : {}}>
+                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fed7aa'} : {color:'#fdba74'}}>{t("Today's Purchase", "আজকের ক্রয়")}</span>
+                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fdba74'}}>{computedDailyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ffedd5'} : {color:'#6b7280'}}>{t("Purchased today", "আজ কেনা")}</div>
+                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <style>{`
+                          @keyframes cartRoll{0%,100%{transform:translateX(0)}25%{transform:translateX(3px)}75%{transform:translateX(-2px)}}
+                          @keyframes cartGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes wheelSpin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+                          @keyframes it1Jump{0%,70%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-10px) rotate(-8deg)}}
+                          @keyframes it2Jump{0%,70%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-14px) rotate(5deg)}}
+                          @keyframes it3Jump{0%,70%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-9px) rotate(-5deg)}}
+                          @keyframes plusPop{0%,100%{transform:scale(0);opacity:0}50%{transform:scale(1.3);opacity:1}}
+                          #cart{animation:cartRoll 1.4s ease-in-out infinite,cartGlow 1.8s ease-in-out infinite;will-change:transform}
+                          #w1{animation:wheelSpin 1s linear infinite;transform-origin:22px 47px;will-change:transform}
+                          #w2{animation:wheelSpin 1s linear infinite;transform-origin:44px 47px;will-change:transform}
+                          #it1{animation:it1Jump 1.6s 0s ease-in-out infinite;transform-origin:22px 24px;will-change:transform}
+                          #it2{animation:it2Jump 1.6s 0.2s ease-in-out infinite;transform-origin:32px 20px;will-change:transform}
+                          #it3{animation:it3Jump 1.6s 0.4s ease-in-out infinite;transform-origin:42px 24px;will-change:transform}
+                          #plus{animation:plusPop 1.6s 0.8s ease-in-out infinite;transform-origin:54px 12px;will-change:transform}
+                        `}</style>
+                        <g id="cart">
+                          <path d="M6 10 L14 10 L22 40 L52 40 L58 20 L14 20" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                          <circle id="w1" cx="22" cy="47" r="4.5" stroke="white" strokeWidth="2.2" fill="none"/>
+                          <circle cx="22" cy="47" r="1.5" fill="white"/>
+                          <circle id="w2" cx="44" cy="47" r="4.5" stroke="white" strokeWidth="2.2" fill="none"/>
+                          <circle cx="44" cy="47" r="1.5" fill="white"/>
+                        </g>
+                        <rect id="it1" x="17" y="12" width="9" height="9" rx="2" fill="#fbbf24" fillOpacity="0.95"/>
+                        <rect id="it2" x="28" y="8" width="9" height="9" rx="2" fill="#fde68a" fillOpacity="0.9"/>
+                        <rect id="it3" x="39" y="12" width="9" height="9" rx="2" fill="#fcd34d" fillOpacity="0.95"/>
+                        <text id="it1" x="19" y="21" fontSize="8" fill="#92400e">💊</text>
+                        <g id="plus">
+                          <path d="M54 8 L54 16 M50 12 L58 12" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                        </g>
+                      </svg>
+                    </div>
                   </div>
                 )}
 
                 {/* Monthly Purchase */}
                 {checkShouldRenderTabOption("monthly_purchases_view") && (
-                  <div className={`ccard cc-cyan p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-cyan-950/50 border-cyan-600' : 'bg-cyan-50 border-cyan-300 shadow-sm'}`}>
-                    <span className="block text-sm font-black text-amber-500 uppercase tracking-widest mb-1">{t("Monthly Purchase", "মাসিক ক্রয়")}</span>
-                    <div className="font-mono text-lg font-black text-amber-500">{computedMonthlyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-sm text-slate-400 mt-1">{t("Purchased this month", "মাসে কেনা")}</div>
-                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">📦</div>
+                  <div className={`ccard cc-cyan p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-cyan-950/50 border-cyan-500' : 'border-cyan-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #0e7490 0%, #0891b2 100%)' } : {}}>
+                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#a5f3fc'} : {color:'#67e8f9'}}>{t("Monthly Purchase", "মাসিক ক্রয়")}</span>
+                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#67e8f9'}}>{computedMonthlyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#cffafe'} : {color:'#6b7280'}}>{t("Purchased this month", "মাসে কেনা")}</div>
+                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <style>{`
+                          @keyframes bagSwing{0%,100%{transform:rotate(-8deg) translateY(0)}25%{transform:rotate(8deg) translateY(-3px)}50%{transform:rotate(-6deg) translateY(-1px)}75%{transform:rotate(6deg) translateY(-2px)}}
+                          @keyframes tagBounce{0%,100%{transform:translateY(0) rotate(-10deg)}50%{transform:translateY(-7px) rotate(10deg)}}
+                          @keyframes bagGlow{0%,100%{opacity:0.85}50%{opacity:1}}
+                          @keyframes checkPop{0%,60%,100%{transform:scale(0);opacity:0}75%{transform:scale(1.3);opacity:1}90%{transform:scale(1);opacity:1}}
+                          @keyframes shimBag{0%,100%{opacity:0.1}50%{opacity:0.4}}
+                          #bag{animation:bagSwing 2s ease-in-out infinite,bagGlow 2s ease-in-out infinite;transform-origin:32px 22px;will-change:transform}
+                          #tag{animation:tagBounce 2s 0.3s ease-in-out infinite;transform-origin:43px 14px;will-change:transform}
+                          #chk{animation:checkPop 3s 0.5s ease-in-out infinite;transform-origin:32px 38px;will-change:transform}
+                          #shbag{animation:shimBag 2s ease-in-out infinite}
+                        `}</style>
+                        <g id="bag">
+                          <rect x="12" y="22" width="40" height="34" rx="5" fill="white" fillOpacity="0.88"/>
+                          <ellipse id="shbag" cx="20" cy="36" rx="6" ry="12" fill="white" fillOpacity="0.15" transform="rotate(-10 20 36)"/>
+                          <path d="M22 22 C22 12 42 12 42 22" stroke="white" strokeWidth="3" fill="none" strokeLinecap="round"/>
+                          <circle cx="32" cy="38" r="6" fill="#0e7490" fillOpacity="0.2"/>
+                          <g id="chk">
+                            <path d="M28 38 L31 41 L37 35" stroke="#0e7490" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </g>
+                          <rect x="22" y="28" width="20" height="2.5" rx="1.2" fill="#0e7490" fillOpacity="0.35"/>
+                        </g>
+                        <g id="tag">
+                          <rect x="44" y="8" width="14" height="20" rx="3" fill="#fbbf24" fillOpacity="0.95"/>
+                          <circle cx="51" cy="12" r="2" fill="white"/>
+                          <rect x="46" y="17" width="10" height="1.5" rx="0.75" fill="white" fillOpacity="0.75"/>
+                          <rect x="46" y="20" width="7" height="1.5" rx="0.75" fill="white" fillOpacity="0.5"/>
+                          <rect x="46" y="23" width="8" height="1.5" rx="0.75" fill="white" fillOpacity="0.4"/>
+                        </g>
+                      </svg>
+                    </div>
                   </div>
                 )}
 
                 {/* Daily Due */}
-                <div className={`ccard cc-purple p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-purple-950/50 border-purple-600' : 'bg-purple-50 border-purple-300 shadow-sm'}`}>
-                  <span className="block text-sm font-black text-red-400 uppercase tracking-widest mb-1">{t("Today's Due", "আজকের বাকি")}</span>
-                  <div className="font-mono text-lg font-black text-red-400">{computedDailyDue.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-sm text-slate-400 mt-1">{t("Due given today", "আজ বাকি দেওয়া")}</div>
-                  <div className="absolute right-2 bottom-1 text-2xl opacity-10">⏳</div>
+                <div className={`ccard cc-purple p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-purple-950/50 border-red-500' : 'border-red-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #b91c1c 0%, #dc2626 100%)' } : {}}>
+                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fecaca'} : {color:'#fca5a5'}}>{t("Today's Due", "আজকের বাকি")}</span>
+                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fca5a5'}}>{computedDailyDue.toFixed(1)} {currencySymbol}</div>
+                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fee2e2'} : {color:'#6b7280'}}>{t("Due given today", "আজ বাকি দেওয়া")}</div>
+                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <style>{`
+                        @keyframes hgSpin{0%,40%{transform:rotate(0deg)}60%,100%{transform:rotate(180deg)}}
+                        @keyframes sandFill{0%{transform:scaleY(0);opacity:0}10%{opacity:1}80%{transform:scaleY(1);opacity:1}95%,100%{opacity:0}}
+                        @keyframes sandDrop{0%,30%{transform:translateY(0);opacity:1}85%,100%{transform:translateY(18px);opacity:0}}
+                        @keyframes ripple1{0%{transform:scale(0.5);opacity:0.6}100%{transform:scale(1.8);opacity:0}}
+                        @keyframes ripple2{0%{transform:scale(0.5);opacity:0.4}100%{transform:scale(2.2);opacity:0}}
+                        @keyframes glassGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                        #hg{animation:hgSpin 4s 0.5s cubic-bezier(0.4,0,0.2,1) infinite,glassGlow 2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                        #sf{animation:sandFill 2s 0.5s ease-in infinite;transform-origin:32px 20px}
+                        #sd{animation:sandDrop 2s 0.5s ease-in infinite}
+                        #rip1{animation:ripple1 2s 0s ease-out infinite}
+                        #rip2{animation:ripple2 2s 0.6s ease-out infinite}
+                      `}</style>
+                      <circle id="rip1" cx="32" cy="32" r="20" fill="none" stroke="#f43f5e" strokeWidth="1.5" strokeOpacity="0.3"/>
+                      <circle id="rip2" cx="32" cy="32" r="22" fill="none" stroke="white" strokeWidth="1" strokeOpacity="0.2"/>
+                      <g id="hg">
+                        <rect x="13" y="7" width="38" height="4" rx="2" fill="white"/>
+                        <rect x="13" y="53" width="38" height="4" rx="2" fill="white"/>
+                        <path d="M15 11 Q15 27 32 32 Q49 37 49 53 L15 53 Q15 37 32 32 Q49 27 49 11 Z" fill="white" fillOpacity="0.82"/>
+                        <path d="M19 11 Q23 23 32 28" stroke="white" strokeWidth="0.8" fill="none" strokeOpacity="0.35"/>
+                        <rect id="sf" x="26" y="12" width="12" height="18" rx="2" fill="#b91c1c" fillOpacity="0.55"/>
+                        <path d="M15 53 Q22 43 32 40 Q42 43 49 53Z" fill="#b91c1c" fillOpacity="0.4"/>
+                      </g>
+                      <circle id="sd" cx="32" cy="32" r="3" fill="#fbbf24"/>
+                    </svg>
+                  </div>
                 </div>
 
                 {/* Monthly Due */}
-                <div className={`ccard cc-teal p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-teal-950/50 border-teal-600' : 'bg-teal-50 border-teal-300 shadow-sm'}`}>
-                  <span className="block text-sm font-black text-orange-400 uppercase tracking-widest mb-1">{t("Monthly Due", "মাসিক বাকি")}</span>
-                  <div className="font-mono text-lg font-black text-orange-400">{computedMonthlyDue.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-sm text-slate-400 mt-1">{t("Total due this month", "মাসে মোট বাকি")}</div>
-                  <div className="absolute right-2 bottom-1 text-2xl opacity-10">📋</div>
+                <div className={`ccard cc-teal p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-teal-950/50 border-pink-500' : 'border-pink-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #be185d 0%, #db2777 100%)' } : {}}>
+                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fce7f3'} : {color:'#f9a8d4'}}>{t("Monthly Due", "মাসিক বাকি")}</span>
+                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#f9a8d4'}}>{computedMonthlyDue.toFixed(1)} {currencySymbol}</div>
+                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf2f8'} : {color:'#6b7280'}}>{t("Total due this month", "মাসে মোট বাকি")}</div>
+                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <style>{`
+                        @keyframes clipShake{0%,100%{transform:rotate(0deg)}15%{transform:rotate(-7deg)}30%{transform:rotate(7deg)}45%{transform:rotate(-4deg)}60%{transform:rotate(4deg)}75%,100%{transform:rotate(0deg)}}
+                        @keyframes clipGlow{0%,100%{opacity:0.85}50%{opacity:1}}
+                        @keyframes alertPulse{0%,100%{transform:scale(1);opacity:0.8}50%{transform:scale(1.4);opacity:1}}
+                        @keyframes alertRing{0%{transform:scale(1);opacity:0.5}100%{transform:scale(1.9);opacity:0}}
+                        @keyframes lineWrite1{0%{stroke-dashoffset:22}60%,100%{stroke-dashoffset:0}}
+                        @keyframes lineWrite2{0%,20%{stroke-dashoffset:18}80%,100%{stroke-dashoffset:0}}
+                        @keyframes lineWrite3{0%,40%{stroke-dashoffset:14}100%{stroke-dashoffset:0}}
+                        @keyframes penMove{0%{transform:translate(0,0)}33%{transform:translate(4px,8px)}66%{transform:translate(0px,16px)}100%{transform:translate(0,0)}}
+                        #clip{animation:clipShake 2.8s ease-in-out infinite,clipGlow 2s ease-in-out infinite;transform-origin:32px 36px;will-change:transform}
+                        #al{animation:alertPulse 1s ease-in-out infinite}
+                        #alring{animation:alertRing 1s ease-out infinite}
+                        #l1{animation:lineWrite1 2.8s ease-in-out infinite;stroke-dasharray:22}
+                        #l2{animation:lineWrite2 2.8s ease-in-out infinite;stroke-dasharray:18}
+                        #l3{animation:lineWrite3 2.8s ease-in-out infinite;stroke-dasharray:14}
+                        #pen{animation:penMove 2.8s ease-in-out infinite}
+                      `}</style>
+                      <circle id="alring" cx="48" cy="14" r="9" fill="none" stroke="#f43f5e" strokeWidth="2" strokeOpacity="0.5"/>
+                      <g id="clip">
+                        <rect x="10" y="12" width="40" height="46" rx="4" fill="white" fillOpacity="0.88"/>
+                        <rect x="22" y="8" width="20" height="10" rx="3" fill="white" fillOpacity="0.75"/>
+                        <path id="l1" d="M17 28 L47 28" stroke="#be185d" strokeWidth="2.5" strokeLinecap="round"/>
+                        <path id="l2" d="M17 36 L43 36" stroke="#be185d" strokeWidth="2.5" strokeLinecap="round" strokeOpacity="0.7"/>
+                        <path id="l3" d="M17 44 L38 44" stroke="#be185d" strokeWidth="2.5" strokeLinecap="round" strokeOpacity="0.45"/>
+                        <g id="pen">
+                          <rect x="42" y="26" width="4" height="14" rx="2" fill="#fbbf24" fillOpacity="0.9"/>
+                          <path d="M43 40 L44 44 L45 40Z" fill="#374151"/>
+                        </g>
+                      </g>
+                      <circle id="al" cx="48" cy="14" r="8" fill="#f43f5e"/>
+                      <text x="45" y="19" fontSize="11" fontWeight="900" fill="white">!</text>
+                    </svg>
+                  </div>
                 </div>
 
                 {/* Daily bKash/Nagad */}
                 {checkShouldRenderTabOption("bkash_nagad_view") && (
-                  <div className={`ccard cc-indigo p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-indigo-950/50 border-indigo-600' : 'bg-indigo-50 border-indigo-300 shadow-sm'}`}>
-                    <span className="block text-sm font-black text-pink-500 uppercase tracking-widest mb-1">{t("Today's bKash/Nagad", "আজকের বিকাশ/নগদ")}</span>
-                    <div className="font-mono text-lg font-black text-pink-500">{computedDailyBkash.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-sm text-slate-400 mt-1">{t("Mobile payment today", "আজ মোবাইল পেমেন্ট")}</div>
-                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">📱</div>
+                  <div className={`ccard cc-indigo p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-indigo-950/50 border-fuchsia-500' : 'border-fuchsia-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #a21caf 0%, #c026d3 100%)' } : {}}>
+                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fae8ff'} : {color:'#f0abfc'}}>{t("Today's bKash/Nagad", "আজকের বিকাশ/নগদ")}</span>
+                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#f0abfc'}}>{computedDailyBkash.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf4ff'} : {color:'#6b7280'}}>{t("Mobile payment today", "আজ মোবাইল পেমেন্ট")}</div>
+                    <div className="absolute right-2 bottom-1" style={{width:'60px',height:'60px',opacity:0.55,willChange:'transform'}}>
+                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <style>{`
+                          @keyframes phVib{0%,80%,100%{transform:rotate(0deg)}10%{transform:rotate(-12deg)}20%{transform:rotate(12deg)}30%{transform:rotate(-8deg)}40%{transform:rotate(8deg)}50%{transform:rotate(-5deg)}60%{transform:rotate(5deg)}}
+                          @keyframes phGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes ping1{0%{transform:scale(0.8);opacity:0.8}100%{transform:scale(3);opacity:0}}
+                          @keyframes ping2{0%{transform:scale(0.8);opacity:0.6}100%{transform:scale(3.5);opacity:0}}
+                          @keyframes coinPop{0%,70%,100%{transform:translateY(0) scale(0);opacity:0}78%{transform:translateY(-12px) scale(1.3);opacity:1}90%{transform:translateY(-16px) scale(1);opacity:0.8}98%{opacity:0}}
+                          @keyframes screenFlash{0%,85%,100%{opacity:0.55}88%{opacity:0.9}}
+                          #ph{animation:phVib 2.5s ease-in-out infinite,phGlow 2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                          #p1{animation:ping1 1.6s 0s ease-out infinite;transform-origin:46px 15px;will-change:transform}
+                          #p2{animation:ping2 1.6s 0.45s ease-out infinite;transform-origin:46px 15px;will-change:transform}
+                          #cn{animation:coinPop 2.5s ease-in-out infinite;transform-origin:32px 20px;will-change:transform}
+                          #scr{animation:screenFlash 2.5s ease-in-out infinite}
+                        `}</style>
+                        <circle id="p1" cx="46" cy="15" r="6" fill="#fbbf24" fillOpacity="0.65"/>
+                        <circle id="p2" cx="46" cy="15" r="6" fill="#fbbf24" fillOpacity="0.4"/>
+                        <circle cx="46" cy="15" r="7" fill="#fbbf24"/>
+                        <text x="43" y="19.5" fontSize="9" fontWeight="900" fill="white">৳</text>
+                        <g id="ph">
+                          <rect x="16" y="8" width="28" height="48" rx="5" fill="white" fillOpacity="0.92"/>
+                          <rect id="scr" x="19" y="13" width="22" height="34" rx="3" fill="#a21caf" fillOpacity="0.55"/>
+                          <rect x="19" y="13" width="22" height="34" rx="3" fill="white" fillOpacity="0.08"/>
+                          <circle cx="30" cy="52" r="2.5" fill="#a21caf" fillOpacity="0.6"/>
+                          <rect x="26" y="10" width="8" height="2" rx="1" fill="#a21caf" fillOpacity="0.35"/>
+                          <text x="23" y="32" fontSize="14">📲</text>
+                        </g>
+                        <g id="cn">
+                          <circle cx="32" cy="20" r="6" fill="#fbbf24"/>
+                          <text x="29" y="24" fontSize="9" fontWeight="900" fill="white">৳</text>
+                        </g>
+                      </svg>
+                    </div>
                   </div>
                 )}
 
                 {/* Monthly bKash/Nagad */}
                 {checkShouldRenderTabOption("bkash_nagad_view") && (
-                  <div className={`ccard cc-amber p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-amber-950/50 border-amber-600' : 'bg-amber-50 border-amber-300 shadow-sm'}`}>
-                    <span className="block text-sm font-black text-fuchsia-500 uppercase tracking-widest mb-1">{t("Monthly bKash/Nagad", "মাসিক বিকাশ/নগদ")}</span>
-                    <div className="font-mono text-lg font-black text-fuchsia-500">{computedMonthlyBkash.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-sm text-slate-400 mt-1">{t("Mobile payment month", "মাসে মোবাইল পেমেন্ট")}</div>
-                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">📲</div>
+                  <div className={`ccard cc-amber p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-amber-950/50 border-amber-500' : 'border-amber-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #b45309 0%, #d97706 100%)' } : {}}>
+                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fef3c7'} : {color:'#fde68a'}}>{t("Monthly bKash/Nagad", "মাসিক বিকাশ/নগদ")}</span>
+                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fde68a'}}>{computedMonthlyBkash.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fffbeb'} : {color:'#6b7280'}}>{t("Mobile payment month", "মাসে মোবাইল পেমেন্ট")}</div>
+                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <style>{`
+                          @keyframes cardPop{0%,100%{transform:translateY(0) rotate(-4deg) scale(1)}50%{transform:translateY(-10px) rotate(4deg) scale(1.06)}}
+                          @keyframes cardGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes chipShine{0%,100%{opacity:0.35;transform:scale(1)}50%{opacity:0.85;transform:scale(1.05)}}
+                          @keyframes waveFlow{0%{transform:translateX(-14px);opacity:0}40%{opacity:0.7}100%{transform:translateX(14px);opacity:0}}
+                          @keyframes tapRipple{0%{transform:scale(0.5);opacity:0.7}100%{transform:scale(2.2);opacity:0}}
+                          @keyframes tapRipple2{0%{transform:scale(0.5);opacity:0.5}100%{transform:scale(2.8);opacity:0}}
+                          #crd{animation:cardPop 2s ease-in-out infinite,cardGlow 2s ease-in-out infinite;will-change:transform}
+                          #chip{animation:chipShine 2s ease-in-out infinite;will-change:transform}
+                          #wave{animation:waveFlow 2s 0.5s ease-in-out infinite;will-change:transform}
+                          #tr1{animation:tapRipple 1.5s 1s ease-out infinite;transform-origin:50px 12px;will-change:transform}
+                          #tr2{animation:tapRipple2 1.5s 1.3s ease-out infinite;transform-origin:50px 12px;will-change:transform}
+                        `}</style>
+                        <circle id="tr1" cx="50" cy="12" r="7" fill="#fbbf24" fillOpacity="0.5"/>
+                        <circle id="tr2" cx="50" cy="12" r="7" fill="#fbbf24" fillOpacity="0.3"/>
+                        <g id="crd">
+                          <rect x="4" y="16" width="52" height="34" rx="6" fill="white" fillOpacity="0.88"/>
+                          <rect x="4" y="22" width="52" height="10" fill="white" fillOpacity="0.35"/>
+                          <rect id="chip" x="10" y="28" width="14" height="10" rx="3" fill="#b45309" fillOpacity="0.65"/>
+                          <rect x="11" y="31" width="12" height="1.5" rx="0.75" fill="white" fillOpacity="0.55"/>
+                          <rect x="12" y="34" width="8" height="1.5" rx="0.75" fill="white" fillOpacity="0.4"/>
+                          <rect x="28" y="30" width="22" height="2.5" rx="1.2" fill="#b45309" fillOpacity="0.3"/>
+                          <rect x="28" y="35" width="16" height="2.5" rx="1.2" fill="#b45309" fillOpacity="0.2"/>
+                          <text x="40" y="45" fontSize="10">📱</text>
+                        </g>
+                        <path id="wave" d="M8 10 Q16 5 24 10 Q32 15 40 10" stroke="#fbbf24" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeOpacity="0.8"/>
+                      </svg>
+                    </div>
                   </div>
                 )}
 
 
 
                 {/* Today Due Collection */}
-                <div className={`ccard cc-blue p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-blue-950/50 border-blue-600' : 'bg-blue-50 border-blue-300 shadow-sm'}`}>
-                  <span className="block text-sm font-black text-teal-600 uppercase tracking-widest mb-1">{t("Today's Due Collection", "আজকের বাকি আদায়")}</span>
-                  <div className="font-mono text-lg font-black text-teal-600">{computedDailyDueCollection.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-sm text-slate-400 mt-1">{t("Collected today", "আজ আদায় হয়েছে")}</div>
-                  <div className="absolute right-2 bottom-1 text-2xl opacity-10">✅</div>
+                <div className={`ccard cc-blue p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-blue-950/50 border-teal-500' : 'border-teal-800'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)' } : {}}>
+                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#a7f3d0'} : {color:'#6ee7b7'}}>{t("Today's Due Collection", "আজকের বাকি আদায়")}</span>
+                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#6ee7b7'}}>{computedDailyDueCollection.toFixed(1)} {currencySymbol}</div>
+                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#d1fae5'} : {color:'#6b7280'}}>{t("Collected today", "আজ আদায় হয়েছে")}</div>
+                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <style>{`
+                        @keyframes circlePulse{0%,100%{transform:scale(1);opacity:0.5}50%{transform:scale(1.12);opacity:0.88}}
+                        @keyframes circleGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                        @keyframes checkDraw{0%{stroke-dashoffset:70;opacity:0.2}50%,100%{stroke-dashoffset:0;opacity:1}}
+                        @keyframes sp1Pop{0%,55%,100%{transform:scale(0) rotate(0deg);opacity:0}68%{transform:scale(1.4) rotate(45deg);opacity:1}85%{transform:scale(1) rotate(30deg);opacity:0.8}95%{opacity:0}}
+                        @keyframes sp2Pop{0%,60%,100%{transform:scale(0);opacity:0}72%{transform:scale(1.3);opacity:1}88%{transform:scale(1);opacity:0.8}96%{opacity:0}}
+                        @keyframes sp3Pop{0%,65%,100%{transform:scale(0);opacity:0}76%{transform:scale(1.5);opacity:1}90%{transform:scale(1);opacity:0.8}97%{opacity:0}}
+                        @keyframes burstLine{0%,50%{stroke-dashoffset:20;opacity:0}70%{stroke-dashoffset:0;opacity:1}90%,100%{opacity:0}}
+                        #chkc{animation:circlePulse 1.6s ease-in-out infinite,circleGlow 1.6s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                        #chkm{stroke-dasharray:70;animation:checkDraw 1.6s ease-in-out infinite}
+                        #sp1{animation:sp1Pop 1.6s 0.7s ease-out infinite;transform-origin:12px 14px;will-change:transform}
+                        #sp2{animation:sp2Pop 1.6s 0.9s ease-out infinite;transform-origin:50px 16px;will-change:transform}
+                        #sp3{animation:sp3Pop 1.6s 1.1s ease-out infinite;transform-origin:32px 6px}
+                        #bl1{stroke-dasharray:20;animation:burstLine 1.6s 0.75s ease-out infinite;transform-origin:10px 22px}
+                        #bl2{stroke-dasharray:20;animation:burstLine 1.6s 0.9s ease-out infinite;transform-origin:54px 22px}
+                      `}</style>
+                      <circle id="chkc" cx="32" cy="32" r="22" fill="white" fillOpacity="0.12" stroke="white" strokeWidth="3" strokeOpacity="0.65"/>
+                      <polyline id="chkm" points="18,32 27,41 46,22" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                      <g id="sp1"><text x="8" y="18" fontSize="13">✦</text></g>
+                      <g id="sp2"><text x="46" y="16" fontSize="11">★</text></g>
+                      <g id="sp3"><text x="27" y="7" fontSize="12">✨</text></g>
+                      <path id="bl1" d="M6 26 L12 22" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                      <path id="bl2" d="M58 26 L52 22" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                    </svg>
+                  </div>
                 </div>
 
                 {/* Monthly Due Collection */}
-                <div className={`ccard cc-red p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-red-950/50 border-red-600' : 'bg-red-50 border-red-300 shadow-sm'}`}>
-                  <span className="block text-sm font-black text-cyan-500 uppercase tracking-widest mb-1">{t("Monthly Due Collection", "মাসিক বাকি আদায়")}</span>
-                  <div className="font-mono text-lg font-black text-cyan-500">{computedMonthlyDueCollection.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-sm text-slate-400 mt-1">{t("Collected this month", "এই মাসে আদায়")}</div>
-                  <div className="absolute right-2 bottom-1 text-2xl opacity-10">💰</div>
+                <div className={`ccard cc-red p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-red-950/50 border-slate-500' : 'border-slate-700'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%)' } : {}}>
+                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#bfdbfe'} : {color:'#93c5fd'}}>{t("Monthly Due Collection", "মাসিক বাকি আদায়")}</span>
+                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#93c5fd'}}>{computedMonthlyDueCollection.toFixed(1)} {currencySymbol}</div>
+                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#dbeafe'} : {color:'#6b7280'}}>{t("Collected this month", "এই মাসে আদায়")}</div>
+                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <style>{`
+                        @keyframes wltOpen{0%,100%{transform:scaleY(1) rotate(-2deg)}50%{transform:scaleY(1.07) rotate(2deg)}}
+                        @keyframes wltGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                        @keyframes cf1Fly{0%{transform:translate(0,0) scale(0);opacity:0}18%{transform:translate(-6px,-14px) scale(1.2);opacity:1}65%{transform:translate(-12px,-28px) scale(0.8);opacity:0.6}100%{transform:translate(-16px,-38px) scale(0);opacity:0}}
+                        @keyframes cf2Fly{0%{transform:translate(0,0) scale(0);opacity:0}22%{transform:translate(5px,-12px) scale(1.1);opacity:1}70%{transform:translate(12px,-24px) scale(0.8);opacity:0.5}100%{transform:translate(16px,-34px) scale(0);opacity:0}}
+                        @keyframes cf3Fly{0%{transform:translate(0,0) scale(0);opacity:0}30%{transform:translate(0px,-16px) scale(1.3);opacity:1}75%{transform:translate(4px,-30px) scale(0.7);opacity:0.4}100%{transform:translate(6px,-40px) scale(0);opacity:0}}
+                        @keyframes coinShine{0%,100%{opacity:0.6}50%{opacity:1}}
+                        #wlt{animation:wltOpen 2.2s ease-in-out infinite,wltGlow 2s ease-in-out infinite;will-change:transform}
+                        #cf1{animation:cf1Fly 2.2s 0.3s ease-out infinite;transform-origin:32px 24px;will-change:transform}
+                        #cf2{animation:cf2Fly 2.2s 0.7s ease-out infinite;transform-origin:32px 24px;will-change:transform}
+                        #cf3{animation:cf3Fly 2.2s 1.1s ease-out infinite;transform-origin:32px 24px}
+                        #cs{animation:coinShine 2s ease-in-out infinite}
+                      `}</style>
+                      <g id="wlt">
+                        <rect x="6" y="18" width="52" height="34" rx="6" fill="white" fillOpacity="0.88"/>
+                        <path d="M6 28 L58 28" stroke="white" strokeWidth="2" strokeOpacity="0.35"/>
+                        <rect id="cs" x="38" y="30" width="16" height="14" rx="4" fill="#065f46" fillOpacity="0.55"/>
+                        <circle cx="46" cy="37" r="4.5" fill="#065f46" fillOpacity="0.45"/>
+                        <circle cx="46" cy="37" r="2.5" fill="white" fillOpacity="0.55"/>
+                        <text x="10" y="44" fontSize="12" fontWeight="900" fill="#065f46" fillOpacity="0.5">৳৳৳</text>
+                        <rect x="10" y="21" width="24" height="3.5" rx="1.75" fill="#065f46" fillOpacity="0.2"/>
+                      </g>
+                      <circle id="cf1" cx="32" cy="24" r="7" fill="#fbbf24"/>
+                      <text x="28.5" y="29" fontSize="9" fontWeight="900" fill="#065f46">৳</text>
+                      <circle id="cf2" cx="32" cy="24" r="5.5" fill="#fde68a"/>
+                      <text x="29.5" y="28.5" fontSize="8" fontWeight="900" fill="#065f46">$</text>
+                      <circle id="cf3" cx="32" cy="24" r="6" fill="#fcd34d"/>
+                      <text x="29" y="29" fontSize="8" fontWeight="900" fill="#065f46">৳</text>
+                    </svg>
+                  </div>
                 </div>
 
                 {/* Yearly Sale */}
                 {checkShouldRenderTabOption("yearly_sales_view") && (
-                  <div className={`ccard cc-violet p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-violet-950/50 border-violet-600' : 'bg-violet-50 border-violet-300 shadow-sm'}`}>
-                    <span className="block text-sm font-black text-violet-500 uppercase tracking-widest mb-1">{t("Yearly Sale", "বার্ষিক বিক্রয়")}</span>
-                    <div className="font-mono text-lg font-black text-violet-500">{computedYearlySalesAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-sm text-slate-400 mt-1">{t("This year's total sales", "এই বছরের মোট বিক্রয়")}</div>
-                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">🗓️</div>
+                  <div className={`ccard cc-violet p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-violet-950/50 border-violet-500' : 'border-violet-800'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4c1d95 0%, #5b21b6 100%)' } : {}}>
+                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#ddd6fe'} : {color:'#c4b5fd'}}>{t("Yearly Sale", "বার্ষিক বিক্রয়")}</span>
+                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#c4b5fd'}}>{computedYearlySalesAmount.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ede9fe'} : {color:'#6b7280'}}>{t("This year's total sales", "এই বছরের মোট বিক্রয়")}</div>
+                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <style>{`
+                          @keyframes starSpin{0%{transform:rotate(0deg) scale(1)}40%{transform:rotate(180deg) scale(1.18)}100%{transform:rotate(360deg) scale(1)}}
+                          @keyframes starGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes twinkle1{0%,100%{opacity:0.2;transform:scale(0.6) rotate(0deg)}50%{opacity:1;transform:scale(1.3) rotate(15deg)}}
+                          @keyframes twinkle2{0%,100%{opacity:0.3;transform:scale(0.7)}50%{opacity:0.9;transform:scale(1.2)}}
+                          @keyframes twinkle3{0%,100%{opacity:0.15;transform:scale(0.5) rotate(0deg)}50%{opacity:0.8;transform:scale(1.1) rotate(-10deg)}}
+                          @keyframes orbitDot{0%{transform:rotate(0deg) translateX(28px) rotate(0deg)}100%{transform:rotate(360deg) translateX(28px) rotate(-360deg)}}
+                          #star{animation:starSpin 4s linear infinite,starGlow 2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                          #t1{animation:twinkle1 1.5s 0s ease-in-out infinite;transform-origin:8px 12px;will-change:transform}
+                          #t2{animation:twinkle2 1.5s 0.45s ease-in-out infinite;transform-origin:52px 16px;will-change:transform}
+                          #t3{animation:twinkle3 1.5s 0.9s ease-in-out infinite;transform-origin:8px 52px;will-change:transform}
+                          #t4{animation:twinkle1 1.5s 1.3s ease-in-out infinite;transform-origin:52px 50px;will-change:transform}
+                          #od{animation:orbitDot 5s linear infinite;transform-origin:32px 32px}
+                        `}</style>
+                        <circle id="od" cx="32" cy="32" r="3" fill="white" fillOpacity="0.35"/>
+                        <g id="star">
+                          <path d="M32 7 L36.5 22 L52 22 L40 31.5 L44.5 47 L32 38 L19.5 47 L24 31.5 L12 22 L27.5 22 Z" fill="white" fillOpacity="0.92"/>
+                          <path d="M32 7 L36.5 22 L52 22 L40 31.5 L44.5 47 L32 38 L19.5 47 L24 31.5 L12 22 L27.5 22 Z" fill="none" stroke="white" strokeWidth="0.8" strokeOpacity="0.4"/>
+                          <circle cx="32" cy="27" r="5" fill="white" fillOpacity="0.2"/>
+                        </g>
+                        <g id="t1"><text x="4" y="16" fontSize="13">✦</text></g>
+                        <g id="t2"><text x="48" y="20" fontSize="10">★</text></g>
+                        <g id="t3"><text x="4" y="56" fontSize="11">✦</text></g>
+                        <g id="t4"><text x="48" y="54" fontSize="9">✦</text></g>
+                      </svg>
+                    </div>
                   </div>
                 )}
 
                 {/* Yearly Purchase */}
                 {checkShouldRenderTabOption("yearly_purchase_view") && (
-                  <div className={`ccard cc-orange p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-orange-950/50 border-orange-600' : 'bg-orange-50 border-orange-300 shadow-sm'}`}>
-                    <span className="block text-sm font-black text-orange-500 uppercase tracking-widest mb-1">{t("Yearly Purchase", "বার্ষিক ক্রয়")}</span>
-                    <div className="font-mono text-lg font-black text-orange-500">{computedYearlyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-sm text-slate-400 mt-1">{t("This year's total purchase", "এই বছরের মোট ক্রয়")}</div>
-                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">📦</div>
+                  <div className={`ccard cc-orange p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-orange-950/50 border-orange-500' : 'border-orange-800'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #9a3412 0%, #c2410c 100%)' } : {}}>
+                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fed7aa'} : {color:'#fdba74'}}>{t("Yearly Purchase", "বার্ষিক ক্রয়")}</span>
+                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fdba74'}}>{computedYearlyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ffedd5'} : {color:'#6b7280'}}>{t("This year's total purchase", "এই বছরের মোট ক্রয়")}</div>
+                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <style>{`
+                          @keyframes boxBounce{0%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-12px) rotate(-5deg)}60%{transform:translateY(-12px) rotate(-4deg)}}
+                          @keyframes boxGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes lidOpen{0%,100%{transform:scaleY(1)}45%,65%{transform:scaleY(0.15)}}
+                          @keyframes itemRise{0%,30%,100%{transform:translateY(0);opacity:0}42%{transform:translateY(-18px);opacity:1}68%{transform:translateY(-22px);opacity:0.7}80%,90%{opacity:0}}
+                          @keyframes shimBox{0%,100%{opacity:0.1}50%{opacity:0.4}}
+                          @keyframes dustPuff{0%{transform:scale(0.5);opacity:0.6}100%{transform:scale(2);opacity:0}}
+                          #box{animation:boxBounce 2.2s ease-in-out infinite,boxGlow 2s ease-in-out infinite;will-change:transform}
+                          #lid{animation:lidOpen 2.2s ease-in-out infinite;transform-origin:32px 20px;will-change:transform}
+                          #item{animation:itemRise 2.2s ease-in-out infinite;will-change:transform}
+                          #shb{animation:shimBox 2s ease-in-out infinite}
+                          #dp1{animation:dustPuff 2.2s 0.4s ease-out infinite;transform-origin:20px 48px;will-change:transform}
+                          #dp2{animation:dustPuff 2.2s 0.6s ease-out infinite;transform-origin:44px 48px;will-change:transform}
+                        `}</style>
+                        <g id="box">
+                          <path id="lid" d="M10 24 L32 16 L54 24 L32 32 Z" fill="white" fillOpacity="0.88"/>
+                          <path d="M10 24 L10 50 L32 58 L54 50 L54 24 L32 32 Z" fill="white" fillOpacity="0.72"/>
+                          <rect id="shb" x="10" y="32" width="16" height="28" fill="white" fillOpacity="0.12"/>
+                          <path d="M32 32 L32 58" stroke="white" strokeWidth="1.2" strokeOpacity="0.4"/>
+                          <path d="M22 28 L22 52" stroke="white" strokeWidth="1" strokeOpacity="0.3"/>
+                          <path d="M42 28 L42 52" stroke="white" strokeWidth="1" strokeOpacity="0.3"/>
+                        </g>
+                        <g id="item"><text x="24" y="26" fontSize="18">💊</text></g>
+                        <circle id="dp1" cx="20" cy="48" r="4" fill="white" fillOpacity="0.25"/>
+                        <circle id="dp2" cx="44" cy="48" r="3.5" fill="white" fillOpacity="0.2"/>
+                      </svg>
+                    </div>
                   </div>
                 )}
 
                 {/* Yearly Profit */}
                 {checkShouldRenderTabOption("yearly_profit_view") && (
-                  <div className={`ccard cc-green p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-green-950/50 border-green-600' : 'bg-green-50 border-green-300 shadow-sm'}`}>
-                    <span className="block text-sm font-black text-emerald-400 uppercase tracking-widest mb-1">{t("Yearly Profit", "বার্ষিক লাভ")}</span>
-                    <div className="font-mono text-lg font-black text-emerald-400">{computedYearlyProfitAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-sm text-slate-400 mt-1">{t("This year's net profit", "এই বছরের নেট লাভ")}</div>
-                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">🏆</div>
+                  <div className={`ccard cc-green p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-green-950/50 border-emerald-500' : 'border-emerald-800'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #064e3b 0%, #065f46 100%)' } : {}}>
+                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#a7f3d0'} : {color:'#6ee7b7'}}>{t("Yearly Profit", "বার্ষিক লাভ")}</span>
+                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#6ee7b7'}}>{computedYearlyProfitAmount.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#d1fae5'} : {color:'#6b7280'}}>{t("This year's net profit", "এই বছরের নেট লাভ")}</div>
+                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <style>{`
+                          @keyframes tropShake{0%,100%{transform:rotate(0deg) scale(1)}15%{transform:rotate(-7deg) scale(1.05)}30%{transform:rotate(7deg) scale(1.05)}45%{transform:rotate(-4deg)}60%{transform:rotate(4deg)}75%,100%{transform:rotate(0deg) scale(1)}}
+                          @keyframes tropGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes glowRing{0%,100%{r:22;opacity:0.07}50%{r:26;opacity:0.22}}
+                          @keyframes star1Fly{0%{transform:translate(0,0) scale(0) rotate(0deg);opacity:0}25%{opacity:1;transform:scale(1.3)}100%{transform:translate(-14px,-16px) scale(0) rotate(180deg);opacity:0}}
+                          @keyframes star2Fly{0%{transform:translate(0,0) scale(0) rotate(0deg);opacity:0}30%{opacity:1;transform:scale(1.2)}100%{transform:translate(16px,-18px) scale(0) rotate(-180deg);opacity:0}}
+                          @keyframes star3Fly{0%{transform:translate(0,0) scale(0) rotate(0deg);opacity:0}20%{opacity:1;transform:scale(1.4)}100%{transform:translate(2px,-22px) scale(0) rotate(120deg);opacity:0}}
+                          @keyframes confetti1{0%{transform:translate(0,0) rotate(0deg);opacity:0}20%{opacity:1}100%{transform:translate(-18px,-8px) rotate(180deg);opacity:0}}
+                          @keyframes confetti2{0%{transform:translate(0,0) rotate(0deg);opacity:0}25%{opacity:1}100%{transform:translate(18px,-6px) rotate(-180deg);opacity:0}}
+                          #trop{animation:tropShake 3s ease-in-out infinite,tropGlow 2s ease-in-out infinite;transform-origin:32px 34px;will-change:transform}
+                          #glow{animation:glowRing 2.5s ease-in-out infinite;will-change:transform}
+                          #s1{animation:star1Fly 2s 0s ease-out infinite;transform-origin:16px 12px;will-change:transform}
+                          #s2{animation:star2Fly 2s 0.55s ease-out infinite;transform-origin:48px 14px;will-change:transform}
+                          #s3{animation:star3Fly 2s 1.1s ease-out infinite;transform-origin:32px 8px;will-change:transform}
+                          #cf1{animation:confetti1 2s 0.3s ease-out infinite;transform-origin:10px 20px;will-change:transform}
+                          #cf2{animation:confetti2 2s 0.8s ease-out infinite;transform-origin:54px 18px;will-change:transform}
+                        `}</style>
+                        <circle id="glow" cx="32" cy="28" r="22" fill="#fbbf24" fillOpacity="0.07"/>
+                        <g id="trop">
+                          <path d="M18 8 L46 8 L46 30 Q46 44 32 46 Q18 44 18 30 Z" fill="white" fillOpacity="0.92"/>
+                          <path d="M18 14 Q8 14 8 24 Q8 34 18 32" stroke="white" strokeWidth="3" fill="none" strokeLinecap="round"/>
+                          <path d="M46 14 Q56 14 56 24 Q56 34 46 32" stroke="white" strokeWidth="3" fill="none" strokeLinecap="round"/>
+                          <rect x="26" y="46" width="12" height="5" rx="1.5" fill="white" fillOpacity="0.85"/>
+                          <rect x="20" y="51" width="24" height="4" rx="2" fill="white" fillOpacity="0.85"/>
+                          <path d="M27 23 L29.5 18 L32 23 L37 24 L33.5 27.5 L34.5 32 L32 30 L29.5 32 L30.5 27.5 L27 24 Z" fill="#fbbf24"/>
+                          <path d="M27 23 L29.5 18 L32 23 L37 24 L33.5 27.5 L34.5 32 L32 30 L29.5 32 L30.5 27.5 L27 24 Z" stroke="#f59e0b" strokeWidth="0.5"/>
+                        </g>
+                        <g id="s1"><text x="12" y="16" fontSize="12" fill="white">★</text></g>
+                        <g id="s2"><text x="44" y="14" fontSize="10" fill="#fbbf24">✦</text></g>
+                        <g id="s3"><text x="28" y="8" fontSize="13">✨</text></g>
+                        <rect id="cf1" x="7" y="18" width="6" height="4" rx="1" fill="#fbbf24" fillOpacity="0.7"/>
+                        <rect id="cf2" x="51" y="16" width="5" height="3" rx="1" fill="white" fillOpacity="0.6"/>
+                      </svg>
+                    </div>
                   </div>
                 )}
 
                 {/* Yearly Due */}
                 {checkShouldRenderTabOption("yearly_due_view") && (
-                  <div className={`ccard cc-rose p-3.5 rounded-xl border relative overflow-hidden ${isDarkMode ? 'bg-rose-950/50 border-rose-600' : 'bg-rose-50 border-rose-300 shadow-sm'}`}>
-                    <span className="block text-sm font-black text-red-400 uppercase tracking-widest mb-1">{t("Yearly Due", "বার্ষিক বাকি")}</span>
-                    <div className="font-mono text-lg font-black text-red-400">{computedYearlyDue.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-sm text-slate-400 mt-1">{t("Total due this year", "এই বছরের মোট বাকি")}</div>
-                    <div className="absolute right-2 bottom-1 text-2xl opacity-10">📋</div>
+                  <div className={`ccard cc-rose p-3.5 rounded-xl border-2 relative overflow-hidden shadow-lg ${isDarkMode ? 'bg-rose-950/50 border-rose-500' : 'border-rose-800'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #881337 0%, #9f1239 100%)' } : {}}>
+                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fecdd3'} : {color:'#fda4af'}}>{t("Yearly Due", "বার্ষিক বাকি")}</span>
+                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fda4af'}}>{computedYearlyDue.toFixed(1)} {currencySymbol}</div>
+                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ffe4e6'} : {color:'#6b7280'}}>{t("Total due this year", "এই বছরের মোট বাকি")}</div>
+                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
+                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <style>{`
+                          @keyframes warnShake{0%,100%{transform:rotate(0deg) scale(1)}8%{transform:rotate(-10deg) scale(1.08)}16%{transform:rotate(10deg) scale(1.08)}24%{transform:rotate(-7deg)}32%{transform:rotate(7deg)}40%,100%{transform:rotate(0deg) scale(1)}}
+                          @keyframes warnGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes bangBlink{0%,100%{opacity:1;transform:scaleY(1)}50%{opacity:0.15;transform:scaleY(0.5)}}
+                          @keyframes sw1Grow{0%{transform:scale(0.4);opacity:0.7}100%{transform:scale(1.8);opacity:0}}
+                          @keyframes sw2Grow{0%{transform:scale(0.4);opacity:0.5}100%{transform:scale(2.2);opacity:0}}
+                          @keyframes sw3Grow{0%{transform:scale(0.4);opacity:0.3}100%{transform:scale(2.6);opacity:0}}
+                          @keyframes lightFlash{0%,90%,100%{opacity:0}45%,55%{opacity:0.4}}
+                          #wrn{animation:warnShake 2.2s ease-in-out infinite,warnGlow 2.2s ease-in-out infinite;transform-origin:32px 34px;will-change:transform}
+                          #bang{animation:bangBlink 0.55s ease-in-out infinite;will-change:transform}
+                          #sw1{animation:sw1Grow 1.4s 0s ease-out infinite;transform-origin:32px 32px;will-change:transform}
+                          #sw2{animation:sw2Grow 1.4s 0.35s ease-out infinite;transform-origin:32px 32px;will-change:transform}
+                          #sw3{animation:sw3Grow 1.4s 0.7s ease-out infinite;transform-origin:32px 32px;will-change:transform}
+                          #flash{animation:lightFlash 2.2s ease-in-out infinite;will-change:transform}
+                        `}</style>
+                        <circle id="sw1" cx="32" cy="32" r="24" fill="#f43f5e" fillOpacity="0.12" stroke="#f43f5e" strokeWidth="1.5" strokeOpacity="0.25"/>
+                        <circle id="sw2" cx="32" cy="32" r="24" fill="none" stroke="#f43f5e" strokeWidth="1" strokeOpacity="0.18"/>
+                        <circle id="sw3" cx="32" cy="32" r="24" fill="none" stroke="white" strokeWidth="0.8" strokeOpacity="0.12"/>
+                        <g id="wrn">
+                          <path d="M32 6 L58 54 L6 54 Z" fill="white" fillOpacity="0.9"/>
+                          <path d="M32 6 L58 54 L6 54 Z" stroke="white" strokeWidth="1" fill="none" strokeOpacity="0.4"/>
+                          <rect id="bang" x="29.5" y="22" width="5" height="16" rx="2.5" fill="#881337"/>
+                          <circle cx="32" cy="44" r="3.5" fill="#881337"/>
+                          <rect id="flash" x="0" y="0" width="64" height="64" rx="4" fill="white" fillOpacity="0.15"/>
+                        </g>
+                      </svg>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2910,7 +3435,7 @@ export default function Home() {
               {/* Total Stock Value */}
               {checkShouldRenderTabOption("stock_value_calculator") && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className={`ccard cc-amber p-3 rounded-xl border ${isDarkMode ? 'bg-amber-950/50 border-amber-600' : 'bg-amber-50 border-amber-300 shadow-sm'}`}>
+                  <div className={`ccard cc-amber p-3 rounded-xl border ${isDarkMode ? 'bg-amber-950/50 border-amber-600' : 'bg-amber-200 border-amber-400 shadow-sm'}`}>
                     <h4 className="text-sm font-black uppercase text-teal-500 mb-2">📦 {t("Total Stock", "মোট স্টক")}</h4>
                     <div className="flex flex-col gap-1 text-sm">
                       <div className="flex justify-between"><span className="text-slate-400">{t("Total Items:", "মোট আইটেম:")}</span><span className="font-mono font-black">{medicines.length}</span></div>
@@ -2941,7 +3466,7 @@ export default function Home() {
 
                   {/* Expired */}
                   {checkShouldRenderTabOption("expired_meds_view") && (
-                    <div className={`ccard cc-blue p-3 rounded-xl border ${isDarkMode ? 'bg-blue-950/50 border-blue-600' : 'bg-blue-50 border-blue-300 shadow-sm'}`}>
+                    <div className={`ccard cc-blue p-3 rounded-xl border ${isDarkMode ? 'bg-blue-950/50 border-blue-600' : 'bg-blue-200 border-blue-400 shadow-sm'}`}>
                       <div className="flex items-center justify-between border-b pb-2 mb-2">
                         <h4 className="text-sm font-black uppercase text-red-500">🚨 {t("Expired", "মেয়াদ শেষ")}</h4>
                         <span className="bg-red-500 text-white font-mono text-sm px-1.5 py-0.5 rounded-full font-bold">{expiredMedicines.length}</span>
@@ -2962,7 +3487,7 @@ export default function Home() {
 
               {/* Category Stock */}
               {checkShouldRenderTabOption("category_wise_stock") && (
-                <div className={`ccard cc-red p-3 rounded-xl border ${isDarkMode ? 'bg-red-950/50 border-red-600' : 'bg-red-50 border-red-300 shadow-sm'}`}>
+                <div className={`ccard cc-red p-3 rounded-xl border ${isDarkMode ? 'bg-red-950/50 border-red-600' : 'bg-red-200 border-red-400 shadow-sm'}`}>
                   <h4 className="text-sm font-black uppercase text-teal-500 mb-3">📊 {t("Stock by Category", "ক্যাটাগরি অনুযায়ী স্টক")}</h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
                     {allCategories.map(cat => {
@@ -3220,7 +3745,7 @@ export default function Home() {
 
                 {/* Purchase Cart */}
                 {purchaseCart.length > 0 && (
-                  <div className={`ccard cc-orange p-3 rounded-xl border ${isDarkMode ? 'bg-orange-950/50 border-orange-600' : 'bg-orange-50 border-orange-300 shadow-sm'}`}>
+                  <div className={`ccard cc-orange p-3 rounded-xl border ${isDarkMode ? 'bg-orange-950/50 border-orange-600' : 'bg-orange-200 border-orange-400 shadow-sm'}`}>
                     <h4 className="text-sm font-black uppercase text-teal-500 mb-2">📋 {t("Items Added", "যোগ করা আইটেম")} ({purchaseCart.length})</h4>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
