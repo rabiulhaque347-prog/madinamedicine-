@@ -164,35 +164,57 @@ const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => v
   let es: EventSource | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
+  // Track the last event timestamp to skip the initial "put" on connect
+  // (Firebase always sends a full snapshot on first connect — we only want UPDATES)
+  let initialLoadDone = false;
+
+  const extractResult = (path: string, data: any): Record<string, string> => {
+    const result: Record<string, string> = {};
+    if (!data) return result;
+
+    if (path === '/' || path === '') {
+      // Full snapshot: data is the whole /madina_data object
+      if (typeof data === 'object') {
+        for (const k of CLOUD_SYNC_KEYS) {
+          if (typeof data[k] === 'string') result[k] = data[k];
+        }
+      }
+    } else {
+      // Single-key update: path is e.g. "/madina_v7_invoices"
+      const key = path.replace(/^\//, ''); // strip leading slash
+      if (CLOUD_SYNC_KEYS.includes(key) && typeof data === 'string') {
+        result[key] = data;
+      }
+    }
+    return result;
+  };
 
   const connect = () => {
     if (stopped) return;
+    initialLoadDone = false;
     es = new EventSource(url);
+
     es.addEventListener('put', (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
-        // payload.path is '/' for full refresh or '/key' for single key
-        const raw = payload.data;
-        if (!raw || typeof raw !== 'object') return;
-        const result: Record<string, string> = {};
-        for (const k of CLOUD_SYNC_KEYS) {
-          if (typeof raw[k] === 'string') result[k] = raw[k];
+        // Skip the very first full-snapshot "put" that Firebase sends on connect
+        if (!initialLoadDone) {
+          initialLoadDone = true;
+          return;
         }
+        const result = extractResult(payload.path || '/', payload.data);
         if (Object.keys(result).length > 0) onChange(result);
       } catch { /* malformed event */ }
     });
+
     es.addEventListener('patch', (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
-        const raw = payload.data;
-        if (!raw || typeof raw !== 'object') return;
-        const result: Record<string, string> = {};
-        for (const k of CLOUD_SYNC_KEYS) {
-          if (typeof raw[k] === 'string') result[k] = raw[k];
-        }
+        const result = extractResult(payload.path || '/', payload.data);
         if (Object.keys(result).length > 0) onChange(result);
       } catch { /* malformed event */ }
     });
+
     es.onerror = () => {
       es?.close();
       es = null;
@@ -771,7 +793,7 @@ export default function Home() {
 
       const savedMeds = g('madina_v7_meds');
       if (savedMeds) setMedicines(JSON.parse(savedMeds));
-      else if (allowSeedDefaults) { setMedicines(defaultMedicines); cloudSet('madina_v7_meds', JSON.stringify(defaultMedicines)); }
+      // No default seeding — start completely empty
 
       const savedInvoices = g('madina_v7_invoices');
       if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
@@ -791,32 +813,34 @@ export default function Home() {
       const savedProfit = g('madina_v7_profit');
       if (savedProfit) setTotalProfit(parseFloat(savedProfit));
 
+      // Company suggestion list — always seed defaults if empty (needed for autocomplete)
       const savedCompanies = g('madina_v7_companies');
       if (savedCompanies) {
         const parsed = JSON.parse(savedCompanies);
-        // If saved list is empty array, restore the default list
-        if (Array.isArray(parsed) && parsed.length === 0) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setBdMedicineCompanies(parsed);
+        } else {
           setBdMedicineCompanies(initialMedicineCompanies);
           cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
-        } else {
-          setBdMedicineCompanies(parsed);
         }
-      } else if (allowSeedDefaults) {
+      } else {
+        // Always seed company list — it's autocomplete, not business data
         setBdMedicineCompanies(initialMedicineCompanies);
         cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
       }
 
+      // Medicine name suggestion list — always seed defaults if empty (needed for autocomplete)
       const savedMedNames = g('madina_v7_mednames');
       if (savedMedNames) {
         const parsed = JSON.parse(savedMedNames);
-        // If saved list is empty array, restore the default list
-        if (Array.isArray(parsed) && parsed.length === 0) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setBdMedicineNamesList(parsed);
+        } else {
           setBdMedicineNamesList(initialMedicineNamesList);
           cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
-        } else {
-          setBdMedicineNamesList(parsed);
         }
-      } else if (allowSeedDefaults) {
+      } else {
+        // Always seed medicine name list — it's autocomplete, not business data
         setBdMedicineNamesList(initialMedicineNamesList);
         cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
       }
@@ -871,51 +895,64 @@ export default function Home() {
       if (savedPermissions) setStaffVisibleModules(prev => ({ ...prev, ...JSON.parse(savedPermissions) }));
     };
 
+    // ── CLEAN START: wipe localStorage business data + push clean state to Firebase ──
+    // This runs once on first load to ensure a fresh start.
+    // Business data keys are cleared; autocomplete lists are always re-seeded.
+    const BUSINESS_KEYS = [
+      'madina_v7_meds', 'madina_v7_invoices', 'madina_v7_purchases',
+      'madina_v7_due_list', 'madina_v7_due_collection_log',
+      'madina_v7_sales', 'madina_v7_profit', 'madina_v7_medmeta',
+    ];
+    const cleanStartDone = localStorage.getItem('madina_v7_clean_start_2026');
+    if (!cleanStartDone) {
+      // First time ever — wipe all business data from localStorage
+      for (const k of BUSINESS_KEYS) localStorage.removeItem(k);
+      localStorage.setItem('madina_v7_clean_start_2026', 'done');
+      // Also wipe Firebase business data
+      if (isFirebaseConfigured()) {
+        for (const k of BUSINESS_KEYS) fbDelete(k);
+      }
+    }
+
     // Step 1: Load from localStorage immediately (instant, no flicker)
-    // Do NOT seed defaults yet — we first check Firebase to avoid overwriting real data
     const localData: Record<string, string | null> = {};
     for (const k of CLOUD_SYNC_KEYS) localData[k] = localStorage.getItem(k);
     const localHasMeds = !!localData['madina_v7_meds'];
-    applyData(localData, false); // never seed defaults from localStorage alone
+    applyData(localData, false);
 
     // Step 2: Try Firebase — if available, overwrite with fresher cloud data
     if (isFirebaseConfigured()) {
       setSyncStatus('syncing');
       fbGetAll().then(cloudData => {
-        // Check if cloud has actual business data (not just an empty object)
         const cloudHasMeds = !!(cloudData && cloudData['madina_v7_meds']);
         const cloudHasAnyData = !!(cloudData && Object.keys(cloudData).length > 0);
 
-        if (cloudHasAnyData && cloudHasMeds) {
-          // Cloud has real data — write to localStorage and apply (no seeding needed)
+        if (cloudHasAnyData) {
           for (const k of CLOUD_SYNC_KEYS) {
             if (cloudData[k]) localStorage.setItem(k, cloudData[k]);
           }
-          applyData(cloudData, false);
+          const mergedData: Record<string, string | null> = { ...localData };
+          for (const k of CLOUD_SYNC_KEYS) {
+            if (cloudData[k]) mergedData[k] = cloudData[k];
+          }
+          applyData(mergedData, false);
           setSyncStatus('synced');
         } else if (localHasMeds) {
-          // Cloud is empty/deleted but LOCAL has data — push local data back to Firebase
           const localSnapshot: Record<string, string | null> = {};
           for (const k of CLOUD_SYNC_KEYS) localSnapshot[k] = localStorage.getItem(k);
           applyData(localSnapshot, false);
-          // Re-push all local keys back to Firebase so other devices get them
           for (const k of CLOUD_SYNC_KEYS) {
             const val = localStorage.getItem(k);
             if (val) fbSet(k, val);
           }
           setSyncStatus('synced');
         } else {
-          // Cloud is truly empty AND local is also empty — seed defaults
-          applyData(localData, true);
-          setSyncStatus('offline');
+          // Truly empty — just apply (autocomplete lists already seeded in applyData)
+          applyData(localData, false);
+          setSyncStatus('idle');
         }
-        // Auto-clear the synced indicator after 3 seconds
         setTimeout(() => setSyncStatus('idle'), 3000);
       }).catch(() => {
-        // Firebase unreachable — fall back to localStorage, seed only if local is also empty
-        if (!localHasMeds) {
-          applyData(localData, true);
-        }
         setSyncStatus('offline');
       });
     } else {
@@ -1851,10 +1888,10 @@ export default function Home() {
     if (confirm(t("⚠️ Delete ALL data?", "⚠️ সব তথ্য মুছে ফেলবেন?"))) {
       localStorage.clear();
 
-      // Set default state values
-      setMedicines(defaultMedicines);
-      setBdMedicineCompanies(initialMedicineCompanies);
-      setBdMedicineNamesList(initialMedicineNamesList);
+      // Reset business data to empty — keep autocomplete lists intact
+      setMedicines([]);
+      setBdMedicineCompanies(initialMedicineCompanies);  // keep — needed for autocomplete
+      setBdMedicineNamesList(initialMedicineNamesList);  // keep — needed for autocomplete
       setBdMedNameMetadata([]);
       setTotalSales(0); setTotalProfit(0);
       setInvoices([]); setCart([]); setPurchaseList([]); setDueList([]); setDueCollectionLog([]);
@@ -1869,8 +1906,8 @@ export default function Home() {
       setStaffUsername("staff"); setStaffPassword("staff123");
       setSecretCode("MADINA2026");
 
-      // Push default data to localStorage AND Firebase so all devices reset properly
-      cloudSet('madina_v7_meds', JSON.stringify(defaultMedicines));
+      // Push clean data to localStorage AND Firebase so all devices reset properly
+      cloudSet('madina_v7_meds', JSON.stringify([]));
       cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
       cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
       cloudSet('madina_v7_medmeta', JSON.stringify([]));
