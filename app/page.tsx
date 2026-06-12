@@ -603,8 +603,8 @@ export default function Home() {
 
   const [bdMedicineCompanies, setBdMedicineCompanies] = useState<string[]>([]);
   const [bdMedicineNamesList, setBdMedicineNamesList] = useState<string[]>([]);
-  // Stores per-medicine metadata: { name, buyPrice, sellPrice, company }
-  const [bdMedNameMetadata, setBdMedNameMetadata] = useState<{name:string; buyPrice:number; sellPrice:number; company:string}[]>([]);
+  // Stores per-medicine metadata: { name, buyPrice, sellPrice, company, category }
+  const [bdMedNameMetadata, setBdMedNameMetadata] = useState<{name:string; buyPrice:number; sellPrice:number; company:string; category?:string}[]>([]);
 
   // ============================================================
   // DUE (CUSTOMER CREDIT) SYSTEM
@@ -682,7 +682,7 @@ export default function Home() {
   const [pUnitPriceBox, setPUnitPriceBox] = useState("");
   const [pTotalCost, setPTotalCost] = useState("");
   const [pRetailPrice, setPRetailPrice] = useState("");
-  const [pMedicineSuggestions, setPMedicineSuggestions] = useState<{name:string; buyPrice:number; sellPrice:number; company:string}[]>([]);
+  const [pMedicineSuggestions, setPMedicineSuggestions] = useState<{name:string; buyPrice:number; sellPrice:number; company:string; category?:string}[]>([]);
   const [showMedicineSuggestions, setShowMedicineSuggestions] = useState(false);
   const [pRackLocation, setPRackLocation] = useState("");
   const [pLowStockAlert, setPLowStockAlert] = useState("");
@@ -703,7 +703,7 @@ export default function Home() {
   const [npCategory, setNpCategory] = useState("Tablet");
   const [npCompanySuggestions, setNpCompanySuggestions] = useState<string[]>([]);
   const [showNpCompanySuggestions, setShowNpCompanySuggestions] = useState(false);
-  const [npMedSuggestions, setNpMedSuggestions] = useState<{name:string; buyPrice:number; sellPrice:number; company:string}[]>([]);
+  const [npMedSuggestions, setNpMedSuggestions] = useState<{name:string; buyPrice:number; sellPrice:number; company:string; category?:string}[]>([]);
   const [showNpMedSuggestions, setShowNpMedSuggestions] = useState(false);
   const npCompanyRef = useRef<HTMLDivElement>(null);
   const npMedRef = useRef<HTMLDivElement>(null);
@@ -813,37 +813,31 @@ export default function Home() {
       const savedProfit = g('madina_v7_profit');
       if (savedProfit) setTotalProfit(parseFloat(savedProfit));
 
-      // Company suggestion list — always seed defaults if empty (needed for autocomplete)
+      // Company suggestion list — seed defaults ONLY if absolutely nothing exists anywhere
       const savedCompanies = g('madina_v7_companies');
       if (savedCompanies) {
-        const parsed = JSON.parse(savedCompanies);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setBdMedicineCompanies(parsed);
-        } else {
-          setBdMedicineCompanies(initialMedicineCompanies);
-          cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
-        }
-      } else {
-        // Always seed company list — it's autocomplete, not business data
-        setBdMedicineCompanies(initialMedicineCompanies);
-        cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
+        try {
+          const parsed = JSON.parse(savedCompanies);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setBdMedicineCompanies(parsed);
+          }
+          // If parsed is empty array, keep whatever is currently in state (don't overwrite with defaults)
+        } catch { /* skip malformed */ }
       }
+      // Note: Default seeding only happens in the dedicated first-boot block below
 
-      // Medicine name suggestion list — always seed defaults if empty (needed for autocomplete)
+      // Medicine name suggestion list — seed defaults ONLY if absolutely nothing exists anywhere
       const savedMedNames = g('madina_v7_mednames');
       if (savedMedNames) {
-        const parsed = JSON.parse(savedMedNames);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setBdMedicineNamesList(parsed);
-        } else {
-          setBdMedicineNamesList(initialMedicineNamesList);
-          cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
-        }
-      } else {
-        // Always seed medicine name list — it's autocomplete, not business data
-        setBdMedicineNamesList(initialMedicineNamesList);
-        cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
+        try {
+          const parsed = JSON.parse(savedMedNames);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setBdMedicineNamesList(parsed);
+          }
+          // If parsed is empty array, keep whatever is currently in state (don't overwrite with defaults)
+        } catch { /* skip malformed */ }
       }
+      // Note: Default seeding only happens in the dedicated first-boot block below
 
       const savedMedMeta = g('madina_v7_medmeta');
       if (savedMedMeta) setBdMedNameMetadata(JSON.parse(savedMedMeta));
@@ -911,6 +905,27 @@ export default function Home() {
       // Also wipe Firebase business data
       if (isFirebaseConfigured()) {
         for (const k of BUSINESS_KEYS) fbDelete(k);
+      }
+      // Seed autocomplete defaults on very first boot ONLY
+      if (!localStorage.getItem('madina_v7_companies')) {
+        localStorage.setItem('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
+        setBdMedicineCompanies(initialMedicineCompanies);
+        if (isFirebaseConfigured()) fbSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
+      }
+      if (!localStorage.getItem('madina_v7_mednames')) {
+        localStorage.setItem('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
+        setBdMedicineNamesList(initialMedicineNamesList);
+        if (isFirebaseConfigured()) fbSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
+      }
+    } else {
+      // Not first boot — ensure autocomplete lists exist in localStorage (seed if missing)
+      if (!localStorage.getItem('madina_v7_companies')) {
+        localStorage.setItem('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
+        setBdMedicineCompanies(initialMedicineCompanies);
+      }
+      if (!localStorage.getItem('madina_v7_mednames')) {
+        localStorage.setItem('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
+        setBdMedicineNamesList(initialMedicineNamesList);
       }
     }
 
@@ -1229,13 +1244,13 @@ export default function Home() {
   const handleMedicineNameInputChange = (value: string) => {
     setPMedicineName(value);
     if (value.trim().length >= 1) {
-      // First search in metadata (has price/company info)
+      // First search in metadata (has price/company/category info)
       const metaMatches = bdMedNameMetadata.filter(m => m.name.toLowerCase().includes(value.toLowerCase()));
       // Then add any names from plain list not already in metadata
       const metaNames = new Set(metaMatches.map(m => m.name.toLowerCase()));
       const plainMatches = bdMedicineNamesList
         .filter(n => n.toLowerCase().includes(value.toLowerCase()) && !metaNames.has(n.toLowerCase()))
-        .map(n => ({ name: n, buyPrice: 0, sellPrice: 0, company: "" }));
+        .map(n => ({ name: n, buyPrice: 0, sellPrice: 0, company: "", category: undefined as string | undefined }));
       setPMedicineSuggestions([...metaMatches, ...plainMatches]);
       setShowMedicineSuggestions(true);
     } else {
@@ -1256,7 +1271,7 @@ export default function Home() {
     const metaNames = new Set(metaMatches.map(m => m.name.toLowerCase()));
     const plainMatches = updated
       .filter(n => n.toLowerCase().includes(pMedicineName.toLowerCase()) && !metaNames.has(n.toLowerCase()))
-      .map(n => ({ name: n, buyPrice: 0, sellPrice: 0, company: "" }));
+      .map(n => ({ name: n, buyPrice: 0, sellPrice: 0, company: "", category: undefined as string | undefined }));
     setPMedicineSuggestions([...metaMatches, ...plainMatches]);
   };
 
@@ -1330,7 +1345,7 @@ export default function Home() {
       }
       // Save / update metadata for this medicine (buy price, sell price, company)
       const existingMetaIdx = bdMedNameMetadata.findIndex(m => m.name.toLowerCase() === trimmedMed.toLowerCase());
-      const newMeta = { name: trimmedMed, buyPrice: item.unitPrice, sellPrice: item.retailPrice, company: trimmedCompany };
+      const newMeta = { name: trimmedMed, buyPrice: item.unitPrice, sellPrice: item.retailPrice, company: trimmedCompany, category: item.category };
       if (existingMetaIdx !== -1) {
         bdMedNameMetadata[existingMetaIdx] = newMeta;
       } else {
@@ -1423,7 +1438,7 @@ export default function Home() {
       const metaNames = new Set(metaMatches.map(m => m.name.toLowerCase()));
       const plainMatches = bdMedicineNamesList
         .filter(n => n.toLowerCase().includes(value.toLowerCase()) && !metaNames.has(n.toLowerCase()))
-        .map(n => ({ name: n, buyPrice: 0, sellPrice: 0, company: "" }));
+        .map(n => ({ name: n, buyPrice: 0, sellPrice: 0, company: "", category: undefined as string | undefined }));
       setNpMedSuggestions([...metaMatches, ...plainMatches]);
       setShowNpMedSuggestions(true);
     } else {
@@ -1432,11 +1447,12 @@ export default function Home() {
     }
   };
 
-  const handleNpMedSelect = (item: {name:string; buyPrice:number; sellPrice:number; company:string}) => {
+  const handleNpMedSelect = (item: {name:string; buyPrice:number; sellPrice:number; company:string; category?:string}) => {
     setNpMedicineName(item.name);
     if (item.buyPrice > 0) setNpBuyPrice(item.buyPrice.toString());
     if (item.sellPrice > 0) setNpSalePrice(item.sellPrice.toString());
     if (item.company) setNpCompanyName(item.company);
+    if (item.category) setNpCategory(item.category);
     setShowNpMedSuggestions(false);
   };
 
@@ -1463,7 +1479,7 @@ export default function Home() {
     // Add/update metadata
     const updatedMeta = [...bdMedNameMetadata];
     const existingIdx = updatedMeta.findIndex(m => m.name.toLowerCase() === trimmedMed.toLowerCase());
-    const newMeta = { name: trimmedMed, buyPrice: buyP, sellPrice: sellP, company: trimmedCompany };
+    const newMeta = { name: trimmedMed, buyPrice: buyP, sellPrice: sellP, company: trimmedCompany, category: npCategory };
     if (existingIdx !== -1) {
       updatedMeta[existingIdx] = newMeta;
     } else {
@@ -4125,6 +4141,7 @@ export default function Home() {
                                 if (item.buyPrice > 0) setPUnitPriceBox(item.buyPrice.toString());
                                 if (item.sellPrice > 0) setPRetailPrice(item.sellPrice.toString());
                                 if (item.company) setPCompanyName(item.company);
+                                if ((item as any).category) setPCategory((item as any).category);
                                 setShowMedicineSuggestions(false);
                               }} className="flex-1">
                                 <span className="font-bold">{item.name}</span>
