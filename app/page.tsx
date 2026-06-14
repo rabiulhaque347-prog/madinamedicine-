@@ -889,9 +889,9 @@ export default function Home() {
       if (savedPermissions) setStaffVisibleModules(prev => ({ ...prev, ...JSON.parse(savedPermissions) }));
     };
 
-    // ── CLEAN START: wipe localStorage business data + push clean state to Firebase ──
-    // This runs once on first load to ensure a fresh start.
-    // Business data keys are cleared; autocomplete lists are always re-seeded.
+    // ── LOCAL CACHE RESET (Firebase data is NEVER deleted here) ──
+    // This runs once per browser to clear stale localStorage cache only.
+    // Firebase is the master data source — it is never touched here.
     const BUSINESS_KEYS = [
       'madina_v7_meds', 'madina_v7_invoices', 'madina_v7_purchases',
       'madina_v7_due_list', 'madina_v7_due_collection_log',
@@ -899,23 +899,19 @@ export default function Home() {
     ];
     const cleanStartDone = localStorage.getItem('madina_v7_clean_start_2026');
     if (!cleanStartDone) {
-      // First time ever — wipe all business data from localStorage
+      // First time on this browser — wipe only localStorage (NOT Firebase)
       for (const k of BUSINESS_KEYS) localStorage.removeItem(k);
       localStorage.setItem('madina_v7_clean_start_2026', 'done');
-      // Also wipe Firebase business data
-      if (isFirebaseConfigured()) {
-        for (const k of BUSINESS_KEYS) fbDelete(k);
-      }
-      // Seed autocomplete defaults on very first boot ONLY
+      // NOTE: Firebase business data is intentionally NOT deleted here.
+      // Firebase is the single source of truth; local cache is just a mirror.
+      // Seed autocomplete defaults in localStorage only (if missing)
       if (!localStorage.getItem('madina_v7_companies')) {
         localStorage.setItem('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
         setBdMedicineCompanies(initialMedicineCompanies);
-        if (isFirebaseConfigured()) fbSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
       }
       if (!localStorage.getItem('madina_v7_mednames')) {
         localStorage.setItem('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
         setBdMedicineNamesList(initialMedicineNamesList);
-        if (isFirebaseConfigured()) fbSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
       }
     } else {
       // Not first boot — ensure autocomplete lists exist in localStorage (seed if missing)
@@ -1901,8 +1897,18 @@ export default function Home() {
   const resetDatabase = () => {
     const confirmPass = prompt(t("⚠️ Enter Admin Password to Factory Reset:", "⚠️ ফ্যাক্টরি রিসেটের জন্য পাসওয়ার্ড দিন:"));
     if (confirmPass !== adminPassword) return alert(t("❌ Authentication Failed!", "❌ পাসওয়ার্ড ভুল!"));
-    if (confirm(t("⚠️ Delete ALL data?", "⚠️ সব তথ্য মুছে ফেলবেন?"))) {
-      localStorage.clear();
+    const confirmText = prompt(t(
+      "⚠️ THIS WILL DELETE ALL DATA FROM FIREBASE AND ALL DEVICES PERMANENTLY!\nType RESET to confirm:",
+      "⚠️ এটি Firebase সহ সকল ডিভাইস থেকে সব তথ্য চিরতরে মুছে ফেলবে!\nনিশ্চিত করতে RESET লিখুন:"
+    ));
+    if (confirmText !== "RESET") return alert(t("❌ Reset cancelled.", "❌ রিসেট বাতিল।"));
+    if (confirm(t("⚠️ FINAL WARNING: Delete ALL data from ALL devices forever?", "⚠️ শেষ সতর্কতা: সকল ডিভাইস থেকে চিরতরে সব মুছবেন?"))) {
+      // Preserve clean_start flag so first-boot block does NOT re-run on next load
+      const keysToKeep = ['madina_v7_clean_start_2026', 'madina_v7_dark', 'madina_v7_theme', 'madina_v7_sound', 'madina_v7_language'];
+      const allKeys = Object.keys(localStorage);
+      for (const k of allKeys) {
+        if (!keysToKeep.includes(k)) localStorage.removeItem(k);
+      }
 
       // Reset business data to empty — keep autocomplete lists intact
       setMedicines([]);
