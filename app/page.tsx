@@ -164,8 +164,7 @@ const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => v
   let es: EventSource | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
-  // Track the last event timestamp to skip the initial "put" on connect
-  // (Firebase always sends a full snapshot on first connect — we only want UPDATES)
+  // initialLoadDone: after first connect snapshot is applied, mark as done
   let initialLoadDone = false;
 
   const extractResult = (path: string, data: any): Record<string, string> => {
@@ -197,13 +196,12 @@ const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => v
     es.addEventListener('put', (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
-        // Skip the very first full-snapshot "put" that Firebase sends on connect
-        if (!initialLoadDone) {
-          initialLoadDone = true;
-          return;
-        }
         const result = extractResult(payload.path || '/', payload.data);
+        // Always apply — initial full snapshot + all subsequent updates.
+        // This ensures Device B sees live data as soon as it connects,
+        // and any open device auto-updates when another device makes changes.
         if (Object.keys(result).length > 0) onChange(result);
+        initialLoadDone = true;
       } catch { /* malformed event */ }
     });
 
@@ -599,6 +597,10 @@ export default function Home() {
   const [totalProfit, setTotalProfit] = useState(0);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [cart, setCart] = useState<any[]>([]);
+  // cartRef always holds the latest cart so the Firebase listener
+  // can re-apply pending deductions without stale closure issues
+  const cartRef = useRef<any[]>([]);
+  useEffect(() => { cartRef.current = cart; }, [cart]);
   const [activeTab, setActiveTab] = useState("pos");
 
   const [bdMedicineCompanies, setBdMedicineCompanies] = useState<string[]>([]);
@@ -991,7 +993,30 @@ export default function Home() {
         }
       };
 
-      apply('madina_v7_meds', setMedicines);
+      // Special handling for medicines: if there's an active cart, re-apply cart deductions
+      // so that Firebase updates from other devices don't undo pending stock changes
+      if (cloudData['madina_v7_meds'] !== undefined) {
+        localStorage.setItem('madina_v7_meds', cloudData['madina_v7_meds']);
+        try {
+          const freshMeds: any[] = JSON.parse(cloudData['madina_v7_meds']);
+          // Use cartRef (always latest) to re-apply pending cart deductions
+          const currentCart = cartRef.current;
+          if (currentCart.length === 0) {
+            setMedicines(freshMeds);
+          } else {
+            const adjustedMeds = freshMeds.map(med => {
+              const cartItem = currentCart.find((c: any) => c.id === med.id);
+              if (cartItem) {
+                const cartQty = parseInt(cartItem.qty) || 0;
+                return { ...med, stock: Math.max(0, med.stock - cartQty) };
+              }
+              return med;
+            });
+            setMedicines(adjustedMeds);
+          }
+        } catch { /* skip malformed */ }
+      }
+
       apply('madina_v7_invoices', setInvoices);
       apply('madina_v7_purchases', setPurchaseList);
       apply('madina_v7_due_list', setDueList);
@@ -1555,7 +1580,6 @@ export default function Home() {
 
     const updatedMeds = medicines.map(item => item.id === med.id ? { ...item, stock: item.stock - 1 } : item);
     setMedicines(updatedMeds);
-    cloudSet('madina_v7_meds', JSON.stringify(updatedMeds));
   };
 
   const removeFromCart = (itemToRemove: any) => {
@@ -1563,7 +1587,6 @@ export default function Home() {
     const currentCartQty = parseInt(itemToRemove.qty) || 0;
     const updatedMeds = medicines.map(item => item.id === itemToRemove.id ? { ...item, stock: item.stock + currentCartQty } : item);
     setMedicines(updatedMeds);
-    cloudSet('madina_v7_meds', JSON.stringify(updatedMeds));
   };
 
   const handleQuantityChange = (itemId: number, newQtyValue: string) => {
@@ -1574,8 +1597,9 @@ export default function Home() {
     if (newQtyValue === "") {
       const currentCartQty = parseInt(existingCartItem.qty) || 0;
       const totalStockToRestore = originalMed.stock + currentCartQty;
+      const updatedMeds = medicines.map(m => m.id === itemId ? { ...m, stock: totalStockToRestore } : m);
       setCart(cart.map(item => item.id === itemId ? { ...item, qty: "" } : item));
-      setMedicines(medicines.map(m => m.id === itemId ? { ...m, stock: totalStockToRestore } : m));
+      setMedicines(updatedMeds);
       return;
     }
 
@@ -1587,8 +1611,9 @@ export default function Home() {
     if (parsedQty > currentTotalAvailable) { alert(t(`⚠️ Max available: ${currentTotalAvailable} pcs`, `⚠️ সর্বোচ্চ ${currentTotalAvailable} টি পাওয়া যাবে`)); return; }
 
     const stockDifference = parsedQty - currentCartQty;
+    const updatedMeds = medicines.map(m => m.id === itemId ? { ...m, stock: m.stock - stockDifference } : m);
     setCart(cart.map(item => item.id === itemId ? { ...item, qty: parsedQty } : item));
-    setMedicines(medicines.map(m => m.id === itemId ? { ...m, stock: m.stock - stockDifference } : m));
+    setMedicines(updatedMeds);
   };
 
   const handleCheckoutIntent = () => {
@@ -1647,6 +1672,7 @@ export default function Home() {
     cloudSet('madina_v7_sales', (totalSales + currentFinalBill).toString());
     cloudSet('madina_v7_profit', (totalProfit + netProfit).toString());
     cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
+    cloudSet('madina_v7_meds', JSON.stringify(medicines));
 
     if (dueAmt > 0) {
       const effectiveName = customerName.trim() || t("Regular Customer", "সাধারণ গ্রাহক");
