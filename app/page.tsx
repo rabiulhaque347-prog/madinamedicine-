@@ -652,8 +652,9 @@ export default function Home() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+  const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
   const [selectedExistingDue, setSelectedExistingDue] = useState<any>(null);
-  const [showCustomerPanel, setShowCustomerPanel] = useState(false);
+  const [showCustomerPanel, setShowCustomerPanel] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [cashReceived, setCashReceived] = useState("");
   const [invoiceDue, setInvoiceDue] = useState("0");
@@ -1637,6 +1638,14 @@ export default function Home() {
   const liveRefundAmount = (parseFloat(calculatorInput) || 0) - currentFinalBill;
 
   const executeFinalCheckout = () => {
+    const discountPercent = currentSubTotal > 0 ? (activeDiscountAmount / currentSubTotal) * 100 : 0;
+    if (discountPercent > 10) {
+      alert(t(
+        "❌ Discount cannot exceed 10%! Please reduce the discount to proceed.",
+        "❌ ছাড় সর্বোচ্চ ১০% এর বেশি দেওয়া যাবে না! বিক্রয় করতে ছাড় কমান।"
+      ));
+      return;
+    }
     const totalCost = cart.reduce((sum, item) => sum + (item.buyPrice * (parseInt(item.qty) || 0)), 0);
     const dueAmt = parseFloat(invoiceDue) || 0;
     const paidCash = currentFinalBill - dueAmt;
@@ -1743,7 +1752,7 @@ export default function Home() {
 
     setCart([]); setCustomerName(""); setCustomerPhone(""); setDiscountValue("0"); setCashReceived(""); setInvoiceDue("0");
     setSelectedExistingDue(null);
-    setShowCustomerPanel(false);
+    setShowCustomerPanel(true);
     setShowConfirmModal(false);
     setShowSuccessAlert(true);
     playSound('checkout');
@@ -3080,40 +3089,125 @@ export default function Home() {
                           if (!e.target.value.trim()) { setSelectedExistingDue(null); }
                         }}
                         onFocus={() => setShowCustomerSuggestions(true)}
-                        onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 150)}
-                        placeholder={t("Optional...", "ঐচ্ছিক...")}
+                        onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 200)}
+                        placeholder={t("Type name or phone...", "নাম বা ফোন লিখুন...")}
                         className={`w-full px-2 py-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                       />
-                      {/* Due customer suggestions */}
-                      {showCustomerSuggestions && customerName.trim() && (() => {
-                        const matches = dueList.filter(d =>
-                          d.customerName.toLowerCase().includes(customerName.toLowerCase()) ||
-                          (d.phone && d.phone.includes(customerName))
-                        );
+                      {/* Customer suggestions from invoices + due list */}
+                      {showCustomerSuggestions && customerName.trim().length >= 1 && (() => {
+                        const query = customerName.toLowerCase();
+                        // Build unique customer map from past invoices
+                        const pastMap: Record<string, { name: string; phone: string }> = {};
+                        invoices.forEach((inv: any) => {
+                          const key = inv.customer?.toLowerCase();
+                          if (key && key !== t("regular customer","সাধারণ গ্রাহক").toLowerCase() && !pastMap[key]) {
+                            pastMap[key] = { name: inv.customer, phone: inv.phone !== "N/A" ? inv.phone : "" };
+                          }
+                        });
+                        // Merge due list into map (overrides phone if due exists)
+                        dueList.forEach((d: any) => {
+                          const key = d.customerName?.toLowerCase();
+                          if (key) pastMap[key] = { name: d.customerName, phone: d.phone !== "N/A" ? d.phone : pastMap[key]?.phone || "" };
+                        });
+
+                        const rawInput = customerName.trim();
+                        const matches = Object.values(pastMap).filter(c =>
+                          c.name.toLowerCase().includes(query) ||
+                          (c.phone && c.phone.includes(rawInput))
+                        ).slice(0, 8);
+
                         return matches.length > 0 ? (
                           <div className={`absolute z-30 left-0 right-0 top-full mt-0.5 rounded-xl border shadow-xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-                            {matches.map(d => (
-                              <button
-                                key={d.id}
-                                onMouseDown={() => {
-                                  setCustomerName(d.customerName);
-                                  setCustomerPhone(d.phone !== "N/A" ? d.phone : customerPhone);
-                                  setSelectedExistingDue(d);
-                                  setShowCustomerSuggestions(false);
-                                }}
-                                className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center hover:bg-teal-500/10 transition ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
-                              >
-                                <span className="font-bold">{d.customerName} <span className="font-mono text-xs text-slate-400">{d.phone}</span></span>
-                                <span className="text-red-500 font-mono font-black text-xs">🔴 {d.totalDue.toFixed(1)} {currencySymbol} {t("due", "বাকি")}</span>
-                              </button>
-                            ))}
+                            {matches.map((c, i) => {
+                              const due = dueList.find((d: any) => d.customerName.toLowerCase() === c.name.toLowerCase());
+                              return (
+                                <button
+                                  key={i}
+                                  onMouseDown={() => {
+                                    setCustomerName(c.name);
+                                    setCustomerPhone(c.phone || customerPhone);
+                                    if (due) setSelectedExistingDue(due);
+                                    setShowCustomerSuggestions(false);
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center hover:bg-teal-500/10 transition ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
+                                >
+                                  <span>
+                                    <span className="font-bold">{c.name}</span>
+                                    {c.phone && <span className="font-mono text-xs text-slate-400 ml-2">{c.phone}</span>}
+                                  </span>
+                                  {due
+                                    ? <span className="text-red-500 font-mono font-black text-xs">🔴 {due.totalDue.toFixed(1)} {currencySymbol} {t("due","বাকি")}</span>
+                                    : <span className="text-teal-400 text-xs">✔ {t("no due","বাকি নেই")}</span>
+                                  }
+                                </button>
+                              );
+                            })}
                           </div>
                         ) : null;
                       })()}
                     </div>
-                    <div>
+                    <div className="relative">
                       <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Phone", "ফোন")}</label>
-                      <input type="text" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="01XXXXXXXXX" className={`w-full px-2 py-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                      <input
+                        type="text"
+                        value={customerPhone}
+                        onChange={e => {
+                          setCustomerPhone(e.target.value);
+                          setShowPhoneSuggestions(true);
+                          if (!e.target.value.trim()) { setSelectedExistingDue(null); }
+                        }}
+                        onFocus={() => setShowPhoneSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowPhoneSuggestions(false), 200)}
+                        placeholder="01XXXXXXXXX"
+                        className={`w-full px-2 py-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                      />
+                      {/* Phone suggestions */}
+                      {showPhoneSuggestions && customerPhone.trim().length >= 2 && (() => {
+                        const phoneQuery = customerPhone.trim();
+                        const pastMap: Record<string, { name: string; phone: string }> = {};
+                        invoices.forEach((inv: any) => {
+                          if (inv.phone && inv.phone !== "N/A") {
+                            const key = inv.phone;
+                            if (!pastMap[key]) pastMap[key] = { name: inv.customer, phone: inv.phone };
+                          }
+                        });
+                        dueList.forEach((d: any) => {
+                          if (d.phone && d.phone !== "N/A") {
+                            pastMap[d.phone] = { name: d.customerName, phone: d.phone };
+                          }
+                        });
+                        const matches = Object.values(pastMap).filter(c =>
+                          c.phone.includes(phoneQuery)
+                        ).slice(0, 8);
+                        return matches.length > 0 ? (
+                          <div className={`absolute z-30 left-0 right-0 top-full mt-0.5 rounded-xl border shadow-xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                            {matches.map((c, i) => {
+                              const due = dueList.find((d: any) => d.phone === c.phone);
+                              return (
+                                <button
+                                  key={i}
+                                  onMouseDown={() => {
+                                    setCustomerPhone(c.phone);
+                                    setCustomerName(c.name);
+                                    if (due) setSelectedExistingDue(due);
+                                    setShowPhoneSuggestions(false);
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center hover:bg-teal-500/10 transition ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
+                                >
+                                  <span>
+                                    <span className="font-mono font-bold">{c.phone}</span>
+                                    <span className="text-xs text-slate-400 ml-2">{c.name}</span>
+                                  </span>
+                                  {due
+                                    ? <span className="text-red-500 font-mono font-black text-xs">🔴 {due.totalDue.toFixed(1)} {currencySymbol} {t("due","বাকি")}</span>
+                                    : <span className="text-teal-400 text-xs">✔ {t("no due","বাকি নেই")}</span>
+                                  }
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
                   </div>}
 
@@ -3148,9 +3242,27 @@ export default function Home() {
                         <option value="TK">{t("Discount (৳)", "ছাড় (৳)")}</option>
                         <option value="PERCENT">{t("Discount (%)", "ছাড় (%)")}</option>
                       </select>
-                      <input type="number" value={discountValue} onChange={e => setDiscountValue(e.target.value)} className={`flex-1 px-2 py-1 text-sm rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                      <input type="number" value={discountValue} onChange={e => {
+                        const val = parseFloat(e.target.value) || 0;
+                        if (discountType === "PERCENT") {
+                          if (val > 10) { setDiscountValue("10"); return; }
+                        } else {
+                          const maxTk = (currentSubTotal * 10) / 100;
+                          if (val > maxTk) { setDiscountValue(maxTk.toFixed(2)); return; }
+                        }
+                        setDiscountValue(e.target.value);
+                      }} className={`flex-1 px-2 py-1 text-sm rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
                   )}
+
+                  {/* Discount limit warning */}
+                  {checkShouldRenderTabOption("discount_manager") && cart.length > 0 && (() => {
+                    const discPct = currentSubTotal > 0 ? (activeDiscountAmount / currentSubTotal) * 100 : 0;
+                    if (discPct >= 10) return (
+                      <p className="text-xs font-bold text-red-500 mb-2">⚠️ {t("Max discount limit reached (10%)", "সর্বোচ্চ ছাড় সীমায় পৌঁছেছেন (১০%)")}</p>
+                    );
+                    return null;
+                  })()}
 
                   {/* Totals */}
                   {cart.length > 0 && (
@@ -5536,7 +5648,14 @@ export default function Home() {
                       type="number"
                       placeholder={t("Amount...", "পরিমাণ...")}
                       value={calculatorInput}
-                      onChange={e => { setCalculatorInput(e.target.value); setCashReceived(e.target.value); }}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setCalculatorInput(val);
+                        setCashReceived(val);
+                        const cashNum = parseFloat(val) || 0;
+                        const due = currentFinalBill - cashNum;
+                        setInvoiceDue(due > 0 ? due.toFixed(1) : "0");
+                      }}
                       className={`w-full px-2.5 py-1.5 font-mono font-bold rounded border outline-none text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300'}`}
                     />
                   </div>
