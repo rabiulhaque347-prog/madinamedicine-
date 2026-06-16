@@ -615,6 +615,7 @@ export default function Home() {
   const [duePaymentModal, setDuePaymentModal] = useState<any>(null);
   const [duePayAmount, setDuePayAmount] = useState("");
   const [dueCollectionLog, setDueCollectionLog] = useState<any[]>([]);
+  const [dueSearch, setDueSearch] = useState("");
 
   // ============================================================
   // APPEARANCE
@@ -650,6 +651,9 @@ export default function Home() {
   // ============================================================
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+  const [selectedExistingDue, setSelectedExistingDue] = useState<any>(null);
+  const [showCustomerPanel, setShowCustomerPanel] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [cashReceived, setCashReceived] = useState("");
   const [invoiceDue, setInvoiceDue] = useState("0");
@@ -1674,11 +1678,49 @@ export default function Home() {
     cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
     cloudSet('madina_v7_meds', JSON.stringify(medicines));
 
+    let updatedDueList = [...dueList];
+
+    // If customer had existing due and is paying it off now
+    if (selectedExistingDue) {
+      const prevDueAmt = selectedExistingDue.totalDue;
+      const cashGiven = parseFloat(cashReceived) || currentFinalBill;
+      const totalOwed = currentFinalBill + prevDueAmt;
+      const prevDuePaid = Math.max(0, Math.min(prevDueAmt, cashGiven - (currentFinalBill - dueAmt)));
+
+      if (prevDuePaid > 0) {
+        const newPrevDue = prevDueAmt - prevDuePaid;
+        // Add to sales (was previously not counted as today's sale)
+        const salesWithPrevDue = totalSales + currentFinalBill + prevDuePaid;
+        setTotalSales(salesWithPrevDue);
+        cloudSet('madina_v7_sales', salesWithPrevDue.toString());
+
+        // Log due collection
+        const logEntry = {
+          id: Date.now() + 1,
+          customerName: selectedExistingDue.customerName,
+          amount: prevDuePaid,
+          dateString: formattedDate,
+          date: today.toISOString()
+        };
+        const updatedLog = [logEntry, ...dueCollectionLog];
+        setDueCollectionLog(updatedLog);
+        cloudSet('madina_v7_due_collection_log', JSON.stringify(updatedLog));
+
+        // Update or remove previous due entry
+        if (newPrevDue <= 0) {
+          updatedDueList = updatedDueList.filter(d => d.id !== selectedExistingDue.id);
+        } else {
+          updatedDueList = updatedDueList.map(d =>
+            d.id === selectedExistingDue.id ? { ...d, totalDue: newPrevDue } : d
+          );
+        }
+      }
+    }
+
     if (dueAmt > 0) {
       const effectiveName = customerName.trim() || t("Regular Customer", "সাধারণ গ্রাহক");
       const effectivePhone = customerPhone || "N/A";
-      const existingDueIdx = dueList.findIndex(d => d.customerName.toLowerCase() === effectiveName.toLowerCase() && d.phone === effectivePhone);
-      let updatedDueList = [...dueList];
+      const existingDueIdx = updatedDueList.findIndex(d => d.customerName.toLowerCase() === effectiveName.toLowerCase() && d.phone === effectivePhone);
       if (existingDueIdx !== -1) {
         updatedDueList[existingDueIdx] = {
           ...updatedDueList[existingDueIdx],
@@ -1694,11 +1736,14 @@ export default function Home() {
           invoices: [{ invoiceId: newInvoice.invoiceId, amount: dueAmt, date: formattedDate }]
         });
       }
-      setDueList(updatedDueList);
-      cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
     }
 
+    setDueList(updatedDueList);
+    cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
+
     setCart([]); setCustomerName(""); setCustomerPhone(""); setDiscountValue("0"); setCashReceived(""); setInvoiceDue("0");
+    setSelectedExistingDue(null);
+    setShowCustomerPanel(false);
     setShowConfirmModal(false);
     setShowSuccessAlert(true);
     playSound('checkout');
@@ -3011,19 +3056,74 @@ export default function Home() {
               {/* Right: Cart */}
               <div className="lg:col-span-5">
                 <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-indigo-950/50 border-indigo-600' : 'bg-indigo-200 border-indigo-400 shadow-sm'}`}>
-                  <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">🛒 {t("Cart", "কার্ট")} ({cart.length})</h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">🛒 {t("Cart", "কার্ট")} ({cart.length})</h3>
+                    <button
+                      onClick={() => setShowCustomerPanel(p => !p)}
+                      className={`flex items-center gap-1.5 text-xs font-black px-2.5 py-1.5 rounded-lg border transition ${selectedExistingDue ? 'bg-red-500 border-red-600 text-white' : customerName ? 'bg-teal-500 border-teal-600 text-white' : isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      👤 {t("Customer", "গ্রাহক")}
+                      {selectedExistingDue && <span className="ml-1 font-mono">{selectedExistingDue.totalDue.toFixed(0)}৳ {t("due","বাকি")}</span>}
+                    </button>
+                  </div>
 
-                  {/* Customer */}
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    <div>
+                  {/* Customer Panel */}
+                  {showCustomerPanel && <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div className="relative">
                       <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Customer Name", "গ্রাহকের নাম")}</label>
-                      <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder={t("Optional...", "ঐচ্ছিক...")} className={`w-full px-2 py-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                      <input
+                        type="text"
+                        value={customerName}
+                        onChange={e => {
+                          setCustomerName(e.target.value);
+                          setShowCustomerSuggestions(true);
+                          if (!e.target.value.trim()) { setSelectedExistingDue(null); }
+                        }}
+                        onFocus={() => setShowCustomerSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 150)}
+                        placeholder={t("Optional...", "ঐচ্ছিক...")}
+                        className={`w-full px-2 py-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                      />
+                      {/* Due customer suggestions */}
+                      {showCustomerSuggestions && customerName.trim() && (() => {
+                        const matches = dueList.filter(d =>
+                          d.customerName.toLowerCase().includes(customerName.toLowerCase()) ||
+                          (d.phone && d.phone.includes(customerName))
+                        );
+                        return matches.length > 0 ? (
+                          <div className={`absolute z-30 left-0 right-0 top-full mt-0.5 rounded-xl border shadow-xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                            {matches.map(d => (
+                              <button
+                                key={d.id}
+                                onMouseDown={() => {
+                                  setCustomerName(d.customerName);
+                                  setCustomerPhone(d.phone !== "N/A" ? d.phone : customerPhone);
+                                  setSelectedExistingDue(d);
+                                  setShowCustomerSuggestions(false);
+                                }}
+                                className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center hover:bg-teal-500/10 transition ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
+                              >
+                                <span className="font-bold">{d.customerName} <span className="font-mono text-xs text-slate-400">{d.phone}</span></span>
+                                <span className="text-red-500 font-mono font-black text-xs">🔴 {d.totalDue.toFixed(1)} {currencySymbol} {t("due", "বাকি")}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
                     <div>
                       <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Phone", "ফোন")}</label>
                       <input type="text" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="01XXXXXXXXX" className={`w-full px-2 py-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     </div>
-                  </div>
+                  </div>}
+
+                  {/* Previous due alert */}
+                  {selectedExistingDue && (
+                    <div className={`mb-3 px-3 py-2 rounded-xl border text-sm flex items-center justify-between ${isDarkMode ? 'bg-red-950/50 border-red-700' : 'bg-red-50 border-red-300'}`}>
+                      <span className={isDarkMode ? 'text-red-300' : 'text-red-700'}>⚠️ {t("Previous due:", "আগের বাকি:")} <strong className="font-mono">{selectedExistingDue.totalDue.toFixed(1)} {currencySymbol}</strong></span>
+                      <button onClick={() => { setSelectedExistingDue(null); }} className="text-slate-400 hover:text-red-500 text-xs font-bold">✕</button>
+                    </div>
+                  )}
 
                   {/* Cart Items */}
                   <div className="flex flex-col gap-1.5 max-h-36 sm:max-h-48 overflow-y-auto mb-3">
@@ -3059,6 +3159,12 @@ export default function Home() {
                       {parseFloat(vatPercentage) > 0 && <div className="flex justify-between"><span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("VAT", "ভ্যাট")} ({vatPercentage}%)</span><span className="font-mono">+{calculatedVatAmount.toFixed(1)} {currencySymbol}</span></div>}
                       {activeDiscountAmount > 0 && <div className="flex justify-between text-red-500"><span>{t("Discount", "ছাড়")}</span><span className="font-mono">-{activeDiscountAmount.toFixed(1)} {currencySymbol}</span></div>}
                       <div className="flex justify-between font-black text-teal-500 border-t pt-1"><span>{t("Total Payable", "মোট পরিশোধ")}</span><span className="font-mono text-base">{currentFinalBill.toFixed(1)} {currencySymbol}</span></div>
+                      {selectedExistingDue && (
+                        <>
+                          <div className="flex justify-between text-red-500 font-bold"><span>+ {t("Prev. Due", "আগের বাকি")}</span><span className="font-mono">{selectedExistingDue.totalDue.toFixed(1)} {currencySymbol}</span></div>
+                          <div className="flex justify-between font-black text-orange-500 border-t pt-1"><span>{t("Grand Total", "সর্বমোট")}</span><span className="font-mono text-base">{(currentFinalBill + selectedExistingDue.totalDue).toFixed(1)} {currencySymbol}</span></div>
+                        </>
+                      )}
                     </div>
                   )}
 
@@ -4750,7 +4856,7 @@ export default function Home() {
           ========================================================= */}
           {activeTab === "due_list" && checkShouldRenderTabOption("due_list_view") && (
             <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-rose-950/50 border-rose-600' : 'bg-rose-50 border-rose-300'}`}>
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">💳 {t("Customer Due List", "গ্রাহকের বাকি তালিকা")}</h3>
                 <div className="flex items-center gap-3">
                   <div className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -4760,10 +4866,31 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Search Bar */}
+              <div className="mb-3">
+                <input
+                  type="text"
+                  value={dueSearch}
+                  onChange={e => setDueSearch(e.target.value)}
+                  placeholder={t("Search by name or phone...", "নাম বা নম্বর দিয়ে খুঁজুন...")}
+                  className={`w-full px-3 py-2 rounded-xl border text-sm outline-none transition ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-800 placeholder-slate-400'}`}
+                />
+              </div>
+
               {dueList.length === 0 ? (
                 <div className="text-center py-12 text-slate-400 italic text-sm">{t("No outstanding dues.", "কোনো বাকি নেই।")}</div>
               ) : (
                 <div className="overflow-x-auto">
+                  {(() => {
+                    const filtered = dueSearch.trim()
+                      ? dueList.filter(d =>
+                          d.customerName.toLowerCase().includes(dueSearch.toLowerCase()) ||
+                          (d.phone && d.phone.includes(dueSearch))
+                        )
+                      : dueList;
+                    return filtered.length === 0 ? (
+                      <div className="text-center py-8 text-slate-400 italic text-sm">{t("No results found.", "কোনো ফলাফল পাওয়া যায়নি।")}</div>
+                    ) : (
                   <table className="w-full text-left text-sm border-collapse" style={{minWidth:'500px'}}>
                     <thead>
                       <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
@@ -4776,7 +4903,7 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/10">
-                      {dueList.map((due, idx) => (
+                      {filtered.map((due, idx) => (
                         <tr key={due.id} className="hover:bg-slate-500/5 transition-colors">
                           <td className="p-2.5 text-slate-400">{idx + 1}</td>
                           <td className="p-2.5 font-black">{due.customerName}</td>
@@ -4796,6 +4923,8 @@ export default function Home() {
                       ))}
                     </tbody>
                   </table>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -5376,6 +5505,23 @@ export default function Home() {
                 <div><span className="text-slate-400 block">{t("Customer:", "গ্রাহক:")}</span><strong className="text-teal-500">{customerName || t("Walk-in Customer", "সাধারণ গ্রাহক")}</strong></div>
                 <div><span className="text-slate-400 block">{t("Items:", "আইটেম:")}</span><strong>{cart.reduce((s, i) => s + (parseInt(i.qty) || 0), 0)} {t("pcs", "টি")}</strong></div>
               </div>
+
+              {selectedExistingDue && (
+                <div className={`px-3 py-2 rounded-xl border text-sm ${isDarkMode ? 'bg-red-950/40 border-red-700' : 'bg-red-50 border-red-300'}`}>
+                  <div className="flex justify-between mb-1">
+                    <span className={isDarkMode ? 'text-red-300' : 'text-red-600'}>{t("Previous Due:", "আগের বাকি:")}</span>
+                    <span className="font-mono font-black text-red-500">{selectedExistingDue.totalDue.toFixed(1)} {currencySymbol}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className={isDarkMode ? 'text-orange-300' : 'text-orange-600'}>{t("Today's Bill:", "আজকের বিল:")}</span>
+                    <span className="font-mono font-black text-orange-500">{currentFinalBill.toFixed(1)} {currencySymbol}</span>
+                  </div>
+                  <div className={`flex justify-between font-black border-t mt-1 pt-1 ${isDarkMode ? 'border-red-700' : 'border-red-200'}`}>
+                    <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{t("Grand Total:", "সর্বমোট:")}</span>
+                    <span className="font-mono text-orange-500">{(currentFinalBill + selectedExistingDue.totalDue).toFixed(1)} {currencySymbol}</span>
+                  </div>
+                </div>
+              )}
 
               <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-indigo-950/50 border-indigo-600' : 'bg-indigo-50 border-indigo-300'}`}>
                 <div className="flex justify-between items-center mb-2">
