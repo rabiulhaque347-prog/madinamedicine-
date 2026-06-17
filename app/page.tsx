@@ -803,7 +803,13 @@ export default function Home() {
       // No default seeding — start completely empty
 
       const savedInvoices = g('madina_v7_invoices');
-      if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
+      let parsedInvoices: any[] = [];
+      if (savedInvoices) {
+        try {
+          parsedInvoices = JSON.parse(savedInvoices);
+          setInvoices(parsedInvoices);
+        } catch { /* skip malformed */ }
+      }
 
       const savedPurchases = g('madina_v7_purchases');
       if (savedPurchases) setPurchaseList(JSON.parse(savedPurchases));
@@ -814,11 +820,21 @@ export default function Home() {
       const savedDueCLog = g('madina_v7_due_collection_log');
       if (savedDueCLog) setDueCollectionLog(JSON.parse(savedDueCLog));
 
-      const savedSales = g('madina_v7_sales');
-      if (savedSales) setTotalSales(parseFloat(savedSales));
+      // Recalculate sales & profit from invoices for cross-device consistency.
+      // If invoices exist, derive totals from them (source of truth).
+      // Fall back to stored value only when invoice list is unavailable.
+      if (parsedInvoices.length > 0) {
+        const derivedSales = parsedInvoices.reduce((sum: number, inv: any) => sum + (inv.finalBill || 0), 0);
+        const derivedProfit = parsedInvoices.reduce((sum: number, inv: any) => sum + (inv.profit || 0), 0);
+        setTotalSales(derivedSales);
+        setTotalProfit(derivedProfit);
+      } else {
+        const savedSales = g('madina_v7_sales');
+        if (savedSales) setTotalSales(parseFloat(savedSales) || 0);
 
-      const savedProfit = g('madina_v7_profit');
-      if (savedProfit) setTotalProfit(parseFloat(savedProfit));
+        const savedProfit = g('madina_v7_profit');
+        if (savedProfit) setTotalProfit(parseFloat(savedProfit) || 0);
+      }
 
       // Company suggestion list — seed defaults ONLY if absolutely nothing exists anywhere
       const savedCompanies = g('madina_v7_companies');
@@ -1022,12 +1038,25 @@ export default function Home() {
         } catch { /* skip malformed */ }
       }
 
-      apply('madina_v7_invoices', setInvoices);
+      // When invoices update from Firebase, recalculate sales & profit from invoices
+      // so all devices always show consistent data.
+      if (cloudData['madina_v7_invoices'] !== undefined) {
+        localStorage.setItem('madina_v7_invoices', cloudData['madina_v7_invoices']);
+        try {
+          const freshInvoices: any[] = JSON.parse(cloudData['madina_v7_invoices']);
+          setInvoices(freshInvoices);
+          if (freshInvoices.length > 0) {
+            const derivedSales = freshInvoices.reduce((sum: number, inv: any) => sum + (inv.finalBill || 0), 0);
+            const derivedProfit = freshInvoices.reduce((sum: number, inv: any) => sum + (inv.profit || 0), 0);
+            setTotalSales(derivedSales);
+            setTotalProfit(derivedProfit);
+          }
+        } catch { /* skip malformed */ }
+      } else {
+        apply('madina_v7_sales', setTotalSales, parseFloat);
+        apply('madina_v7_profit', setTotalProfit, parseFloat);
+      }
       apply('madina_v7_purchases', setPurchaseList);
-      apply('madina_v7_due_list', setDueList);
-      apply('madina_v7_due_collection_log', setDueCollectionLog);
-      apply('madina_v7_sales', setTotalSales, parseFloat);
-      apply('madina_v7_profit', setTotalProfit, parseFloat);
       apply('madina_v7_companies', setBdMedicineCompanies);
       apply('madina_v7_mednames', setBdMedicineNamesList);
       apply('madina_v7_medmeta', setBdMedNameMetadata);
@@ -1647,8 +1676,12 @@ export default function Home() {
       return;
     }
     const totalCost = cart.reduce((sum, item) => sum + (item.buyPrice * (parseInt(item.qty) || 0)), 0);
+    const prevDueAmt = selectedExistingDue ? selectedExistingDue.totalDue : 0;
+    const grandTotal = currentFinalBill + prevDueAmt;
+    const cashGivenNum = parseFloat(cashReceived) || 0;
+    // invoiceDue from state already reflects grand total - cash (set in onChange), use it directly
     const dueAmt = parseFloat(invoiceDue) || 0;
-    const paidCash = currentFinalBill - dueAmt;
+    const paidCash = cashGivenNum > 0 ? Math.min(cashGivenNum, grandTotal) : currentFinalBill - dueAmt;
     // Full profit added immediately regardless of cash or due
     const netProfit = currentFinalBill - totalCost;
 
@@ -1678,12 +1711,15 @@ export default function Home() {
 
     const updatedInvoices = [newInvoice, ...invoices];
     setInvoices(updatedInvoices);
-    setTotalSales(totalSales + currentFinalBill);
-    setTotalProfit(totalProfit + netProfit);
+    // Derive sales & profit from full invoice list to avoid stale-state accumulation errors
+    const newTotalSales = updatedInvoices.reduce((sum: number, inv: any) => sum + (inv.finalBill || 0), 0);
+    const newTotalProfit = updatedInvoices.reduce((sum: number, inv: any) => sum + (inv.profit || 0), 0);
+    setTotalSales(newTotalSales);
+    setTotalProfit(newTotalProfit);
     setLastInvoice(newInvoice);
 
-    cloudSet('madina_v7_sales', (totalSales + currentFinalBill).toString());
-    cloudSet('madina_v7_profit', (totalProfit + netProfit).toString());
+    cloudSet('madina_v7_sales', newTotalSales.toString());
+    cloudSet('madina_v7_profit', newTotalProfit.toString());
     cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
     cloudSet('madina_v7_meds', JSON.stringify(medicines));
 
@@ -1691,15 +1727,14 @@ export default function Home() {
 
     // If customer had existing due and is paying it off now
     if (selectedExistingDue) {
-      const prevDueAmt = selectedExistingDue.totalDue;
-      const cashGiven = parseFloat(cashReceived) || currentFinalBill;
-      const totalOwed = currentFinalBill + prevDueAmt;
-      const prevDuePaid = Math.max(0, Math.min(prevDueAmt, cashGiven - (currentFinalBill - dueAmt)));
+      // Cash first covers new bill, remaining cash goes to prev due
+      const cashForPrevDue = Math.max(0, paidCash - currentFinalBill);
+      const prevDuePaid = Math.min(prevDueAmt, cashForPrevDue);
 
       if (prevDuePaid > 0) {
         const newPrevDue = prevDueAmt - prevDuePaid;
-        // Add to sales (was previously not counted as today's sale)
-        const salesWithPrevDue = totalSales + currentFinalBill + prevDuePaid;
+        // Due collection adds to sales (cash that was previously deferred)
+        const salesWithPrevDue = newTotalSales + prevDuePaid;
         setTotalSales(salesWithPrevDue);
         cloudSet('madina_v7_sales', salesWithPrevDue.toString());
 
@@ -1729,21 +1764,31 @@ export default function Home() {
     if (dueAmt > 0) {
       const effectiveName = customerName.trim() || t("Regular Customer", "সাধারণ গ্রাহক");
       const effectivePhone = customerPhone || "N/A";
-      const existingDueIdx = updatedDueList.findIndex(d => d.customerName.toLowerCase() === effectiveName.toLowerCase() && d.phone === effectivePhone);
-      if (existingDueIdx !== -1) {
-        updatedDueList[existingDueIdx] = {
-          ...updatedDueList[existingDueIdx],
-          totalDue: updatedDueList[existingDueIdx].totalDue + dueAmt,
-          invoices: [...updatedDueList[existingDueIdx].invoices, { invoiceId: newInvoice.invoiceId, amount: dueAmt, date: formattedDate }]
-        };
-      } else {
-        updatedDueList.push({
-          id: Date.now(),
-          customerName: effectiveName,
-          phone: effectivePhone,
-          totalDue: dueAmt,
-          invoices: [{ invoiceId: newInvoice.invoiceId, amount: dueAmt, date: formattedDate }]
-        });
+
+      // dueAmt = grand total (new bill + prev due) - cash paid
+      // We need only the new bill's unpaid portion for the new invoice entry.
+      // Prev due's unpaid portion is already reflected in updatedDueList above.
+      // Cash first covers new bill, then prev due.
+      // New bill due = max(0, currentFinalBill - paidCash)
+      const newBillDue = Math.max(0, currentFinalBill - paidCash);
+
+      if (newBillDue > 0) {
+        const existingDueIdx = updatedDueList.findIndex(d => d.customerName.toLowerCase() === effectiveName.toLowerCase() && d.phone === effectivePhone);
+        if (existingDueIdx !== -1) {
+          updatedDueList[existingDueIdx] = {
+            ...updatedDueList[existingDueIdx],
+            totalDue: updatedDueList[existingDueIdx].totalDue + newBillDue,
+            invoices: [...updatedDueList[existingDueIdx].invoices, { invoiceId: newInvoice.invoiceId, amount: newBillDue, date: formattedDate }]
+          };
+        } else {
+          updatedDueList.push({
+            id: Date.now(),
+            customerName: effectiveName,
+            phone: effectivePhone,
+            totalDue: newBillDue,
+            invoices: [{ invoiceId: newInvoice.invoiceId, amount: newBillDue, date: formattedDate }]
+          });
+        }
       }
     }
 
@@ -1845,12 +1890,15 @@ export default function Home() {
 
     setMedicines(updatedMeds);
     setInvoices(updatedInvoices);
-    setTotalSales(newSalesState);
-    setTotalProfit(newProfitState);
+    // Derive from updated invoices for cross-device consistency
+    const returnedSales = updatedInvoices.reduce((sum: number, inv: any) => sum + (inv.finalBill || 0), 0);
+    const returnedProfit = updatedInvoices.reduce((sum: number, inv: any) => sum + (inv.profit || 0), 0);
+    setTotalSales(returnedSales);
+    setTotalProfit(returnedProfit);
     cloudSet('madina_v7_meds', JSON.stringify(updatedMeds));
     cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
-    cloudSet('madina_v7_sales', newSalesState.toString());
-    cloudSet('madina_v7_profit', newProfitState.toString());
+    cloudSet('madina_v7_sales', returnedSales.toString());
+    cloudSet('madina_v7_profit', returnedProfit.toString());
 
     setShowReturnModal(false);
     setSelectedInvoiceForReturn(null);
@@ -2235,9 +2283,9 @@ export default function Home() {
     const inv = invoices.find(i => i.invoiceId === invoiceId);
     if (!inv) return;
     const updatedInvoices = invoices.filter(i => i.invoiceId !== invoiceId);
-    // Subtract the invoice profit and sales from totals
-    const newSales = Math.max(0, totalSales - (inv.finalBill - (inv.due || 0)));
-    const newProfit = totalProfit - (inv.profit || 0);
+    // Derive from remaining invoices for cross-device consistency
+    const newSales = updatedInvoices.reduce((sum: number, i: any) => sum + (i.finalBill || 0), 0);
+    const newProfit = updatedInvoices.reduce((sum: number, i: any) => sum + (i.profit || 0), 0);
     setInvoices(updatedInvoices);
     setTotalSales(newSales);
     setTotalProfit(newProfit);
@@ -5638,7 +5686,9 @@ export default function Home() {
               <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-indigo-950/50 border-indigo-600' : 'bg-indigo-50 border-indigo-300'}`}>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-bold text-slate-400">{t("Total Payable:", "মোট পরিশোধযোগ্য:")}</span>
-                  <span className="font-mono text-base font-black text-teal-500">{currentFinalBill.toFixed(1)} {currencySymbol}</span>
+                  <span className="font-mono text-base font-black text-teal-500">
+                    {(currentFinalBill + (selectedExistingDue ? selectedExistingDue.totalDue : 0)).toFixed(1)} {currencySymbol}
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -5653,7 +5703,9 @@ export default function Home() {
                         setCalculatorInput(val);
                         setCashReceived(val);
                         const cashNum = parseFloat(val) || 0;
-                        const due = currentFinalBill - cashNum;
+                        const prevDue = selectedExistingDue ? selectedExistingDue.totalDue : 0;
+                        const grandTotal = currentFinalBill + prevDue;
+                        const due = grandTotal - cashNum;
                         setInvoiceDue(due > 0 ? due.toFixed(1) : "0");
                       }}
                       className={`w-full px-2.5 py-1.5 font-mono font-bold rounded border outline-none text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300'}`}
@@ -5661,8 +5713,13 @@ export default function Home() {
                   </div>
                   <div>
                     <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Change Back", "ফেরত দেওয়া")}</label>
-                    <div className={`w-full px-2.5 py-1.5 font-mono font-black text-sm rounded border ${liveRefundAmount >= 0 ? 'text-emerald-400 bg-emerald-500/5 border-emerald-500/10' : 'text-red-400 bg-red-500/5 border-red-500/10'}`}>
-                      {liveRefundAmount >= 0 ? `${liveRefundAmount.toFixed(1)} ${currencySymbol}` : t("Short!", "কম আছে!")}
+                    <div className={`w-full px-2.5 py-1.5 font-mono font-black text-sm rounded border ${((parseFloat(calculatorInput) || 0) - (currentFinalBill + (selectedExistingDue ? selectedExistingDue.totalDue : 0))) >= 0 ? 'text-emerald-400 bg-emerald-500/5 border-emerald-500/10' : 'text-red-400 bg-red-500/5 border-red-500/10'}`}>
+                      {(() => {
+                        const cashNum = parseFloat(calculatorInput) || 0;
+                        const grandTotal = currentFinalBill + (selectedExistingDue ? selectedExistingDue.totalDue : 0);
+                        const change = cashNum - grandTotal;
+                        return change >= 0 ? `${change.toFixed(1)} ${currencySymbol}` : t("Short!", "কম আছে!");
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -5687,7 +5744,7 @@ export default function Home() {
                 <button onClick={() => setShowConfirmModal(false)} className={`px-4 py-2 text-sm font-bold rounded-xl transition ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{t("Cancel", "বাতিল")}</button>
                 <button
                   onClick={executeFinalCheckout}
-                  disabled={liveRefundAmount < 0 && parseFloat(invoiceDue) === 0}
+                  disabled={((parseFloat(calculatorInput) || 0) - (currentFinalBill + (selectedExistingDue ? selectedExistingDue.totalDue : 0))) < 0 && parseFloat(invoiceDue) === 0}
                   className="bg-gradient-to-r from-teal-500 to-emerald-500 disabled:opacity-40 text-white font-black px-5 py-2 rounded-xl uppercase tracking-wider shadow hover:from-teal-600 hover:to-emerald-600 transition"
                 >
                   ✅ {t("Confirm & Print", "নিশ্চিত ও প্রিন্ট")}
