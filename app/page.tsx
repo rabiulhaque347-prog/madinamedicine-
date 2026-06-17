@@ -364,7 +364,8 @@ const allCategories = [
   "Tablet", "Capsule", "Syrup", "Injection", "Cream", "Ointment", "Lotion",
   "Solution", "Shampoo", "Inhaler", "Refill", "Toothpaste", "Toothbrush",
   "Diaper", "OTC", "Pad", "Powder", "Suspension", "Tissue", "Water",
-  "Juice", "Belt", "Ball", "Suppository", "Chocolate", "Pack", "Piece", "Box"
+  "Juice", "Belt", "Ball", "Suppository", "Chocolate", "Pack", "Piece", "Box",
+  "Kneecap", "Drop", "Gel", "Bottle", "Spray"
 ];
 
 // Theme CSS variable injection (static - defined outside component)
@@ -553,8 +554,17 @@ export default function Home() {
     daily_due_collection_view: true,
     monthly_discount_view: true,
     yearly_discount_view: true,
+    // Closing Report permissions
+    closing_report: true,
+    closing_total_sales: true,
+    closing_cash_received: true,
+    closing_profit: true,
+    closing_due: true,
+    closing_bkash: true,
+    closing_discount: true,
+    closing_due_collection: true,
+    closing_final_summary: true,
   });
-
   // ============================================================
   // TODAY KEY — used to force daily stats re-computation at midnight
   // ============================================================
@@ -2247,6 +2257,34 @@ export default function Home() {
   }, [isLoggedIn]);
 
   // ============================================================
+  // EXPIRY ALERT — 1 month before expiry
+  // ============================================================
+  useEffect(() => {
+    if (!isLoggedIn || medicines.length === 0) return;
+    const timer = setTimeout(() => {
+      const today = new Date();
+      const oneMonthLater = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
+      const expiringSoon = medicines.filter(m => {
+        if (!m.expire) return false;
+        const expDate = new Date(m.expire);
+        return expDate > today && expDate <= oneMonthLater;
+      });
+      if (expiringSoon.length > 0) {
+        expiringSoon.forEach((m, i) => {
+          setTimeout(() => {
+            addToast(
+              t(`⚠️ "${m.name}" expires on ${m.expire} — only 1 month left!`,
+                `⚠️ "${m.name}" এর মেয়াদ শেষ ${m.expire} — মাত্র ১ মাস বাকি!`),
+              'error'
+            );
+          }, i * 1200);
+        });
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [isLoggedIn, medicines]);
+
+  // ============================================================
   // COMPUTED VALUES — wrapped in useMemo to prevent recalculation on every render
   // ============================================================
   const grandTotalPurchaseCost = useMemo(() => purchaseList.reduce((sum, item) => sum + (item.totalCost || 0), 0), [purchaseList]);
@@ -2268,6 +2306,15 @@ export default function Home() {
   const activeThreshold = useMemo(() => parseInt(lowStockThreshold) || 10, [lowStockThreshold]);
   const lowStockMedicines = useMemo(() => medicines.filter(m => m.stock <= (m.lowStockAlert || activeThreshold)), [medicines, activeThreshold]);
   const expiredMedicines = useMemo(() => medicines.filter(m => new Date(m.expire) < new Date()), [medicines]);
+  const expiringSoonMedicines = useMemo(() => {
+    const today = new Date();
+    const oneMonthLater = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
+    return medicines.filter(m => {
+      if (!m.expire) return false;
+      const expDate = new Date(m.expire);
+      return expDate > today && expDate <= oneMonthLater;
+    });
+  }, [medicines]);
 
   const countStockByCategory = useCallback((cat: string) => medicines.filter(m => m.category === cat).reduce((sum, item) => sum + item.stock, 0), [medicines]);
   const totalStockValue = useMemo(() => medicines.reduce((sum, m) => sum + (m.buyPrice * m.stock), 0), [medicines]);
@@ -2702,10 +2749,11 @@ export default function Home() {
         .snav-ret     { border-width: 2px !important; border-style: solid !important; border-color: #ec4899 !important; }
         .snav-set     { border-width: 2px !important; border-style: solid !important; border-color: #64748b !important; }
         .snav-perm    { border-width: 2px !important; border-style: solid !important; border-color: #f43f5e !important; }
+        .snav-closing { border-width: 2px !important; border-style: solid !important; border-color: #a855f7 !important; }
         .snav-pos.bg-teal-500,.snav-dash.bg-teal-500,.snav-stock.bg-teal-500,
         .snav-stockin.bg-teal-500,.snav-newprod.bg-teal-500,.snav-ph.bg-teal-500,
         .snav-inv.bg-teal-500,.snav-due.bg-teal-500,.snav-report.bg-teal-500,
-        .snav-ret.bg-teal-500,.snav-set.bg-teal-500,.snav-perm.bg-teal-500
+        .snav-ret.bg-teal-500,.snav-set.bg-teal-500,.snav-perm.bg-teal-500,.snav-closing.bg-teal-500
         { border-color: rgba(255,255,255,0.45) !important; box-shadow: 0 0 10px rgba(20,184,166,0.35); }
       `}</style>
 
@@ -2893,6 +2941,12 @@ export default function Home() {
           {checkShouldRenderTabOption("report_view") && (
             <button onClick={() => { playSound('tab'); setActiveTab("report"); }} className={`sidebar-nav-btn snav-report w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "report" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <span>📋</span><span>{t("Report", "রিপোর্ট")}</span>
+            </button>
+          )}
+
+          {checkShouldRenderTabOption("closing_report") && (
+            <button onClick={() => { playSound('tab'); setActiveTab("closing_report"); }} className={`sidebar-nav-btn snav-closing w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "closing_report" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span>🌙</span><span>{t("Closing Report", "ক্লোজিং রিপোর্ট")}</span>
             </button>
           )}
 
@@ -4249,6 +4303,24 @@ export default function Home() {
                       </div>
                     </div>
                   )}
+
+                  {/* Expiring Soon — 1 month warning */}
+                  {expiringSoonMedicines.length > 0 && (
+                    <div className={`ccard p-3 rounded-xl border ${isDarkMode ? 'bg-amber-950/50 border-amber-600' : 'bg-amber-50 border-amber-400 shadow-sm'}`}>
+                      <div className="flex items-center justify-between border-b pb-2 mb-2">
+                        <h4 className="text-sm font-black uppercase text-amber-500">⏳ {t("Expiring Soon (1 month)", "মেয়াদ শেষ হচ্ছে (১ মাস)")}</h4>
+                        <span className="bg-amber-500 text-white font-mono text-sm px-1.5 py-0.5 rounded-full font-bold">{expiringSoonMedicines.length}</span>
+                      </div>
+                      <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
+                        {expiringSoonMedicines.map(m => (
+                          <div key={m.id} className="flex justify-between items-center text-sm font-semibold p-1 bg-amber-500/5 rounded border border-amber-500/10">
+                            <span className="truncate max-w-[120px]">{m.name}</span>
+                            <span className="font-mono text-amber-500 text-sm">{m.expire}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -5246,6 +5318,122 @@ export default function Home() {
           )}
 
           {/* =========================================================
+              TAB: DAILY CLOSING REPORT
+          ========================================================= */}
+          {activeTab === "closing_report" && (
+            <div className={`ccard p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'}`}>
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4 print:hidden">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-purple-500">🌙 {t("Daily Closing Report", "দৈনিক ক্লোজিং রিপোর্ট")}</h3>
+                  <p className={`text-sm mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Today's full business summary", "আজকের সম্পূর্ণ ব্যবসার হিসাব")}</p>
+                </div>
+                <button onClick={() => window.print()} className="bg-purple-500 hover:bg-purple-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow print:hidden">🖨️ {t("Print", "প্রিন্ট")}</button>
+              </div>
+
+              {/* Print Header */}
+              <div className="hidden print:block mb-4 text-center border-b pb-3">
+                <h1 className="text-xl font-black">{pharmacyName}</h1>
+                <p className="text-sm">{pharmacyAddress}</p>
+                <h2 className="text-base font-bold mt-2">🌙 {t("Daily Closing Report", "দৈনিক ক্লোজিং রিপোর্ট")}</h2>
+                <p className="text-sm text-slate-500">{new Date().toLocaleDateString('bn-BD', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              </div>
+
+              {/* Date Badge */}
+              <div className={`text-center mb-4 py-2 rounded-xl font-bold text-sm ${isDarkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-50 text-purple-700 border border-purple-200'}`}>
+                📅 {new Date().toLocaleDateString('bn-BD', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </div>
+
+              {/* Summary Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                {checkShouldRenderTabOption("closing_total_sales") && (
+                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-emerald-900/30 border-emerald-700' : 'bg-emerald-50 border-emerald-300'}`}>
+                  <div className="text-lg font-black text-emerald-500 font-mono">{computedDailySalesAmount.toFixed(0)} {currencySymbol}</div>
+                  <div className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>💰 {t("Total Sales", "মোট বিক্রয়")}</div>
+                </div>
+                )}
+                {checkShouldRenderTabOption("closing_cash_received") && (
+                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-teal-900/30 border-teal-700' : 'bg-teal-50 border-teal-300'}`}>
+                  <div className="text-lg font-black text-teal-500 font-mono">{(computedDailySalesAmount - computedDailyDue).toFixed(0)} {currencySymbol}</div>
+                  <div className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>✅ {t("Cash Received", "নগদ পেয়েছি")}</div>
+                </div>
+                )}
+                {checkShouldRenderTabOption("closing_profit") && (
+                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-blue-900/30 border-blue-700' : 'bg-blue-50 border-blue-300'}`}>
+                  <div className="text-lg font-black text-blue-500 font-mono">{computedDailyProfitAmount.toFixed(0)} {currencySymbol}</div>
+                  <div className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>📈 {t("Today's Profit", "আজকের লাভ")}</div>
+                </div>
+                )}
+                {checkShouldRenderTabOption("closing_due") && (
+                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-red-900/30 border-red-700' : 'bg-red-50 border-red-300'}`}>
+                  <div className="text-lg font-black text-red-500 font-mono">{computedDailyDue.toFixed(0)} {currencySymbol}</div>
+                  <div className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>⚠️ {t("Today's Due", "আজকের বাকি")}</div>
+                </div>
+                )}
+                {checkShouldRenderTabOption("closing_bkash") && (
+                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-pink-900/30 border-pink-700' : 'bg-pink-50 border-pink-300'}`}>
+                  <div className="text-lg font-black text-pink-500 font-mono">{computedDailyBkash.toFixed(0)} {currencySymbol}</div>
+                  <div className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>📱 {t("bKash/Nagad", "বিকাশ/নগদ")}</div>
+                </div>
+                )}
+                {checkShouldRenderTabOption("closing_discount") && (
+                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-amber-900/30 border-amber-700' : 'bg-amber-50 border-amber-300'}`}>
+                  <div className="text-lg font-black text-amber-500 font-mono">{computedDailyDiscount.toFixed(0)} {currencySymbol}</div>
+                  <div className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>🏷️ {t("Discount Given", "ছাড় দিয়েছি")}</div>
+                </div>
+                )}
+              </div>
+
+              {/* Due Collection */}
+              {checkShouldRenderTabOption("closing_due_collection") && computedDailyDueCollection > 0 && (
+                <div className={`p-3 rounded-xl border mb-4 text-center ${isDarkMode ? 'bg-violet-900/30 border-violet-700' : 'bg-violet-50 border-violet-300'}`}>
+                  <div className="text-lg font-black text-violet-500 font-mono">{computedDailyDueCollection.toFixed(0)} {currencySymbol}</div>
+                  <div className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>💵 {t("Due Collected Today", "আজ বাকি আদায়")}</div>
+                </div>
+              )}
+
+              {/* Final Summary Box */}
+              {checkShouldRenderTabOption("closing_final_summary") && (
+              <div className={`p-4 rounded-xl border-2 ${isDarkMode ? 'bg-slate-700/50 border-purple-700' : 'bg-purple-50 border-purple-300'}`}>
+                <h4 className="text-sm font-black uppercase tracking-wider text-purple-500 mb-3 text-center">📊 {t("End of Day Summary", "দিনের শেষ হিসাব")}</h4>
+                <div className="flex flex-col gap-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("Total Sales:", "মোট বিক্রয়:")}</span>
+                    <span className="font-black font-mono text-emerald-500">{computedDailySalesAmount.toFixed(1)} {currencySymbol}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("Discount:", "ছাড়:")}</span>
+                    <span className="font-bold font-mono text-amber-500">- {computedDailyDiscount.toFixed(1)} {currencySymbol}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("Due Created:", "নতুন বাকি:")}</span>
+                    <span className="font-bold font-mono text-red-500">- {computedDailyDue.toFixed(1)} {currencySymbol}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("Due Collected:", "বাকি আদায়:")}</span>
+                    <span className="font-bold font-mono text-violet-500">+ {computedDailyDueCollection.toFixed(1)} {currencySymbol}</span>
+                  </div>
+                  <div className={`flex justify-between pt-2 border-t font-black text-base ${isDarkMode ? 'border-slate-600' : 'border-purple-200'}`}>
+                    <span className="text-purple-500">{t("💵 Total Cash in Hand:", "💵 মোট নগদ হাতে:")}</span>
+                    <span className="font-mono text-purple-500">{(computedDailySalesAmount - computedDailyDue + computedDailyDueCollection).toFixed(1)} {currencySymbol}</span>
+                  </div>
+                  <div className={`flex justify-between font-bold text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <span>{t("Net Profit Today:", "আজকের নিট লাভ:")}</span>
+                    <span className="font-mono text-blue-500">{computedDailyProfitAmount.toFixed(1)} {currencySymbol}</span>
+                  </div>
+                </div>
+              </div>
+              )}
+
+              {/* Print Footer */}
+              <div className="hidden print:block mt-6 pt-3 border-t text-center text-sm text-slate-500">
+                <p>{t("Printed on:", "প্রিন্ট তারিখ:")} {new Date().toLocaleString()} | {pharmacyName}</p>
+                <p className="mt-1 font-bold">{t("— Closing Report End —", "— ক্লোজিং রিপোর্ট শেষ —")}</p>
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================
               TAB 8: SETTINGS
           ========================================================= */}
           {activeTab === "settings" && checkShouldRenderTabOption("settings") && (
@@ -5532,7 +5720,22 @@ export default function Home() {
                   { key: "invoices",         label: t("Invoices", "রশিদ") },
                   { key: "due_list_view",    label: t("Due List", "বাকি তালিকা") },
                   { key: "report_view",      label: t("Report", "রিপোর্ট") },
+                  { key: "closing_report",   label: t("Closing Report", "ক্লোজিং রিপোর্ট") },
                   { key: "returns",          label: t("Returns", "ফেরত") },
+                ]
+              },
+              {
+                label: t("Closing Report Sections", "ক্লোজিং রিপোর্ট সেকশন"),
+                icon: "🌙",
+                items: [
+                  { key: "closing_total_sales",    label: t("Total Sales Card", "মোট বিক্রয় কার্ড") },
+                  { key: "closing_cash_received",  label: t("Cash Received Card", "নগদ পেয়েছি কার্ড") },
+                  { key: "closing_profit",         label: t("Today's Profit Card", "আজকের লাভ কার্ড") },
+                  { key: "closing_due",            label: t("Today's Due Card", "আজকের বাকি কার্ড") },
+                  { key: "closing_bkash",          label: t("bKash/Nagad Card", "বিকাশ/নগদ কার্ড") },
+                  { key: "closing_discount",       label: t("Discount Card", "ছাড় কার্ড") },
+                  { key: "closing_due_collection", label: t("Due Collection Card", "বাকি আদায় কার্ড") },
+                  { key: "closing_final_summary",  label: t("End of Day Summary", "দিনের শেষ হিসাব") },
                 ]
               },
               {
