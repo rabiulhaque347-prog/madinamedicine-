@@ -133,11 +133,12 @@ const fbGetAll = async (): Promise<Record<string, string> | null> => {
 };
 
 // Delete a single key from Firebase
-const fbDelete = async (key: string): Promise<void> => {
-  if (!isFirebaseConfigured()) return;
+const fbDelete = async (key: string): Promise<boolean> => {
+  if (!isFirebaseConfigured()) return false;
   try {
-    await fetchWithTimeout(fbUrl(key), { method: 'DELETE' });
-  } catch { /* ignore */ }
+    const res = await fetchWithTimeout(fbUrl(key), { method: 'DELETE' });
+    return res.ok;
+  } catch { return false; }
 };
 
 // ── Firebase Real-time Listener via SSE ─────────────────────
@@ -2498,10 +2499,16 @@ export default function Home() {
           return;
         }
         // সব key Firebase এ সরাসরি restore করো (explicit user action)
+        // ব্যাকআপে যেসব key নেই, সেগুলো delete করে দাও — যাতে "REPLACE all current data"
+        // কথাটা সত্যিকার অর্থে কাজ করে (পুরোনো invoice/sale ইত্যাদি যেন রয়ে না যায়)
         const writes: Promise<boolean>[] = [];
-        for (const [key, val] of Object.entries(parsed.data)) {
-          if (typeof val === 'string' && CLOUD_SYNC_KEYS.includes(key)) {
+        for (const key of CLOUD_SYNC_KEYS) {
+          const hasKey = Object.prototype.hasOwnProperty.call(parsed.data, key);
+          const val = parsed.data[key];
+          if (hasKey && typeof val === 'string') {
             writes.push(fbSet(key, val));
+          } else {
+            writes.push(fbDelete(key));
           }
         }
         const results = await Promise.all(writes);
