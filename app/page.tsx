@@ -2440,6 +2440,7 @@ export default function Home() {
       }
       const now = new Date();
       const backupObj = {
+        _madina_backup_version: "v7",
         _backup_date: now.toISOString(),
         _backup_date_bn: now.toLocaleString('bn-BD'),
         _pharmacy_name: pharmacyName,
