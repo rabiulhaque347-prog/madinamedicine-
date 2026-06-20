@@ -8,8 +8,17 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 // ============================================================
 
 // ============================================================
-// FIREBASE CLOUD SYNC
+// FIREBASE CLOUD SYNC — Firebase is the ONLY data store.
 // ─────────────────────────────────────────────────────────────
+// Business data (medicines, invoices, sales, settings, etc.) lives
+// exclusively in Firebase. Nothing is cached in localStorage, so:
+//   • The app REQUIRES an internet connection to load or save data.
+//   • There is never a stale/conflicting local copy — every device
+//     always works directly against the same live data.
+// Device-only preferences (login session, theme, sound, language)
+// still use localStorage, since those are intentionally per-device
+// and have nothing to do with business data sync.
+//
 // HOW TO SETUP (one-time, 5 minutes):
 //
 // 1. Go to https://console.firebase.google.com
@@ -74,43 +83,21 @@ const fetchWithTimeout = (url: string, options: RequestInit = {}, timeoutMs = 10
     .finally(() => clearTimeout(timer));
 };
 
-// Offline queue — saves failed writes and retries when back online
-let offlineQueue: { key: string; value: string }[] = [];
-const flushOfflineQueue = async () => {
-  if (!isFirebaseConfigured() || offlineQueue.length === 0) return;
-  const queue = [...offlineQueue];
-  offlineQueue = [];
-  for (const item of queue) {
-    try {
-      await fetchWithTimeout(fbUrl(item.key), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(item.value),
-      });
-    } catch {
-      offlineQueue.push(item); // re-queue if still failing
-    }
-  }
-};
-
-// Listen for network recovery and flush queued writes
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => { flushOfflineQueue(); });
-}
-
-// Write a single key to Firebase
-const fbSet = async (key: string, value: string): Promise<void> => {
-  if (!isFirebaseConfigured()) return;
+// Write a single key directly to Firebase. Firebase is the ONLY place
+// business data lives now — there is no local cache to fall back to,
+// so if this fails the caller's UI should surface that the save did
+// not go through (see saveQueue / useCloudSaveStatus below).
+const fbSet = async (key: string, value: string): Promise<boolean> => {
+  if (!isFirebaseConfigured()) return false;
   try {
-    await fetchWithTimeout(fbUrl(key), {
+    const res = await fetchWithTimeout(fbUrl(key), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(value),
     });
+    return res.ok;
   } catch {
-    // Network unavailable — queue for retry when back online
-    offlineQueue = offlineQueue.filter(q => q.key !== key);
-    offlineQueue.push({ key, value });
+    return false;
   }
 };
 
@@ -156,6 +143,8 @@ const fbDelete = async (key: string): Promise<void> => {
 // ── Firebase Real-time Listener via SSE ─────────────────────
 // Returns an unsubscribe function. Calls onChange(data) whenever
 // ANY key under /madina_data changes on Firebase (from any device).
+// Since Firebase is the single source of truth, every event is applied
+// as-is — there's no local copy to compare against or protect.
 const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => void) => {
   if (!isFirebaseConfigured() || typeof window === 'undefined' || typeof EventSource === 'undefined') {
     return () => {};
@@ -164,8 +153,6 @@ const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => v
   let es: EventSource | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
-  // initialLoadDone: after first connect snapshot is applied, mark as done
-  let initialLoadDone = false;
 
   const extractResult = (path: string, data: any): Record<string, string> => {
     const result: Record<string, string> = {};
@@ -190,18 +177,13 @@ const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => v
 
   const connect = () => {
     if (stopped) return;
-    initialLoadDone = false;
     es = new EventSource(url);
 
     es.addEventListener('put', (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
         const result = extractResult(payload.path || '/', payload.data);
-        // Always apply — initial full snapshot + all subsequent updates.
-        // This ensures Device B sees live data as soon as it connects,
-        // and any open device auto-updates when another device makes changes.
         if (Object.keys(result).length > 0) onChange(result);
-        initialLoadDone = true;
       } catch { /* malformed event */ }
     });
 
@@ -232,10 +214,34 @@ const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => v
   };
 };
 
-// Wrapped localStorage.setItem that ALSO writes to Firebase
-const cloudSet = (key: string, value: string) => {
-  localStorage.setItem(key, value);
-  if (CLOUD_SYNC_KEYS.includes(key)) fbSet(key, value);
+// ── Pending-save tracking ────────────────────────────────────
+// Since there's no localStorage cache, a failed write to Firebase means
+// that data is genuinely not saved anywhere yet. We track in-flight/failed
+// writes here so the UI (via useCloudSaveStatus) can clearly tell the user
+// "not saved — check your internet" instead of silently losing data.
+type SaveListener = (pendingCount: number, hasFailure: boolean) => void;
+let pendingSaves = 0;
+let hasFailedSave = false;
+const saveListeners = new Set<SaveListener>();
+const notifySaveListeners = () => {
+  for (const l of saveListeners) l(pendingSaves, hasFailedSave);
+};
+
+// cloudSet: writes DIRECTLY to Firebase. No localStorage involved for
+// business data — Firebase is the single source of truth on every device.
+// Returns a promise so callers that need to confirm a save can await it.
+const cloudSet = async (key: string, value: string): Promise<boolean> => {
+  if (!CLOUD_SYNC_KEYS.includes(key)) {
+    // Non-business key — shouldn't happen, but no-op safely
+    return true;
+  }
+  pendingSaves++;
+  notifySaveListeners();
+  const ok = await fbSet(key, value);
+  pendingSaves = Math.max(0, pendingSaves - 1);
+  if (!ok) hasFailedSave = true;
+  notifySaveListeners();
+  return ok;
 };
 
 // ============================================================
@@ -367,6 +373,24 @@ const allCategories = [
   "Juice", "Belt", "Ball", "Suppository", "Chocolate", "Pack", "Piece", "Box",
   "Kneecap", "Drop", "Gel", "Bottle", "Spray"
 ];
+
+// ── Single source of truth for Total Sales / Total Profit ──────
+// Sales = sum of all invoice finalBills + all due-collection payments
+// (due collections are cash for old bills, already counted as sales
+// the moment that bill's due was logged — but the due portion itself
+// was NOT in finalBill's "cash" sense, so its later collection must
+// be added here, not bolted on top of stale state elsewhere).
+// Profit = sum of all invoice profits (due collection does not add
+// extra profit — profit was already booked in full at sale time).
+// Deriving from these two arrays everywhere (instead of mutating a
+// running totalSales number) guarantees every device & every code
+// path always agrees, and nothing is lost on Firebase re-sync.
+const computeSalesAndProfit = (invoicesList: any[], dueCollectionLogList: any[]) => {
+  const invoiceSales = invoicesList.reduce((sum: number, inv: any) => sum + (inv.finalBill || 0), 0);
+  const profit = invoicesList.reduce((sum: number, inv: any) => sum + (inv.profit || 0), 0);
+  const collectedDue = dueCollectionLogList.reduce((sum: number, log: any) => sum + (log.amount || 0), 0);
+  return { sales: invoiceSales + collectedDue, profit };
+};
 
 // Theme CSS variable injection (static - defined outside component)
 const themeStyles: Record<string, React.CSSProperties> = {
@@ -539,6 +563,8 @@ export default function Home() {
     financials_summary_card: true,
     revenue_chart_view: true,
     due_list_view: true,
+    due_collection_view: true,
+    company_purchase_history_view: true,
     bkash_nagad_view: true,
     report_view: true,
     yearly_sales_view: true,
@@ -603,9 +629,16 @@ export default function Home() {
   // CORE DATA STATES
   // ============================================================
   const [medicines, setMedicines] = useState<any[]>([]);
+  const medicinesRef = useRef<any[]>([]);
+  useEffect(() => { medicinesRef.current = medicines; }, [medicines]);
   const [totalSales, setTotalSales] = useState(0);
   const [totalProfit, setTotalProfit] = useState(0);
   const [invoices, setInvoices] = useState<any[]>([]);
+  // invoicesRef always holds the latest invoices so the Firebase listener
+  // can derive sales correctly even when only due-collection-log updates
+  // arrive in a given event (avoids stale closure)
+  const invoicesRef = useRef<any[]>([]);
+  useEffect(() => { invoicesRef.current = invoices; }, [invoices]);
   const [cart, setCart] = useState<any[]>([]);
   // cartRef always holds the latest cart so the Firebase listener
   // can re-apply pending deductions without stale closure issues
@@ -614,18 +647,35 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState("pos");
 
   const [bdMedicineCompanies, setBdMedicineCompanies] = useState<string[]>([]);
+  const bdMedicineCompaniesRef = useRef<string[]>([]);
+  useEffect(() => { bdMedicineCompaniesRef.current = bdMedicineCompanies; }, [bdMedicineCompanies]);
   const [bdMedicineNamesList, setBdMedicineNamesList] = useState<string[]>([]);
+  const bdMedicineNamesListRef = useRef<string[]>([]);
+  useEffect(() => { bdMedicineNamesListRef.current = bdMedicineNamesList; }, [bdMedicineNamesList]);
   // Stores per-medicine metadata: { name, buyPrice, sellPrice, company, category }
   const [bdMedNameMetadata, setBdMedNameMetadata] = useState<{name:string; buyPrice:number; sellPrice:number; company:string; category?:string}[]>([]);
+  const bdMedNameMetadataRef = useRef<{name:string; buyPrice:number; sellPrice:number; company:string; category?:string}[]>([]);
+  useEffect(() => { bdMedNameMetadataRef.current = bdMedNameMetadata; }, [bdMedNameMetadata]);
 
   // ============================================================
   // DUE (CUSTOMER CREDIT) SYSTEM
   // ============================================================
   const [dueList, setDueList] = useState<any[]>([]);
+  // dueListRef always holds the latest due list so checkout/return/due-payment
+  // can fall back to it if a fresh Firebase fetch fails mid-operation.
+  const dueListRef = useRef<any[]>([]);
+  useEffect(() => { dueListRef.current = dueList; }, [dueList]);
   const [duePaymentModal, setDuePaymentModal] = useState<any>(null);
   const [duePayAmount, setDuePayAmount] = useState("");
   const [dueCollectionLog, setDueCollectionLog] = useState<any[]>([]);
+  // dueCollectionLogRef always holds the latest log so the Firebase
+  // listener can derive sales correctly even if the due-collection-log
+  // key hasn't synced yet in the same update batch (avoids stale closure)
+  const dueCollectionLogRef = useRef<any[]>([]);
+  useEffect(() => { dueCollectionLogRef.current = dueCollectionLog; }, [dueCollectionLog]);
   const [dueSearch, setDueSearch] = useState("");
+  const [dueCollectionSearch, setDueCollectionSearch] = useState("");
+  const [companyPurchaseSearch, setCompanyPurchaseSearch] = useState("");
 
   // ============================================================
   // APPEARANCE
@@ -688,6 +738,8 @@ export default function Home() {
   // STOCK IN / PURCHASE
   // ============================================================
   const [purchaseList, setPurchaseList] = useState<any[]>([]);
+  const purchaseListRef = useRef<any[]>([]);
+  useEffect(() => { purchaseListRef.current = purchaseList; }, [purchaseList]);
   const [pCompanyName, setPCompanyName] = useState("");
   const [purchaseCart, setPurchaseCart] = useState<any[]>([]);
   const [pMedicineName, setPMedicineName] = useState("");
@@ -767,13 +819,49 @@ export default function Home() {
   // ============================================================
   // SYNC STATUS STATE
   // ============================================================
+  // 'idle'    — not yet attempted
+  // 'syncing' — fetching from Firebase right now
+  // 'synced'  — successfully loaded/saved via Firebase
+  // 'offline' — could not reach Firebase (no internet / server down)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'offline'>('idle');
+  const [pendingSaveCount, setPendingSaveCount] = useState(0);
+
+  // Subscribe to the module-level save tracker so the UI can clearly tell
+  // the user when a save to Firebase actually failed (no internet, etc.)
+  // — since there's no local cache, a failed save means that change is
+  // NOT stored anywhere yet and must be retried.
+  useEffect(() => {
+    const listener = (pending: number, hasFailure: boolean) => {
+      setPendingSaveCount(pending);
+      if (hasFailure) {
+        setSyncStatus('offline');
+        addToast(
+          t("❌ Couldn't save — check your internet connection!", "❌ সেভ হয়নি — ইন্টারনেট সংযোগ চেক করুন!"),
+          'error'
+        );
+        hasFailedSave = false; // reset after notifying, so it doesn't repeat-fire
+      }
+    };
+    saveListeners.add(listener);
+    return () => { saveListeners.delete(listener); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ============================================================
-  // LOAD DATA — Firebase first, localStorage as fallback
+  // LOAD DATA — Firebase ONLY (no localStorage cache for business data)
+  // ─────────────────────────────────────────────────────────────
+  // Business data (medicines, invoices, sales, settings, etc.) lives
+  // exclusively in Firebase now. Nothing is cached in localStorage, so:
+  //   • Every device always sees the true current state on load.
+  //   • There is no stale-cache/race condition to cause "old data shows
+  //     up on another device" issues.
+  //   • Without internet, there's nothing to show — the app clearly
+  //     tells the user it's offline instead of silently working off
+  //     of out-of-date local data.
+  // Device-only preferences (login session, theme, sound, language)
+  // still use localStorage, since those are intentionally per-device.
   // ============================================================
   useEffect(() => {
-    setIsMounted(true);
     setLastBackupTime(localStorage.getItem('madina_v7_last_backup') || "");
 
     // Session is always device-local (login expires at midnight)
@@ -803,14 +891,12 @@ export default function Home() {
     if (savedSound !== null) setSoundEnabled(JSON.parse(savedSound));
     if (savedLang) setLanguage(savedLang as any);
 
-    // Helper: apply loaded cloud/local data to all state setters
-    // allowSeedDefaults: only true when we KNOW Firebase has no data at all
-    const applyData = (data: Record<string, string | null>, allowSeedDefaults = false) => {
+    // Helper: apply loaded cloud data to all state setters
+    const applyData = (data: Record<string, string | null>) => {
       const g = (key: string) => data[key] ?? null;
 
       const savedMeds = g('madina_v7_meds');
       if (savedMeds) setMedicines(JSON.parse(savedMeds));
-      // No default seeding — start completely empty
 
       const savedInvoices = g('madina_v7_invoices');
       let parsedInvoices: any[] = [];
@@ -828,14 +914,19 @@ export default function Home() {
       if (savedDueList) setDueList(JSON.parse(savedDueList));
 
       const savedDueCLog = g('madina_v7_due_collection_log');
-      if (savedDueCLog) setDueCollectionLog(JSON.parse(savedDueCLog));
+      let parsedDueCLog: any[] = [];
+      if (savedDueCLog) {
+        try {
+          parsedDueCLog = JSON.parse(savedDueCLog);
+          setDueCollectionLog(parsedDueCLog);
+        } catch { /* skip malformed */ }
+      }
 
-      // Recalculate sales & profit from invoices for cross-device consistency.
-      // If invoices exist, derive totals from them (source of truth).
-      // Fall back to stored value only when invoice list is unavailable.
-      if (parsedInvoices.length > 0) {
-        const derivedSales = parsedInvoices.reduce((sum: number, inv: any) => sum + (inv.finalBill || 0), 0);
-        const derivedProfit = parsedInvoices.reduce((sum: number, inv: any) => sum + (inv.profit || 0), 0);
+      // Recalculate sales & profit from invoices + due collections for cross-device
+      // consistency (source of truth). Fall back to stored value only when neither
+      // invoices nor due-collection-log is available.
+      if (parsedInvoices.length > 0 || parsedDueCLog.length > 0) {
+        const { sales: derivedSales, profit: derivedProfit } = computeSalesAndProfit(parsedInvoices, parsedDueCLog);
         setTotalSales(derivedSales);
         setTotalProfit(derivedProfit);
       } else {
@@ -846,31 +937,21 @@ export default function Home() {
         if (savedProfit) setTotalProfit(parseFloat(savedProfit) || 0);
       }
 
-      // Company suggestion list — seed defaults ONLY if absolutely nothing exists anywhere
       const savedCompanies = g('madina_v7_companies');
       if (savedCompanies) {
         try {
           const parsed = JSON.parse(savedCompanies);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setBdMedicineCompanies(parsed);
-          }
-          // If parsed is empty array, keep whatever is currently in state (don't overwrite with defaults)
+          if (Array.isArray(parsed) && parsed.length > 0) setBdMedicineCompanies(parsed);
         } catch { /* skip malformed */ }
       }
-      // Note: Default seeding only happens in the dedicated first-boot block below
 
-      // Medicine name suggestion list — seed defaults ONLY if absolutely nothing exists anywhere
       const savedMedNames = g('madina_v7_mednames');
       if (savedMedNames) {
         try {
           const parsed = JSON.parse(savedMedNames);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setBdMedicineNamesList(parsed);
-          }
-          // If parsed is empty array, keep whatever is currently in state (don't overwrite with defaults)
+          if (Array.isArray(parsed) && parsed.length > 0) setBdMedicineNamesList(parsed);
         } catch { /* skip malformed */ }
       }
-      // Note: Default seeding only happens in the dedicated first-boot block below
 
       const savedMedMeta = g('madina_v7_medmeta');
       if (savedMedMeta) setBdMedNameMetadata(JSON.parse(savedMedMeta));
@@ -922,89 +1003,37 @@ export default function Home() {
       if (savedPermissions) setStaffVisibleModules(prev => ({ ...prev, ...JSON.parse(savedPermissions) }));
     };
 
-    // ── LOCAL CACHE RESET (Firebase data is NEVER deleted here) ──
-    // This runs once per browser to clear stale localStorage cache only.
-    // Firebase is the master data source — it is never touched here.
-    const BUSINESS_KEYS = [
-      'madina_v7_meds', 'madina_v7_invoices', 'madina_v7_purchases',
-      'madina_v7_due_list', 'madina_v7_due_collection_log',
-      'madina_v7_sales', 'madina_v7_profit', 'madina_v7_medmeta',
-    ];
-    const cleanStartDone = localStorage.getItem('madina_v7_clean_start_2026');
-    if (!cleanStartDone) {
-      // First time on this browser — wipe only localStorage (NOT Firebase)
-      for (const k of BUSINESS_KEYS) localStorage.removeItem(k);
-      localStorage.setItem('madina_v7_clean_start_2026', 'done');
-      // NOTE: Firebase business data is intentionally NOT deleted here.
-      // Firebase is the single source of truth; local cache is just a mirror.
-      // Seed autocomplete defaults in localStorage only (if missing)
-      if (!localStorage.getItem('madina_v7_companies')) {
-        localStorage.setItem('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
-        setBdMedicineCompanies(initialMedicineCompanies);
-      }
-      if (!localStorage.getItem('madina_v7_mednames')) {
-        localStorage.setItem('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
-        setBdMedicineNamesList(initialMedicineNamesList);
-      }
-    } else {
-      // Not first boot — ensure autocomplete lists exist in localStorage (seed if missing)
-      if (!localStorage.getItem('madina_v7_companies')) {
-        localStorage.setItem('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
-        setBdMedicineCompanies(initialMedicineCompanies);
-      }
-      if (!localStorage.getItem('madina_v7_mednames')) {
-        localStorage.setItem('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
-        setBdMedicineNamesList(initialMedicineNamesList);
-      }
+    if (!isFirebaseConfigured()) {
+      // No Firebase set up at all — nothing to load from; show empty state.
+      setSyncStatus('offline');
+      setIsMounted(true);
+      return;
     }
 
-    // Step 1: Load from localStorage immediately (instant, no flicker)
-    const localData: Record<string, string | null> = {};
-    for (const k of CLOUD_SYNC_KEYS) localData[k] = localStorage.getItem(k);
-    const localHasMeds = !!localData['madina_v7_meds'];
-    applyData(localData, false);
+    setSyncStatus('syncing');
+    fbGetAll().then(async cloudData => {
+      const cloudHasAnyData = !!(cloudData && Object.keys(cloudData).length > 0);
 
-    // Step 2: Try Firebase — if available, overwrite with fresher cloud data
-    if (isFirebaseConfigured()) {
-      setSyncStatus('syncing');
-      fbGetAll().then(cloudData => {
-        const cloudHasMeds = !!(cloudData && cloudData['madina_v7_meds']);
-        const cloudHasAnyData = !!(cloudData && Object.keys(cloudData).length > 0);
-
-        if (cloudHasAnyData) {
-          for (const k of CLOUD_SYNC_KEYS) {
-            if (cloudData[k]) localStorage.setItem(k, cloudData[k]);
-          }
-          const mergedData: Record<string, string | null> = { ...localData };
-          for (const k of CLOUD_SYNC_KEYS) {
-            if (cloudData[k]) mergedData[k] = cloudData[k];
-          }
-          applyData(mergedData, false);
-          setSyncStatus('synced');
-        } else if (localHasMeds) {
-          const localSnapshot: Record<string, string | null> = {};
-          for (const k of CLOUD_SYNC_KEYS) localSnapshot[k] = localStorage.getItem(k);
-          applyData(localSnapshot, false);
-          for (const k of CLOUD_SYNC_KEYS) {
-            const val = localStorage.getItem(k);
-            if (val) fbSet(k, val);
-          }
-          setSyncStatus('synced');
-        } else {
-          // Truly empty — just apply (autocomplete lists already seeded in applyData)
-          applyData(localData, false);
-          setSyncStatus('idle');
-        }
-        setTimeout(() => setSyncStatus('idle'), 3000);
-      }).catch(() => {
-        setSyncStatus('offline');
-      });
-    } else {
-      // Firebase not configured — seed defaults only if localStorage is empty
-      if (!localHasMeds) {
-        applyData(localData, true);
+      if (cloudHasAnyData) {
+        applyData(cloudData as Record<string, string | null>);
+      } else {
+        // Brand-new database — seed autocomplete defaults straight to Firebase
+        // so every device starts from the same baseline.
+        setBdMedicineCompanies(initialMedicineCompanies);
+        setBdMedicineNamesList(initialMedicineNamesList);
+        await Promise.all([
+          cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies)),
+          cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList)),
+        ]);
       }
-    }
+      setSyncStatus('synced');
+      setIsMounted(true);
+      setTimeout(() => setSyncStatus('idle'), 3000);
+    }).catch(() => {
+      // Could not reach Firebase — no local fallback by design.
+      setSyncStatus('offline');
+      setIsMounted(true);
+    });
   }, []);
 
   // ============================================================
@@ -1018,18 +1047,18 @@ export default function Home() {
       setSyncStatus('syncing');
 
       const apply = (key: string, setter: (v: any) => void, parse: (s: string) => any = JSON.parse) => {
-        if (cloudData[key] !== undefined) {
-          localStorage.setItem(key, cloudData[key]);
-          try { setter(parse(cloudData[key])); } catch { /* skip malformed */ }
+        const value = cloudData[key];
+        if (value !== undefined) {
+          try { setter(parse(value)); } catch { /* skip malformed */ }
         }
       };
 
       // Special handling for medicines: if there's an active cart, re-apply cart deductions
       // so that Firebase updates from other devices don't undo pending stock changes
-      if (cloudData['madina_v7_meds'] !== undefined) {
-        localStorage.setItem('madina_v7_meds', cloudData['madina_v7_meds']);
+      const medsValue = cloudData['madina_v7_meds'];
+      if (medsValue !== undefined) {
         try {
-          const freshMeds: any[] = JSON.parse(cloudData['madina_v7_meds']);
+          const freshMeds: any[] = JSON.parse(medsValue);
           // Use cartRef (always latest) to re-apply pending cart deductions
           const currentCart = cartRef.current;
           if (currentCart.length === 0) {
@@ -1048,25 +1077,42 @@ export default function Home() {
         } catch { /* skip malformed */ }
       }
 
-      // When invoices update from Firebase, recalculate sales & profit from invoices
-      // so all devices always show consistent data.
-      if (cloudData['madina_v7_invoices'] !== undefined) {
-        localStorage.setItem('madina_v7_invoices', cloudData['madina_v7_invoices']);
+      // When invoices and/or due-collection-log update from Firebase, recalculate
+      // sales & profit from BOTH together so all devices always show consistent
+      // data and a due collection is never "lost" on resync.
+      let freshInvoicesForSales: any[] | null = null;
+      let freshDueLogForSales: any[] | null = null;
+
+      const invoicesValue = cloudData['madina_v7_invoices'];
+      if (invoicesValue !== undefined) {
         try {
-          const freshInvoices: any[] = JSON.parse(cloudData['madina_v7_invoices']);
+          const freshInvoices: any[] = JSON.parse(invoicesValue);
           setInvoices(freshInvoices);
-          if (freshInvoices.length > 0) {
-            const derivedSales = freshInvoices.reduce((sum: number, inv: any) => sum + (inv.finalBill || 0), 0);
-            const derivedProfit = freshInvoices.reduce((sum: number, inv: any) => sum + (inv.profit || 0), 0);
-            setTotalSales(derivedSales);
-            setTotalProfit(derivedProfit);
-          }
+          freshInvoicesForSales = freshInvoices;
         } catch { /* skip malformed */ }
+      }
+
+      const dueLogValue = cloudData['madina_v7_due_collection_log'];
+      if (dueLogValue !== undefined) {
+        try {
+          const freshDueLog: any[] = JSON.parse(dueLogValue);
+          setDueCollectionLog(freshDueLog);
+          freshDueLogForSales = freshDueLog;
+        } catch { /* skip malformed */ }
+      }
+
+      if (freshInvoicesForSales !== null || freshDueLogForSales !== null) {
+        const invoicesForCalc = freshInvoicesForSales ?? invoicesRef.current;
+        const dueLogForCalc = freshDueLogForSales ?? dueCollectionLogRef.current;
+        const { sales: derivedSales, profit: derivedProfit } = computeSalesAndProfit(invoicesForCalc, dueLogForCalc);
+        setTotalSales(derivedSales);
+        setTotalProfit(derivedProfit);
       } else {
         apply('madina_v7_sales', setTotalSales, parseFloat);
         apply('madina_v7_profit', setTotalProfit, parseFloat);
       }
       apply('madina_v7_purchases', setPurchaseList);
+      apply('madina_v7_due_list', setDueList);
       apply('madina_v7_companies', setBdMedicineCompanies);
       apply('madina_v7_mednames', setBdMedicineNamesList);
       apply('madina_v7_medmeta', setBdMedNameMetadata);
@@ -1155,7 +1201,7 @@ export default function Home() {
 
   useEffect(() => {
     if (showSuccessAlert) {
-      const timer = setTimeout(() => setShowSuccessAlert(false), 4000);
+      const timer = setTimeout(() => setShowSuccessAlert(false), 20000);
       return () => clearTimeout(timer);
     }
   }, [showSuccessAlert]);
@@ -1379,9 +1425,21 @@ export default function Home() {
   // ============================================================
   // SUBMIT BULK PURCHASE
   // ============================================================
-  const handleBulkPurchaseMasterSubmit = () => {
+  const handleBulkPurchaseMasterSubmit = async () => {
     if (!pCompanyName.trim()) return alert(t("Please enter Company name!", "কোম্পানির নাম লিখুন!"));
     if (purchaseCart.length === 0) return alert(t("Purchase list is empty!", "ক্রয় তালিকা খালি!"));
+
+    // FIX (multi-device purchase/product-list conflict): same race-safe
+    // pattern as invoices/due-list — pull the freshest copies of these
+    // four lists from Firebase BEFORE merging this purchase on top, so a
+    // purchase entry or new medicine/company added on another device in
+    // the same few seconds isn't silently erased.
+    const [purchaseList, bdMedicineCompanies, bdMedicineNamesList, bdMedNameMetadata] = await Promise.all([
+      fetchLatestList('madina_v7_purchases', purchaseListRef.current),
+      fetchLatestList('madina_v7_companies', bdMedicineCompaniesRef.current),
+      fetchLatestList('madina_v7_mednames', bdMedicineNamesListRef.current),
+      fetchLatestList('madina_v7_medmeta', bdMedNameMetadataRef.current),
+    ]);
 
     const today = new Date();
     const formattedTime = today.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1391,7 +1449,6 @@ export default function Home() {
     const paidAmt = pAmountPaid ? parseFloat(pAmountPaid) : totalVoucherCost;
     const dueAmt = Math.max(0, totalVoucherCost - paidAmt);
 
-    let updatedMeds = [...medicines];
     let newPurchaseLogs = [...purchaseList];
     let currentCompanies = [...bdMedicineCompanies];
     let currentMedNames = [...bdMedicineNamesList];
@@ -1402,6 +1459,55 @@ export default function Home() {
       setBdMedicineCompanies(currentCompanies);
       cloudSet('madina_v7_companies', JSON.stringify(currentCompanies));
     }
+
+    // Pre-generate stable IDs for any brand-new medicines up front, so the
+    // optimistic local update and the cloud write (below) use the exact
+    // same IDs instead of each call minting its own random one.
+    const newMedIds: Record<string, number> = {};
+    purchaseCart.forEach(item => {
+      newMedIds[item.medicineName.trim().toLowerCase()] = Date.now() + Math.random();
+    });
+
+    // FIX (multi-device stock conflict): this purchase's stock/price change,
+    // expressed as a pure function so it can be applied both to local state
+    // (instant UI feedback) and to the freshest copy fetched from Firebase
+    // right before writing — instead of overwriting Firebase with this
+    // device's local array, which could erase a sale/purchase made on
+    // another device at nearly the same time.
+    const applyPurchaseToMeds = (medsArray: any[]) => {
+      const result = [...medsArray];
+      purchaseCart.forEach(item => {
+        const existingIdx = result.findIndex(m => m.name.toLowerCase() === item.medicineName.toLowerCase());
+        if (existingIdx !== -1) {
+          result[existingIdx] = {
+            ...result[existingIdx],
+            stock: result[existingIdx].stock + item.quantity,
+            buyPrice: item.unitPrice,
+            price: item.retailPrice,
+            supplier: trimmedCompany,
+            category: item.category,
+            generic: item.genericName !== "N/A" ? item.genericName : result[existingIdx].generic,
+            rack: item.rackLocation !== "N/A" ? item.rackLocation : result[existingIdx].rack,
+            expire: item.expireDate
+          };
+        } else {
+          result.push({
+            id: newMedIds[item.medicineName.trim().toLowerCase()],
+            name: item.medicineName,
+            category: item.category,
+            buyPrice: item.unitPrice,
+            price: item.retailPrice,
+            stock: item.quantity,
+            expire: item.expireDate,
+            generic: item.genericName,
+            rack: item.rackLocation,
+            supplier: trimmedCompany,
+            lowStockAlert: item.lowStockAlert || parseInt(lowStockThreshold) || 10
+          });
+        }
+      });
+      return result;
+    };
 
     purchaseCart.forEach(item => {
       const trimmedMed = item.medicineName.trim();
@@ -1415,35 +1521,6 @@ export default function Home() {
         bdMedNameMetadata[existingMetaIdx] = newMeta;
       } else {
         bdMedNameMetadata.push(newMeta);
-      }
-
-      const existingIdx = updatedMeds.findIndex(m => m.name.toLowerCase() === item.medicineName.toLowerCase());
-      if (existingIdx !== -1) {
-        updatedMeds[existingIdx] = {
-          ...updatedMeds[existingIdx],
-          stock: updatedMeds[existingIdx].stock + item.quantity,
-          buyPrice: item.unitPrice,
-          price: item.retailPrice,
-          supplier: trimmedCompany,
-          category: item.category,
-          generic: item.genericName !== "N/A" ? item.genericName : updatedMeds[existingIdx].generic,
-          rack: item.rackLocation !== "N/A" ? item.rackLocation : updatedMeds[existingIdx].rack,
-          expire: item.expireDate
-        };
-      } else {
-        updatedMeds.push({
-          id: Date.now() + Math.random(),
-          name: item.medicineName,
-          category: item.category,
-          buyPrice: item.unitPrice,
-          price: item.retailPrice,
-          stock: item.quantity,
-          expire: item.expireDate,
-          generic: item.genericName,
-          rack: item.rackLocation,
-          supplier: trimmedCompany,
-          lowStockAlert: item.lowStockAlert || parseInt(lowStockThreshold) || 10
-        });
       }
 
       newPurchaseLogs.unshift({
@@ -1470,10 +1547,13 @@ export default function Home() {
     setBdMedNameMetadata([...bdMedNameMetadata]);
     cloudSet('madina_v7_medmeta', JSON.stringify(bdMedNameMetadata));
 
-    setMedicines(updatedMeds);
     setPurchaseList(newPurchaseLogs);
-    cloudSet('madina_v7_meds', JSON.stringify(updatedMeds));
     cloudSet('madina_v7_purchases', JSON.stringify(newPurchaseLogs));
+
+    // Optimistic local update for instant UI feedback...
+    setMedicines(applyPurchaseToMeds(medicines));
+    // ...and the authoritative cloud write against the freshest stock.
+    updateMedicinesOnCloud(applyPurchaseToMeds);
 
     setPurchaseCart([]);
     setPCompanyName("");
@@ -1523,10 +1603,20 @@ export default function Home() {
 
   // Saves to medicine database (metadata + name list) but NOT to inventory/medicines state
   // The product will only appear in Sell AFTER being added via Stock In
-  const handleSaveNewProduct = (e: React.FormEvent) => {
+  const handleSaveNewProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!npMedicineName.trim()) return alert(t("Please enter medicine name!", "ওষুধের নাম লিখুন!"));
     if (!npBuyPrice || !npSalePrice) return alert(t("Please enter buy price and sale price!", "ক্রয় মূল্য এবং বিক্রয় মূল্য লিখুন!"));
+
+    // FIX (multi-device product-list conflict): same race-safe pattern —
+    // fetch the freshest mednames/medmeta/companies before merging this
+    // new product in, so a product added on another device at nearly the
+    // same time isn't erased.
+    const [bdMedicineNamesList, bdMedNameMetadata, bdMedicineCompanies] = await Promise.all([
+      fetchLatestList('madina_v7_mednames', bdMedicineNamesListRef.current),
+      fetchLatestList('madina_v7_medmeta', bdMedNameMetadataRef.current),
+      fetchLatestList('madina_v7_companies', bdMedicineCompaniesRef.current),
+    ]);
 
     const trimmedMed = npMedicineName.trim();
     const trimmedCompany = npCompanyName.trim();
@@ -1583,67 +1673,118 @@ export default function Home() {
   const saveEditedMedicine = (id: number) => {
     const updatedStock = parseInt(editFormData.stock);
     if (isNaN(updatedStock) || updatedStock < 0) { alert(t("Please enter valid stock!", "সঠিক স্টক সংখ্যা দিন!")); return; }
-    const updated = medicines.map(m => m.id === id ? {
+    // FIX (multi-device stock conflict): build the change as a function so it
+    // can be re-applied to the freshest meds list fetched from Firebase,
+    // instead of writing this device's whole local array (which could erase
+    // a concurrent stock change to a DIFFERENT medicine made on another device).
+    const applyEdit = (medsArray: any[]) => medsArray.map(m => m.id === id ? {
       ...editFormData,
       buyPrice: parseFloat(editFormData.buyPrice) || 0,
       price: parseFloat(editFormData.price) || 0,
       stock: updatedStock,
       lowStockAlert: parseInt(editFormData.lowStockAlert) || 10
     } : m);
-    setMedicines(updated);
-    cloudSet('madina_v7_meds', JSON.stringify(updated));
+    setMedicines(applyEdit(medicines));
+    updateMedicinesOnCloud(applyEdit);
     setEditingId(null);
     alert(t("✅ Medicine updated!", "✅ ওষুধ আপডেট হয়েছে!"));
   };
 
   const deleteMedicine = (id: number) => {
     if (confirm(t("Are you sure you want to delete this medicine?", "এই ওষুধটি মুছে ফেলবেন?"))) {
-      const updated = medicines.filter(m => m.id !== id);
-      setMedicines(updated);
-      cloudSet('madina_v7_meds', JSON.stringify(updated));
+      // FIX (multi-device stock conflict): same as above — apply against the
+      // freshest cloud copy instead of overwriting it with local state.
+      const applyDelete = (medsArray: any[]) => medsArray.filter(m => m.id !== id);
+      setMedicines(applyDelete(medicines));
+      updateMedicinesOnCloud(applyDelete);
     }
+  };
+
+  // ============================================================
+  // FIX: MULTI-DEVICE STOCK CONFLICT
+  // ─────────────────────────────────────────────────────────────
+  // Before: every place that changed stock (checkout, purchase, edit,
+  // return) wrote its own local copy of `medicines` straight to Firebase.
+  // If two phones/devices changed stock for different medicines at nearly
+  // the same time, whichever device's write landed second would overwrite
+  // the first device's change entirely (since the whole array gets
+  // replaced) — so one sale's stock update could vanish.
+  //
+  // After: this helper re-fetches the CURRENT stock from Firebase right
+  // before writing, applies ONLY this device's specific change on top of
+  // that fresh copy, then writes the merged result. This shrinks the
+  // window where two devices can clobber each other from "however long
+  // the cart/form was open" down to a single fetch+write round trip.
+  // ============================================================
+  const updateMedicinesOnCloud = async (
+    applyChange: (latestMeds: any[]) => any[]
+  ): Promise<any[]> => {
+    let latestMeds: any[] = medicinesRef.current;
+    const fetched = await fbGet('madina_v7_meds');
+    if (fetched) {
+      try { latestMeds = JSON.parse(fetched); } catch { /* keep local fallback if malformed */ }
+    }
+    const merged = applyChange(latestMeds);
+    setMedicines(merged);
+    await cloudSet('madina_v7_meds', JSON.stringify(merged));
+    return merged;
+  };
+
+  // ── Generic race-safe list fetch ─────────────────────────────
+  // Same pattern as updateMedicinesOnCloud: before writing a list-type
+  // key (invoices, due list, due collection log) back to Firebase, pull
+  // the freshest copy first so a near-simultaneous save from another
+  // device isn't blindly overwritten and silently lost.
+  const fetchLatestList = async (key: string, localFallback: any[]): Promise<any[]> => {
+    const fetched = await fbGet(key);
+    if (fetched) {
+      try { return JSON.parse(fetched); } catch { /* keep local fallback if malformed */ }
+    }
+    return localFallback;
   };
 
   // ============================================================
   // POS / CART
   // ============================================================
   const addToCart = (med: any) => {
-    const originalMed = medicines.find(m => m.id === med.id);
+    // FIX (stale-closure cart bug): read from refs (always the latest
+    // committed value) instead of the closed-over `medicines` state, and
+    // write via functional setState. Previously, two clicks fired in quick
+    // succession (e.g. a fast double-tap on mobile) could both read the
+    // same stale `cart`/`medicines` snapshot and the second click's update
+    // would silently overwrite the first's instead of stacking on top of
+    // it — losing a unit of qty/stock.
+    const originalMed = medicinesRef.current.find(m => m.id === med.id);
     if (!originalMed || originalMed.stock === 0) { playSound('error'); return alert(t("Out of stock!", "স্টক নেই!")); }
     if (new Date(originalMed.expire) < new Date()) { playSound('error'); return alert(t("⚠️ This medicine is expired!", "⚠️ এই ওষুধটির মেয়াদ শেষ!")); }
     playSound('add');
 
-    const existing = cart.find(item => item.id === med.id);
-    let updatedCart = [];
-    if (existing) {
-      updatedCart = cart.map(item => item.id === med.id ? { ...item, qty: (parseInt(item.qty) || 0) + 1 } : item);
-    } else {
-      updatedCart = [...cart, { ...med, qty: 1 }];
-    }
-    setCart(updatedCart);
-
-    const updatedMeds = medicines.map(item => item.id === med.id ? { ...item, stock: item.stock - 1 } : item);
-    setMedicines(updatedMeds);
+    setCart(prevCart => {
+      const existing = prevCart.find(item => item.id === med.id);
+      if (existing) {
+        return prevCart.map(item => item.id === med.id ? { ...item, qty: (parseInt(item.qty) || 0) + 1 } : item);
+      }
+      return [...prevCart, { ...med, qty: 1 }];
+    });
+    setMedicines(prevMeds => prevMeds.map(item => item.id === med.id ? { ...item, stock: item.stock - 1 } : item));
   };
 
   const removeFromCart = (itemToRemove: any) => {
-    setCart(cart.filter(item => item.id !== itemToRemove.id));
     const currentCartQty = parseInt(itemToRemove.qty) || 0;
-    const updatedMeds = medicines.map(item => item.id === itemToRemove.id ? { ...item, stock: item.stock + currentCartQty } : item);
-    setMedicines(updatedMeds);
+    setCart(prevCart => prevCart.filter(item => item.id !== itemToRemove.id));
+    setMedicines(prevMeds => prevMeds.map(item => item.id === itemToRemove.id ? { ...item, stock: item.stock + currentCartQty } : item));
   };
 
   const handleQuantityChange = (itemId: number, newQtyValue: string) => {
-    const existingCartItem = cart.find(item => item.id === itemId);
-    const originalMed = medicines.find(m => m.id === itemId);
+    // FIX: read from refs instead of closed-over state, same reasoning as addToCart.
+    const existingCartItem = cartRef.current.find(item => item.id === itemId);
+    const originalMed = medicinesRef.current.find(m => m.id === itemId);
     if (!existingCartItem || !originalMed) return;
 
     if (newQtyValue === "") {
       const currentCartQty = parseInt(existingCartItem.qty) || 0;
-      const totalStockToRestore = originalMed.stock + currentCartQty;
-      const updatedMeds = medicines.map(m => m.id === itemId ? { ...m, stock: totalStockToRestore } : m);
-      setCart(cart.map(item => item.id === itemId ? { ...item, qty: "" } : item));
-      setMedicines(updatedMeds);
+      setMedicines(prevMeds => prevMeds.map(m => m.id === itemId ? { ...m, stock: m.stock + currentCartQty } : m));
+      setCart(prevCart => prevCart.map(item => item.id === itemId ? { ...item, qty: "" } : item));
       return;
     }
 
@@ -1655,10 +1796,10 @@ export default function Home() {
     if (parsedQty > currentTotalAvailable) { alert(t(`⚠️ Max available: ${currentTotalAvailable} pcs`, `⚠️ সর্বোচ্চ ${currentTotalAvailable} টি পাওয়া যাবে`)); return; }
 
     const stockDifference = parsedQty - currentCartQty;
-    const updatedMeds = medicines.map(m => m.id === itemId ? { ...m, stock: m.stock - stockDifference } : m);
-    setCart(cart.map(item => item.id === itemId ? { ...item, qty: parsedQty } : item));
-    setMedicines(updatedMeds);
+    setMedicines(prevMeds => prevMeds.map(m => m.id === itemId ? { ...m, stock: m.stock - stockDifference } : m));
+    setCart(prevCart => prevCart.map(item => item.id === itemId ? { ...item, qty: parsedQty } : item));
   };
+
 
   const handleCheckoutIntent = () => {
     if (cart.length === 0) return alert(t("Cart is empty!", "কার্ট খালি!"));
@@ -1676,7 +1817,7 @@ export default function Home() {
   const currentFinalBill = Math.max(0, currentSubTotal + calculatedVatAmount - activeDiscountAmount);
   const liveRefundAmount = (parseFloat(calculatorInput) || 0) - currentFinalBill;
 
-  const executeFinalCheckout = () => {
+  const executeFinalCheckout = async () => {
     const discountPercent = currentSubTotal > 0 ? (activeDiscountAmount / currentSubTotal) * 100 : 0;
     if (discountPercent > 10) {
       alert(t(
@@ -1685,13 +1826,66 @@ export default function Home() {
       ));
       return;
     }
+
+    // FIX (multi-device invoice/due conflict): pull the freshest invoices,
+    // due list, and due collection log from Firebase BEFORE merging this
+    // sale on top — otherwise a sale completed on another device in the
+    // same few seconds gets silently erased when this device's stale local
+    // copy is written back.
+    const [invoices, dueList, dueCollectionLog, latestMedsRaw] = await Promise.all([
+      fetchLatestList('madina_v7_invoices', invoicesRef.current),
+      fetchLatestList('madina_v7_due_list', dueListRef.current),
+      fetchLatestList('madina_v7_due_collection_log', dueCollectionLogRef.current),
+      fbGet('madina_v7_meds'),
+    ]);
+
+    // FIX (overselling from a stale held cart): "Add to Cart" only checks
+    // stock at the moment an item is added. If an item sits in the cart for
+    // a while (e.g. left open in one browser tab) while other tabs/devices
+    // sell the same medicine down to zero in the meantime, checkout used to
+    // go through anyway (stock was simply clamped to 0, never blocking the
+    // sale) — meaning you could "sell" medicine that no longer physically
+    // exists. Re-validate every cart item against the freshest stock right
+    // before finalizing, and stop the sale if anything has run short.
+    let freshMedsForValidation: any[] = medicinesRef.current;
+    if (latestMedsRaw) {
+      try { freshMedsForValidation = JSON.parse(latestMedsRaw); } catch { /* keep local fallback */ }
+    }
+    const insufficientItems: string[] = [];
+    for (const item of cart) {
+      const requestedQty = parseInt(item.qty) || 0;
+      const freshMed = freshMedsForValidation.find((m: any) => m.id === item.id);
+      const availableStock = freshMed ? freshMed.stock : 0;
+      if (requestedQty > availableStock) {
+        insufficientItems.push(`${item.name} (${t("available", "মজুদ আছে")}: ${availableStock}, ${t("in cart", "কার্টে")}: ${requestedQty})`);
+      }
+    }
+    if (insufficientItems.length > 0) {
+      alert(t(
+        `⚠️ Stock changed while these items sat in your cart — not enough left to complete this sale:\n\n${insufficientItems.join('\n')}\n\nPlease adjust the quantities and try again.`,
+        `⚠️ কার্টে রাখা থাকতেই স্টক পরিবর্তন হয়ে গেছে — এই বিক্রি সম্পূর্ণ করার জন্য পর্যাপ্ত স্টক নেই:\n\n${insufficientItems.join('\n')}\n\nপরিমাণ ঠিক করে আবার চেষ্টা করুন।`
+      ));
+      return;
+    }
+
     const totalCost = cart.reduce((sum, item) => sum + (item.buyPrice * (parseInt(item.qty) || 0)), 0);
-    const prevDueAmt = selectedExistingDue ? selectedExistingDue.totalDue : 0;
+    // FIX: look up the customer's due amount in the freshly-fetched dueList
+    // (by id) rather than trusting selectedExistingDue's amount, which was
+    // captured when the customer panel opened and may be stale if another
+    // device collected/added to this same due in the meantime.
+    const freshExistingDue = selectedExistingDue ? dueList.find((d: any) => d.id === selectedExistingDue.id) : null;
+    const prevDueAmt = freshExistingDue ? freshExistingDue.totalDue : 0;
     const grandTotal = currentFinalBill + prevDueAmt;
     const cashGivenNum = parseFloat(cashReceived) || 0;
-    // invoiceDue from state already reflects grand total - cash (set in onChange), use it directly
+    // invoiceDue is auto-calculated from cashReceived (read-only field), always consistent
     const dueAmt = parseFloat(invoiceDue) || 0;
-    const paidCash = cashGivenNum > 0 ? Math.min(cashGivenNum, grandTotal) : currentFinalBill - dueAmt;
+    // FIX: paidCash must always equal the actual cash given (capped at grand total).
+    // The old "cashGivenNum > 0 ? ... : currentFinalBill - dueAmt" branch produced a
+    // wrong (negative) paidCash whenever cash given was exactly 0 AND the customer had
+    // an existing due — which inflated the new bill's due amount and effectively
+    // double-counted the old due. Cash given and invoiceDue are always kept in sync by
+    // the onChange handler above, so simply capping cashGivenNum is correct in every case.
+    const paidCash = Math.min(cashGivenNum, grandTotal);
     // Full profit added immediately regardless of cash or due
     const netProfit = currentFinalBill - totalCost;
 
@@ -1721,59 +1915,74 @@ export default function Home() {
 
     const updatedInvoices = [newInvoice, ...invoices];
     setInvoices(updatedInvoices);
-    // Derive sales & profit from full invoice list to avoid stale-state accumulation errors
-    const newTotalSales = updatedInvoices.reduce((sum: number, inv: any) => sum + (inv.finalBill || 0), 0);
-    const newTotalProfit = updatedInvoices.reduce((sum: number, inv: any) => sum + (inv.profit || 0), 0);
-    setTotalSales(newTotalSales);
-    setTotalProfit(newTotalProfit);
     setLastInvoice(newInvoice);
 
-    cloudSet('madina_v7_sales', newTotalSales.toString());
-    cloudSet('madina_v7_profit', newTotalProfit.toString());
     cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
-    cloudSet('madina_v7_meds', JSON.stringify(medicines));
+
+    // FIX (multi-device stock conflict): instead of overwriting Firebase with
+    // this device's local medicines array (which already had the cart's hold
+    // baked in and may be stale relative to other devices), re-fetch the
+    // latest stock and subtract only THIS sale's quantities on top of it —
+    // so a sale completed on another device at nearly the same time isn't lost.
+    const soldQtyByMedId: Record<number, number> = {};
+    cart.forEach(item => {
+      soldQtyByMedId[item.id] = (soldQtyByMedId[item.id] || 0) + (parseInt(item.qty) || 0);
+    });
+    updateMedicinesOnCloud(latestMeds =>
+      latestMeds.map(m =>
+        soldQtyByMedId[m.id] ? { ...m, stock: Math.max(0, m.stock - soldQtyByMedId[m.id]) } : m
+      )
+    );
 
     let updatedDueList = [...dueList];
+    let updatedDueCollectionLog = dueCollectionLog;
 
     // If customer had existing due and is paying it off now
-    if (selectedExistingDue) {
+    if (freshExistingDue) {
       // Cash first covers new bill, remaining cash goes to prev due
       const cashForPrevDue = Math.max(0, paidCash - currentFinalBill);
       const prevDuePaid = Math.min(prevDueAmt, cashForPrevDue);
 
       if (prevDuePaid > 0) {
         const newPrevDue = prevDueAmt - prevDuePaid;
-        // Due collection adds to sales (cash that was previously deferred)
-        const salesWithPrevDue = newTotalSales + prevDuePaid;
-        setTotalSales(salesWithPrevDue);
-        cloudSet('madina_v7_sales', salesWithPrevDue.toString());
 
-        // Log due collection
+        // Log due collection — this is what makes the collected cash
+        // count as sales (via computeSalesAndProfit below), so it's
+        // never lost on a later invoices-only recalculation.
         const logEntry = {
           id: Date.now() + 1,
-          customerName: selectedExistingDue.customerName,
+          customerName: freshExistingDue.customerName,
+          phone: freshExistingDue.phone || "N/A",
           amount: prevDuePaid,
           dateString: formattedDate,
           date: today.toISOString()
         };
-        const updatedLog = [logEntry, ...dueCollectionLog];
-        setDueCollectionLog(updatedLog);
-        cloudSet('madina_v7_due_collection_log', JSON.stringify(updatedLog));
+        updatedDueCollectionLog = [logEntry, ...dueCollectionLog];
+        setDueCollectionLog(updatedDueCollectionLog);
+        cloudSet('madina_v7_due_collection_log', JSON.stringify(updatedDueCollectionLog));
 
         // Update or remove previous due entry
         if (newPrevDue <= 0) {
-          updatedDueList = updatedDueList.filter(d => d.id !== selectedExistingDue.id);
+          updatedDueList = updatedDueList.filter(d => d.id !== freshExistingDue.id);
         } else {
           updatedDueList = updatedDueList.map(d =>
-            d.id === selectedExistingDue.id ? { ...d, totalDue: newPrevDue } : d
+            d.id === freshExistingDue.id ? { ...d, totalDue: newPrevDue } : d
           );
         }
       }
     }
 
+    // Single, consistent sales/profit derivation (invoices + all due collections)
+    const { sales: finalTotalSales, profit: finalTotalProfit } = computeSalesAndProfit(updatedInvoices, updatedDueCollectionLog);
+    setTotalSales(finalTotalSales);
+    setTotalProfit(finalTotalProfit);
+    cloudSet('madina_v7_sales', finalTotalSales.toString());
+    cloudSet('madina_v7_profit', finalTotalProfit.toString());
+
     if (dueAmt > 0) {
       const effectiveName = customerName.trim() || t("Regular Customer", "সাধারণ গ্রাহক");
       const effectivePhone = customerPhone || "N/A";
+
 
       // dueAmt = grand total (new bill + prev due) - cash paid
       // We need only the new bill's unpaid portion for the new invoice entry.
@@ -1834,15 +2043,24 @@ export default function Home() {
     setReturnItemsQuantities({ ...returnItemsQuantities, [itemId]: parsed });
   };
 
-  const processInvoiceMedicineReturn = () => {
+  const processInvoiceMedicineReturn = async () => {
     if (!selectedInvoiceForReturn) return;
     const totalReturnItemsCount = Object.values(returnItemsQuantities).reduce((a, b) => a + b, 0);
     if (totalReturnItemsCount === 0) { alert(t("⚠️ Please select at least 1 quantity to return!", "⚠️ কমপক্ষে ১টি পরিমাণ নির্বাচন করুন!")); return; }
 
+    // FIX (multi-device invoice/due conflict): same race-safe pattern as
+    // checkout — pull the freshest invoices and due list before merging
+    // this return on top, so a sale/payment from another device in the
+    // same window isn't overwritten and lost.
+    const [invoices, dueList] = await Promise.all([
+      fetchLatestList('madina_v7_invoices', invoicesRef.current),
+      fetchLatestList('madina_v7_due_list', dueListRef.current),
+    ]);
+
     let calculatedRefundAmount = 0;
     let calculatedCostSavingsToSubtract = 0;
     const returnedItemsSummaryList: any[] = [];
-    let updatedMeds = [...medicines];
+    const returnQtyByMedId: Record<number, number> = {};
 
     selectedInvoiceForReturn.items.forEach((item: any) => {
       const returnQty = returnItemsQuantities[item.id] || 0;
@@ -1850,8 +2068,7 @@ export default function Home() {
         calculatedRefundAmount += (item.price * returnQty);
         calculatedCostSavingsToSubtract += (item.buyPrice * returnQty);
         returnedItemsSummaryList.push({ id: item.id, name: item.name, qtyReturned: returnQty, pricePerUnit: item.price });
-        const targetMedIndex = updatedMeds.findIndex(m => m.id === item.id);
-        if (targetMedIndex !== -1) updatedMeds[targetMedIndex].stock += returnQty;
+        returnQtyByMedId[item.id] = (returnQtyByMedId[item.id] || 0) + returnQty;
       }
     });
 
@@ -1863,14 +2080,7 @@ export default function Home() {
       calculatedRefundAmount = Math.max(0, calculatedRefundAmount + proportionalVat - proportionalDiscount);
     }
 
-    let newSalesState = totalSales;
-    let newProfitState = totalProfit;
-
-    if (returnActionType === "CASH_REFUND") {
-      newSalesState -= calculatedRefundAmount;
-      newProfitState -= (calculatedRefundAmount - calculatedCostSavingsToSubtract);
-    } else {
-      newProfitState -= (calculatedRefundAmount - calculatedCostSavingsToSubtract);
+    if (returnActionType !== "CASH_REFUND") {
       setDiscountType("TK");
       setDiscountValue(calculatedRefundAmount.toFixed(2));
       setCustomerName(selectedInvoiceForReturn.customer);
@@ -1886,6 +2096,9 @@ export default function Home() {
           isReturned: true,
           finalBill: inv.finalBill - calculatedRefundAmount,
           profit: inv.profit - (calculatedRefundAmount - calculatedCostSavingsToSubtract),
+          // FIX: also shrink this invoice's own recorded due — the customer
+          // shouldn't still be shown as owing for items they've returned.
+          due: Math.max(0, (inv.due || 0) - calculatedRefundAmount),
           returnDetails: {
             returnedItems: returnedItemsSummaryList,
             refundedAmount: calculatedRefundAmount,
@@ -1898,15 +2111,52 @@ export default function Home() {
       return inv;
     });
 
-    setMedicines(updatedMeds);
+    // FIX (return didn't update due list): if this invoice still had unpaid
+    // due, forgive the portion of that due covered by the returned items —
+    // otherwise the customer keeps owing for goods they've already given back.
+    let updatedDueList = dueList;
+    if ((selectedInvoiceForReturn.due || 0) > 0) {
+      const dueListIdx = dueList.findIndex(d =>
+        d.customerName.toLowerCase() === selectedInvoiceForReturn.customer.toLowerCase() &&
+        d.phone === selectedInvoiceForReturn.phone
+      );
+      if (dueListIdx !== -1) {
+        const entry = dueList[dueListIdx];
+        const invRecord = entry.invoices.find((i: any) => i.invoiceId === selectedInvoiceForReturn.invoiceId);
+        const invoiceDueAmount = invRecord ? invRecord.amount : 0;
+        const reduceBy = Math.min(calculatedRefundAmount, invoiceDueAmount, entry.totalDue);
+
+        if (reduceBy > 0) {
+          const newTotalDue = Math.max(0, entry.totalDue - reduceBy);
+          const newInvoicesArr = entry.invoices
+            .map((i: any) => i.invoiceId === selectedInvoiceForReturn.invoiceId
+              ? { ...i, amount: Math.max(0, i.amount - reduceBy) }
+              : i)
+            .filter((i: any) => i.amount > 0);
+
+          updatedDueList = newTotalDue <= 0
+            ? dueList.filter(d => d.id !== entry.id)
+            : dueList.map(d => d.id === entry.id ? { ...d, totalDue: newTotalDue, invoices: newInvoicesArr } : d);
+        }
+      }
+    }
+
     setInvoices(updatedInvoices);
-    // Derive from updated invoices for cross-device consistency
-    const returnedSales = updatedInvoices.reduce((sum: number, inv: any) => sum + (inv.finalBill || 0), 0);
-    const returnedProfit = updatedInvoices.reduce((sum: number, inv: any) => sum + (inv.profit || 0), 0);
+    setDueList(updatedDueList);
+    // Derive from updated invoices + due collections for cross-device consistency
+    const { sales: returnedSales, profit: returnedProfit } = computeSalesAndProfit(updatedInvoices, dueCollectionLog);
     setTotalSales(returnedSales);
     setTotalProfit(returnedProfit);
-    cloudSet('madina_v7_meds', JSON.stringify(updatedMeds));
+
+    // FIX (multi-device stock conflict): add the returned quantities back on
+    // top of the freshest stock fetched from Firebase, instead of overwriting
+    // it with this device's local array.
+    updateMedicinesOnCloud(latestMeds =>
+      latestMeds.map(m => returnQtyByMedId[m.id] ? { ...m, stock: m.stock + returnQtyByMedId[m.id] } : m)
+    );
+
     cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
+    cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
     cloudSet('madina_v7_sales', returnedSales.toString());
     cloudSet('madina_v7_profit', returnedProfit.toString());
 
@@ -1918,27 +2168,36 @@ export default function Home() {
   // ============================================================
   // DUE PAYMENT
   // ============================================================
-  const handleDuePayment = () => {
+  const handleDuePayment = async () => {
     if (!duePaymentModal) return;
     const payAmt = parseFloat(duePayAmount) || 0;
     if (payAmt <= 0) { alert(t("Please enter a valid amount!", "সঠিক পরিমাণ দিন!")); return; }
-    if (payAmt > duePaymentModal.totalDue) { alert(t(`Maximum payable is ${duePaymentModal.totalDue.toFixed(1)} ${currencySymbol}`, `সর্বোচ্চ পরিশোধ ${duePaymentModal.totalDue.toFixed(1)} ${currencySymbol}`)); return; }
 
-    const newTotalDue = duePaymentModal.totalDue - payAmt;
+    // FIX (multi-device due conflict): pull the freshest due list and due
+    // collection log before merging this payment — otherwise a payment or
+    // sale recorded on another device in the same few seconds gets
+    // silently overwritten and lost. Also re-check the cap against the
+    // freshest totalDue, not the (possibly stale) modal snapshot.
+    const [dueList, dueCollectionLog, invoices] = await Promise.all([
+      fetchLatestList('madina_v7_due_list', dueListRef.current),
+      fetchLatestList('madina_v7_due_collection_log', dueCollectionLogRef.current),
+      fetchLatestList('madina_v7_invoices', invoicesRef.current),
+    ]);
+    const freshDueEntry = dueList.find((d: any) => d.id === duePaymentModal.id);
+    const freshTotalDue = freshDueEntry ? freshDueEntry.totalDue : duePaymentModal.totalDue;
+    if (payAmt > freshTotalDue) { alert(t(`Maximum payable is ${freshTotalDue.toFixed(1)} ${currencySymbol}`, `সর্বোচ্চ পরিশোধ ${freshTotalDue.toFixed(1)} ${currencySymbol}`)); return; }
+
+    const newTotalDue = freshTotalDue - payAmt;
     const updatedDueList = newTotalDue <= 0
       ? dueList.filter(d => d.id !== duePaymentModal.id)
       : dueList.map(d => d.id === duePaymentModal.id ? { ...d, totalDue: newTotalDue } : d);
-
-    // Add collected cash to sales (profit was already counted at sale time)
-    const newTotalSales = totalSales + payAmt;
-    setTotalSales(newTotalSales);
-    cloudSet('madina_v7_sales', newTotalSales.toString());
 
     // Log this collection with date for dashboard due collection stats
     const today = new Date();
     const logEntry = {
       id: Date.now(),
       customerName: duePaymentModal.customerName,
+      phone: duePaymentModal.phone || "N/A",
       amount: payAmt,
       dateString: today.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' }),
       date: today.toISOString()
@@ -1946,6 +2205,14 @@ export default function Home() {
     const updatedLog = [logEntry, ...dueCollectionLog];
     setDueCollectionLog(updatedLog);
     cloudSet('madina_v7_due_collection_log', JSON.stringify(updatedLog));
+
+    // Derive sales fresh from invoices + ALL due collections (profit unaffected —
+    // it was already booked in full at original sale time). This avoids the old
+    // "totalSales + payAmt" stale-state pattern, which silently lost collected
+    // due amounts whenever invoices were later resynced/recalculated.
+    const { sales: newTotalSales } = computeSalesAndProfit(invoices, updatedLog);
+    setTotalSales(newTotalSales);
+    cloudSet('madina_v7_sales', newTotalSales.toString());
 
     setDueList(updatedDueList);
     cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
@@ -2041,8 +2308,8 @@ export default function Home() {
     ));
     if (confirmText !== "RESET") return alert(t("❌ Reset cancelled.", "❌ রিসেট বাতিল।"));
     if (confirm(t("⚠️ FINAL WARNING: Delete ALL data from ALL devices forever?", "⚠️ শেষ সতর্কতা: সকল ডিভাইস থেকে চিরতরে সব মুছবেন?"))) {
-      // Preserve clean_start flag so first-boot block does NOT re-run on next load
-      const keysToKeep = ['madina_v7_clean_start_2026', 'madina_v7_dark', 'madina_v7_theme', 'madina_v7_sound', 'madina_v7_language'];
+      // Only device-local preferences live in localStorage now — keep those, clear the rest.
+      const keysToKeep = ['madina_v7_dark', 'madina_v7_theme', 'madina_v7_sound', 'madina_v7_language'];
       const allKeys = Object.keys(localStorage);
       for (const k of allKeys) {
         if (!keysToKeep.includes(k)) localStorage.removeItem(k);
@@ -2066,7 +2333,7 @@ export default function Home() {
       setStaffUsername("staff"); setStaffPassword("staff123");
       setSecretCode("MADINA2026");
 
-      // Push clean data to localStorage AND Firebase so all devices reset properly
+      // Push clean data to Firebase so all devices reset properly
       cloudSet('madina_v7_meds', JSON.stringify([]));
       cloudSet('madina_v7_companies', JSON.stringify(initialMedicineCompanies));
       cloudSet('madina_v7_mednames', JSON.stringify(initialMedicineNamesList));
@@ -2100,20 +2367,29 @@ export default function Home() {
   // BACKUP & RESTORE FUNCTIONS
   // ============================================================
 
-  // সব important data একটা object এ জড়ো করে JSON ফাইল বানাও
-  const buildBackupObject = () => {
+  // সব important data Firebase থেকে সরাসরি জড়ো করে JSON ফাইল বানাও
+  // (localStorage এ business data থাকে না — Firebase ই একমাত্র উৎস)
+  const buildBackupObject = async (): Promise<Record<string, any> | null> => {
+    const cloudData = await fbGetAll();
+    if (!cloudData) return null;
     const backupData: Record<string, any> = {};
     for (const key of CLOUD_SYNC_KEYS) {
-      const val = localStorage.getItem(key);
-      if (val !== null) backupData[key] = val;
+      if (cloudData[key] !== undefined) backupData[key] = cloudData[key];
     }
     return backupData;
   };
 
   // JSON ফাইল ডাউনলোড করো (Browser download — PC/Android/iOS সব জায়গায় কাজ করে)
-  const handleDownloadBackup = () => {
+  const handleDownloadBackup = async () => {
     setIsBackingUp(true);
     try {
+      const backupData = await buildBackupObject();
+      if (!backupData) {
+        addToast(t("❌ No internet — can't read data from cloud!", "❌ ইন্টারনেট নেই — ক্লাউড থেকে তথ্য পড়া যাচ্ছে না!"), 'error');
+        setIsBackingUp(false);
+        return;
+      }
+
       const now = new Date();
       const dateStr = now.toLocaleDateString('bn-BD', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
       const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '-');
@@ -2124,7 +2400,7 @@ export default function Home() {
         _backup_date: now.toISOString(),
         _backup_date_bn: now.toLocaleString('bn-BD'),
         _pharmacy_name: pharmacyName,
-        data: buildBackupObject()
+        data: backupData
       };
 
       const blob = new Blob([JSON.stringify(backupObj, null, 2)], { type: 'application/json' });
@@ -2156,12 +2432,18 @@ export default function Home() {
     }
     setIsBackingUp(true);
     try {
+      const backupData = await buildBackupObject();
+      if (!backupData) {
+        addToast(t("❌ No internet or Firebase error!", "❌ ইন্টারনেট নেই বা Firebase সমস্যা!"), 'error');
+        setIsBackingUp(false);
+        return;
+      }
       const now = new Date();
       const backupObj = {
         _backup_date: now.toISOString(),
         _backup_date_bn: now.toLocaleString('bn-BD'),
         _pharmacy_name: pharmacyName,
-        data: buildBackupObject()
+        data: backupData
       };
       const backupKey = `backup_${now.toISOString().slice(0,10)}`;
       const url = `${FIREBASE_CONFIG.databaseURL}/madina_backups/${backupKey}.json`;
@@ -2193,6 +2475,11 @@ export default function Home() {
       addToast(t("❌ Only .json backup files accepted!", "❌ শুধু .json ব্যাকআপ ফাইল গ্রহণযোগ্য!"), 'error');
       return;
     }
+    if (!isFirebaseConfigured()) {
+      addToast(t("⚠️ Firebase not configured!", "⚠️ Firebase সেটআপ করা নেই!"), 'error');
+      e.target.value = "";
+      return;
+    }
     const confirmRestore = window.confirm(
       t("⚠️ This will REPLACE all current data with backup data. Are you sure?",
         "⚠️ এটি বর্তমান সব তথ্য মুছে ব্যাকআপের তথ্য দিয়ে প্রতিস্থাপন করবে। নিশ্চিত?")
@@ -2209,12 +2496,19 @@ export default function Home() {
           setIsRestoring(false);
           return;
         }
-        // localStorage এ সব key restore করো
+        // সব key Firebase এ সরাসরি restore করো (explicit user action)
+        const writes: Promise<boolean>[] = [];
         for (const [key, val] of Object.entries(parsed.data)) {
-          if (typeof val === 'string') {
-            localStorage.setItem(key, val);
-            if (CLOUD_SYNC_KEYS.includes(key)) fbSet(key, val);
+          if (typeof val === 'string' && CLOUD_SYNC_KEYS.includes(key)) {
+            writes.push(fbSet(key, val));
           }
+        }
+        const results = await Promise.all(writes);
+        if (results.some(ok => !ok)) {
+          addToast(t("⚠️ Some data may not have saved — check your internet and try again.", "⚠️ কিছু তথ্য সেভ নাও হতে পারে — ইন্টারনেট চেক করে আবার চেষ্টা করুন।"), 'error');
+          setIsRestoring(false);
+          e.target.value = "";
+          return;
         }
         const nowStr = new Date().toLocaleString('bn-BD');
         setLastBackupTime(nowStr);
@@ -2260,11 +2554,18 @@ export default function Home() {
   // EXPIRY ALERT — 1 month before expiry
   // ============================================================
   useEffect(() => {
-    if (!isLoggedIn || medicines.length === 0) return;
+    if (!isLoggedIn || !isMounted) return;
     const timer = setTimeout(() => {
+      // FIX: read the latest medicines via ref instead of depending on the
+      // `medicines` array in the effect's dependency list. `medicines` gets a
+      // new array reference on every cart add/remove/checkout (stock changes),
+      // which used to re-run this whole effect and re-show every "expiring
+      // soon" toast each time — this now fires once per login session instead.
+      const meds = medicinesRef.current;
+      if (meds.length === 0) return;
       const today = new Date();
       const oneMonthLater = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
-      const expiringSoon = medicines.filter(m => {
+      const expiringSoon = meds.filter(m => {
         if (!m.expire) return false;
         const expDate = new Date(m.expire);
         return expDate > today && expDate <= oneMonthLater;
@@ -2282,13 +2583,25 @@ export default function Home() {
       }
     }, 5000);
     return () => clearTimeout(timer);
-  }, [isLoggedIn, medicines]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, isMounted]);
 
   // ============================================================
   // COMPUTED VALUES — wrapped in useMemo to prevent recalculation on every render
   // ============================================================
   const grandTotalPurchaseCost = useMemo(() => purchaseList.reduce((sum, item) => sum + (item.totalCost || 0), 0), [purchaseList]);
   const grandTotalPurchaseDue = useMemo(() => purchaseList.reduce((sum, item) => sum + (item.due || 0), 0), [purchaseList]);
+  const companyPurchaseSummary = useMemo(() => {
+    const map: { [key: string]: { company: string; totalQty: number; totalCost: number; purchaseCount: number } } = {};
+    purchaseList.forEach((log: any) => {
+      const key = (log.companyName || "").trim() || t("Unknown", "অজানা");
+      if (!map[key]) map[key] = { company: key, totalQty: 0, totalCost: 0, purchaseCount: 0 };
+      map[key].totalQty += log.quantity || 0;
+      map[key].totalCost += log.totalCost || 0;
+      map[key].purchaseCount += 1;
+    });
+    return Object.values(map).sort((a, b) => b.totalCost - a.totalCost);
+  }, [purchaseList, language]);
   const bulkCartTotalCost = useMemo(() => purchaseCart.reduce((sum, item) => sum + item.totalCost, 0), [purchaseCart]);
   const bulkCartCalculatedDue = useMemo(() => Math.max(0, bulkCartTotalCost - (parseFloat(pAmountPaid) || 0)), [bulkCartTotalCost, pAmountPaid]);
 
@@ -2330,9 +2643,8 @@ export default function Home() {
     const inv = invoices.find(i => i.invoiceId === invoiceId);
     if (!inv) return;
     const updatedInvoices = invoices.filter(i => i.invoiceId !== invoiceId);
-    // Derive from remaining invoices for cross-device consistency
-    const newSales = updatedInvoices.reduce((sum: number, i: any) => sum + (i.finalBill || 0), 0);
-    const newProfit = updatedInvoices.reduce((sum: number, i: any) => sum + (i.profit || 0), 0);
+    // Derive from remaining invoices + due collections for cross-device consistency
+    const { sales: newSales, profit: newProfit } = computeSalesAndProfit(updatedInvoices, dueCollectionLog);
     setInvoices(updatedInvoices);
     setTotalSales(newSales);
     setTotalProfit(newProfit);
@@ -2547,7 +2859,7 @@ export default function Home() {
 
             {/* Logo */}
             <div className="text-center mb-6">
-              <div className="animate-logo-pulse w-16 h-16 rounded-2xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-lg font-black text-xl mx-auto mb-3">{pharmacyLogo}</div>
+              <div className="animate-logo-pulse w-16 h-16 rounded-2xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-lg font-black text-xl mx-auto mb-3 overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
               <h1 className="font-black text-lg text-teal-600">{pharmacyName}</h1>
               <p className={`text-sm font-semibold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{pharmacySlogan}</p>
             </div>
@@ -2693,6 +3005,14 @@ export default function Home() {
         .btn-press:active { transform: scale(0.95) !important; }
         .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
         .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+        @media (max-width: 768px) {
+          .ccard svg { display: none !important; }
+          .card-hover:hover { transform: none !important; box-shadow: none !important; }
+          [style*="willChange"], [style*="will-change"] { will-change: auto !important; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+        }
         @keyframes emoji-bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
         @keyframes emoji-spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
         @keyframes emoji-pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.3)} }
@@ -2743,18 +3063,27 @@ export default function Home() {
         .snav-stockin { border-width: 2px !important; border-style: solid !important; border-color: #10b981 !important; }
         .snav-newprod { border-width: 2px !important; border-style: solid !important; border-color: #22c55e !important; }
         .snav-ph      { border-width: 2px !important; border-style: solid !important; border-color: #8b5cf6 !important; }
+        .snav-cph     { border-width: 2px !important; border-style: solid !important; border-color: #a78bfa !important; }
         .snav-inv     { border-width: 2px !important; border-style: solid !important; border-color: #3b82f6 !important; }
         .snav-due     { border-width: 2px !important; border-style: solid !important; border-color: #ef4444 !important; }
+        .snav-duecol  { border-width: 2px !important; border-style: solid !important; border-color: #10b981 !important; }
         .snav-report  { border-width: 2px !important; border-style: solid !important; border-color: #f97316 !important; }
         .snav-ret     { border-width: 2px !important; border-style: solid !important; border-color: #ec4899 !important; }
         .snav-set     { border-width: 2px !important; border-style: solid !important; border-color: #64748b !important; }
         .snav-perm    { border-width: 2px !important; border-style: solid !important; border-color: #f43f5e !important; }
         .snav-closing { border-width: 2px !important; border-style: solid !important; border-color: #a855f7 !important; }
         .snav-pos.bg-teal-500,.snav-dash.bg-teal-500,.snav-stock.bg-teal-500,
-        .snav-stockin.bg-teal-500,.snav-newprod.bg-teal-500,.snav-ph.bg-teal-500,
-        .snav-inv.bg-teal-500,.snav-due.bg-teal-500,.snav-report.bg-teal-500,
+        .snav-stockin.bg-teal-500,.snav-newprod.bg-teal-500,.snav-ph.bg-teal-500,.snav-cph.bg-teal-500,
+        .snav-inv.bg-teal-500,.snav-due.bg-teal-500,.snav-duecol.bg-teal-500,.snav-report.bg-teal-500,
         .snav-ret.bg-teal-500,.snav-set.bg-teal-500,.snav-perm.bg-teal-500,.snav-closing.bg-teal-500
         { border-color: rgba(255,255,255,0.45) !important; box-shadow: 0 0 10px rgba(20,184,166,0.35); }
+        @media print {
+          .receipt-print, .receipt-print * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+          .cph-print-report, .cph-print-report * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+          .cph-print-report { position: static !important; }
+          @page { size: auto; margin: 10mm; }
+          body, html { background: #fff !important; }
+        }
       `}</style>
 
       {/* ANIMATED TOAST NOTIFICATIONS */}
@@ -2814,6 +3143,7 @@ export default function Home() {
             <p className="text-sm opacity-80">{t("Click Print to get a receipt copy.", "প্রিন্ট বাটনে ক্লিক করুন।")}</p>
           </div>
           <button onClick={() => viewInvoiceLog(invoices[0])} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-2.5 py-1 rounded uppercase tracking-wider transition">{t("View", "দেখুন")}</button>
+          <button onClick={() => setShowSuccessAlert(false)} className={`text-sm font-bold px-1.5 ${isDarkMode ? 'text-slate-400 hover:text-red-400' : 'text-slate-400 hover:text-red-500'}`}>✕</button>
         </div>
       )}
 
@@ -2823,7 +3153,7 @@ export default function Home() {
         style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'] + 'f0', borderBottomColor: (activeThemeStyle as any)['--theme-border'] } : {}}
       >
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-md font-black text-sm">{pharmacyLogo}</div>
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-md font-black text-sm overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
           <div>
             <h1 className="font-black text-sm tracking-tight uppercase flex items-center gap-1.5">
               <span className="truncate max-w-[100px] sm:max-w-[180px] md:max-w-none">{pharmacyName}</span>
@@ -2847,8 +3177,8 @@ export default function Home() {
             </div>
           )}
           {!isFirebaseConfigured() && (
-            <div title={t("Firebase not configured — data is local only","Firebase সেটআপ হয়নি — ডেটা শুধু এই ডিভাইসে")} className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-bold border cursor-help ${isDarkMode ? 'bg-slate-700 border-slate-600 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-400'}`}>
-              💾 {t("Local", "লোকাল")}
+            <div title={t("Firebase not configured — app cannot save or load data!","Firebase সেটআপ হয়নি — অ্যাপ ডেটা সেভ বা লোড করতে পারবে না!")} className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-bold border cursor-help ${isDarkMode ? 'bg-red-900/40 border-red-700 text-red-400' : 'bg-red-50 border-red-200 text-red-500'}`}>
+              ⚠️ {t("Not configured", "সেটআপ হয়নি")}
             </div>
           )}
 
@@ -2924,6 +3254,13 @@ export default function Home() {
             </button>
           )}
 
+          {checkShouldRenderTabOption("company_purchase_history_view") && (
+            <button onClick={() => { playSound('tab'); setActiveTab("company_purchase_history"); }} className={`sidebar-nav-btn snav-cph w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "company_purchase_history" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <div className="flex items-center gap-2"><span>🏭</span><span>{t("Company Purchase History", "কোম্পানি ক্রয় ইতিহাস")}</span></div>
+              {companyPurchaseSummary.length > 0 && <span className="text-xs px-1.5 py-0.5 rounded font-mono bg-violet-500 text-white">{companyPurchaseSummary.length}</span>}
+            </button>
+          )}
+
           {checkShouldRenderTabOption("invoices") && (
             <button onClick={() => { playSound('tab'); setActiveTab("invoices"); }} className={`sidebar-nav-btn snav-inv w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "invoices" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <div className="flex items-center gap-2"><span>🧾</span><span>{t("Invoices", "রশিদ")}</span></div>
@@ -2935,6 +3272,13 @@ export default function Home() {
             <button onClick={() => { playSound('tab'); setActiveTab("due_list"); }} className={`sidebar-nav-btn snav-due w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "due_list" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <div className="flex items-center gap-2"><span>💳</span><span>{t("Due List", "বাকি তালিকা")}</span></div>
               {dueList.length > 0 && <span className="text-xs px-1.5 py-0.5 rounded font-mono bg-red-500 text-white">{dueList.length}</span>}
+            </button>
+          )}
+
+          {checkShouldRenderTabOption("due_collection_view") && (
+            <button onClick={() => { playSound('tab'); setActiveTab("due_collection"); }} className={`sidebar-nav-btn snav-duecol w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "due_collection" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <div className="flex items-center gap-2"><span>📒</span><span>{t("Due Collection List", "বাকি আদায় তালিকা")}</span></div>
+              {dueCollectionLog.length > 0 && <span className="text-xs px-1.5 py-0.5 rounded font-mono bg-emerald-500 text-white">{dueCollectionLog.length}</span>}
             </button>
           )}
 
@@ -3036,6 +3380,11 @@ export default function Home() {
                     <span className="text-xl">🧾</span><span>{t("Purchase Hist.", "ক্রয় ইতিহাস")}</span>
                   </button>
                 )}
+                {checkShouldRenderTabOption("company_purchase_history_view") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("company_purchase_history"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "company_purchase_history" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">🏭</span><span>{t("Company Hist.", "কোম্পানি ইতিহাস")}</span>
+                  </button>
+                )}
                 {checkShouldRenderTabOption("invoices") && (
                   <button onClick={() => { playSound('tab'); setActiveTab("invoices"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "invoices" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
                     <span className="text-xl">🧾</span><span>{t("Invoices", "রশিদ")}</span>
@@ -3044,6 +3393,11 @@ export default function Home() {
                 {checkShouldRenderTabOption("due_list_view") && (
                   <button onClick={() => { playSound('tab'); setActiveTab("due_list"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "due_list" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
                     <span className="text-xl">💳</span><span>{t("Due List", "বাকি তালিকা")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("due_collection_view") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("due_collection"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "due_collection" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">📒</span><span>{t("Due Collection", "বাকি আদায়")}</span>
                   </button>
                 )}
                 {checkShouldRenderTabOption("report_view") && (
@@ -3061,6 +3415,11 @@ export default function Home() {
                     <span className="text-xl">⚙️</span><span>{t("Settings", "সেটিংস")}</span>
                   </button>
                 )}
+                {checkShouldRenderTabOption("closing_report") && (
+                  <button onClick={() => { playSound('tab'); setActiveTab("closing_report"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "closing_report" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">📅</span><span>{t("Closing", "ক্লোজিং")}</span>
+                  </button>
+                )}
                 {currentUserRole === "ADMIN" && (
                   <button onClick={() => { playSound('tab'); setActiveTab("modules_menu"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "modules_menu" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
                     <span className="text-xl">🛡️</span><span>{t("Permissions", "অনুমতি")}</span>
@@ -3073,11 +3432,12 @@ export default function Home() {
         )}
 
         {/* MOBILE BOTTOM NAVIGATION — visible only on mobile (md: hidden) */}
-        <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-40 border-t flex items-center justify-around px-1 py-1.5 print:hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderTopColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
+        <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-40 border-t flex items-center justify-around px-1 py-1 print:hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderTopColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
           {checkShouldRenderTabOption("pos") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("pos"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "pos" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("pos"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition relative ${activeTab === "pos" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               <span className="text-lg">🛒</span>
               <span>{t("Sell", "বিক্রয়")}</span>
+              {cart.length > 0 && <span className="absolute -top-0.5 right-0.5 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center font-black">{cart.length > 9 ? '9+' : cart.length}</span>}
             </button>
           )}
           {checkShouldRenderTabOption("analytics") && (
@@ -3092,16 +3452,17 @@ export default function Home() {
               <span>{t("Stock", "স্টক")}</span>
             </button>
           )}
-          {checkShouldRenderTabOption("invoices") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("invoices"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "invoices" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              <span className="text-lg">🧾</span>
-              <span>{t("Invoices", "রশিদ")}</span>
+          {checkShouldRenderTabOption("procurement") && (
+            <button onClick={() => { playSound('tab'); setActiveTab("procurement"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "procurement" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              <span className="text-lg">📥</span>
+              <span>{t("Stock In", "মাল")}</span>
             </button>
           )}
           {checkShouldRenderTabOption("due_list_view") && (
-            <button onClick={() => { playSound('tab'); setActiveTab("due_list"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition ${activeTab === "due_list" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            <button onClick={() => { playSound('tab'); setActiveTab("due_list"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-xs font-bold transition relative ${activeTab === "due_list" ? 'text-teal-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               <span className="text-lg">💳</span>
               <span>{t("Due", "বাকি")}</span>
+              {dueList.length > 0 && <span className="absolute -top-0.5 right-0.5 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center font-black">{dueList.length > 9 ? '9+' : dueList.length}</span>}
             </button>
           )}
           {/* "More" button — always visible, opens full menu drawer */}
@@ -3112,16 +3473,32 @@ export default function Home() {
         </nav>
 
         {/* MAIN CONTENT */}
-        <main className="flex-1 p-4 pb-24 md:pb-4 overflow-y-auto print:p-0">
+        <main className="flex-1 p-3 md:p-4 pb-20 md:pb-4 overflow-y-auto print:p-0" style={{WebkitOverflowScrolling:'touch'}}>
 
           {/* =========================================================
               TAB 1: POS / SELL
           ========================================================= */}
           {activeTab === "pos" && checkShouldRenderTabOption("pos") && (
-            <div key="pos-tab" className="animate-tab-content grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div key="pos-tab" className="animate-tab-content flex flex-col lg:grid lg:grid-cols-12 gap-3">
+
+              {/* Mobile POS split-tab switcher — only visible on small screens */}
+              <div className={`lg:hidden flex rounded-xl overflow-hidden border text-sm font-black ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                <button
+                  onClick={() => (document.getElementById('pos-products') as HTMLElement).scrollIntoView({behavior:'smooth', block:'nearest'})}
+                  className="flex-1 py-2.5 flex items-center justify-center gap-1.5 bg-teal-500 text-white"
+                >
+                  🔍 {t("Products","পণ্য")} <span className="bg-white/20 px-1.5 py-0.5 rounded text-xs">{filteredMedicines.length}</span>
+                </button>
+                <button
+                  onClick={() => (document.getElementById('pos-cart') as HTMLElement).scrollIntoView({behavior:'smooth', block:'nearest'})}
+                  className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 ${cart.length > 0 ? 'bg-indigo-500 text-white' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+                >
+                  🛒 {t("Cart","কার্ট")} {cart.length > 0 && <span className={`px-1.5 py-0.5 rounded text-xs ${cart.length > 0 ? 'bg-white/20' : 'bg-slate-500/10'}`}>{cart.length}</span>}
+                </button>
+              </div>
 
               {/* Left: Product Search */}
-              <div className="lg:col-span-7 flex flex-col gap-3">
+              <div id="pos-products" className="lg:col-span-7 flex flex-col gap-3">
                 <div className={`ccard cc-teal p-3 rounded-xl border ${isDarkMode ? 'bg-teal-950/50 border-teal-600' : 'bg-teal-200 border-teal-400 shadow-sm'}`}>
                   <div className="flex gap-2 flex-wrap">
                     <input
@@ -3138,7 +3515,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[45vh] sm:max-h-[55vh] md:max-h-[60vh] overflow-y-auto">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[55vh] sm:max-h-[55vh] md:max-h-[60vh] overflow-y-auto">
                   {filteredMedicines.map(med => {
                     const isExpired = new Date(med.expire) < new Date();
                     const isLowStock = med.stock <= (med.lowStockAlert || activeThreshold);
@@ -3165,7 +3542,7 @@ export default function Home() {
               </div>
 
               {/* Right: Cart */}
-              <div className="lg:col-span-5">
+              <div id="pos-cart" className="lg:col-span-5">
                 <div className={`ccard cc-indigo p-3 rounded-xl border ${isDarkMode ? 'bg-indigo-950/50 border-indigo-600' : 'bg-indigo-200 border-indigo-400 shadow-sm'}`}>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">🛒 {t("Cart", "কার্ট")} ({cart.length})</h3>
@@ -4852,51 +5229,86 @@ export default function Home() {
               <div className="flex flex-col gap-4">
                 {/* Print-only voucher */}
                 {selectedVoucher && (
-                  <div className="hidden print:block fixed inset-0 bg-white z-[9999] p-8 text-black">
-                    <div className="max-w-sm mx-auto text-center border border-slate-300 p-5 rounded">
-                      <h2 className="font-black text-base uppercase">{pharmacyName}</h2>
-                      <p className="text-sm">{pharmacyAddress}</p>
-                      <div className="border-b border-dashed border-slate-400 my-2"></div>
-                      <h3 className="font-black text-sm uppercase">{t("Purchase Invoice", "ক্রয় ভাউচার")}</h3>
-                      <div className="border-b border-dashed border-slate-400 my-2"></div>
-                      <div className="text-left text-sm flex flex-col gap-0.5 mb-3">
-                        <div className="flex justify-between"><span>{t("Voucher:", "ভাউচার নং:")}</span><span className="font-bold">{selectedVoucher.voucherId}</span></div>
-                        <div className="flex justify-between"><span>{t("Supplier:", "সরবরাহকারী:")}</span><span className="font-bold">{selectedVoucher.companyName}</span></div>
-                        <div className="flex justify-between"><span>{t("Date:", "তারিখ:")}</span><span>{selectedVoucher.dateStr}</span></div>
+                  <div
+                    className="hidden print:block fixed inset-0 z-[9999] p-6"
+                    style={{ background: 'linear-gradient(160deg,#fdf4ff,#eef2ff 45%,#ecfeff)', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact', colorAdjust: 'exact' }}
+                  >
+                    <div className="max-w-sm mx-auto bg-white rounded-2xl border-2 border-violet-300 overflow-hidden font-mono shadow-xl">
+
+                      {/* Branded gradient header */}
+                      <div className="bg-gradient-to-br from-fuchsia-600 via-violet-600 to-indigo-600 text-white text-center px-5 pt-6 pb-5 relative overflow-hidden">
+                        <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-amber-400/30"></div>
+                        <div className="absolute -bottom-8 -left-8 w-28 h-28 rounded-full bg-teal-300/25"></div>
+                        <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-white/20 border border-white/50 flex items-center justify-center font-black text-lg relative overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
+                        <h3 className="font-black text-base uppercase tracking-wide relative">{pharmacyName}</h3>
+                        <p className="text-sm opacity-90 leading-snug mt-0.5 relative">{pharmacySlogan}</p>
+                        <p className="text-sm font-semibold mt-1.5 opacity-95 relative">📍 {pharmacyAddress}</p>
                       </div>
-                      <div className="border-b border-dashed border-slate-400 my-2"></div>
-                      <table className="w-full text-left text-sm border-collapse mb-3">
-                        <thead>
-                          <tr className="font-black border-b border-slate-300">
-                            <th className="py-1">{t("Medicine", "ওষুধ")}</th>
-                            <th className="py-1 text-center">{t("Qty", "পরিমাণ")}</th>
-                            <th className="py-1 text-right">{t("Rate", "মূল্য")}</th>
-                            <th className="py-1 text-right">{t("Total", "মোট")}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedVoucher.items.map((item: any, i: number) => (
-                            <tr key={i} className="border-b border-slate-100">
-                              <td className="py-1">
-                                <div className="font-bold">{item.medicineName}</div>
-                                {item.batchNo && item.batchNo !== 'N/A' && <div className="text-sm text-slate-400">{t("Batch:", "ব্যাচ:")} {item.batchNo}</div>}
-                                {item.expireDate && item.expireDate !== 'N/A' && <div className="text-sm text-slate-400">{t("Exp:", "মেয়াদ:")} {item.expireDate}</div>}
-                              </td>
-                              <td className="py-1 text-center font-mono">{item.quantity}</td>
-                              <td className="py-1 text-right font-mono">{item.unitPrice?.toFixed(2) || '-'}</td>
-                              <td className="py-1 text-right font-mono font-bold">{item.totalCost?.toFixed(1)}</td>
+
+                      <div className="px-5 pb-5" style={{ background: 'linear-gradient(180deg,#fff7ed,#ffffff 30%)' }}>
+                        {/* Ticket-style title pill, sits clearly below the header */}
+                        <div className="flex justify-center mt-3 mb-4">
+                          <span className="bg-slate-900 text-amber-300 text-sm font-black px-4 py-2 rounded-full uppercase tracking-wide shadow-lg border-2 border-amber-400 whitespace-nowrap">📦 {t("Purchase Invoice", "ক্রয় ভাউচার")}</span>
+                        </div>
+
+                        {/* Voucher meta info card */}
+                        <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border-2 border-violet-200 rounded-xl p-3 mb-4 flex flex-col gap-1 text-sm">
+                          <div className="flex justify-between"><span className="text-violet-500 font-semibold">{t("Voucher No:", "ভাউচার নং:")}</span><span className="font-bold text-fuchsia-600">{selectedVoucher.voucherId}</span></div>
+                          <div className="flex justify-between"><span className="text-violet-500 font-semibold">{t("Supplier:", "সরবরাহকারী:")}</span><span className="font-bold text-indigo-700">{selectedVoucher.companyName}</span></div>
+                          <div className="flex justify-between"><span className="text-violet-500 font-semibold">{t("Date:", "তারিখ:")}</span><span className="text-slate-700">{selectedVoucher.dateStr}</span></div>
+                        </div>
+
+                        {/* Items table */}
+                        <table className="w-full text-left border-collapse mb-4 text-sm overflow-hidden rounded-lg">
+                          <thead>
+                            <tr className="bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white">
+                              <th className="py-1.5 px-2 font-bold rounded-l-lg">{t("Medicine", "ওষুধ")}</th>
+                              <th className="py-1.5 px-2 font-mono text-center font-bold">{t("Qty", "পরিমাণ")}</th>
+                              <th className="py-1.5 px-2 font-mono text-right font-bold">{t("Rate", "মূল্য")}</th>
+                              <th className="py-1.5 px-2 font-mono text-right font-bold rounded-r-lg">{t("Total", "মোট")}</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <div className="border-b border-dashed border-slate-400 my-2"></div>
-                      <div className="flex flex-col gap-1 text-sm text-right font-semibold">
-                        <div className="flex justify-between"><span>{t("Total Cost:", "মোট খরচ:")}</span><span className="font-mono font-black">{selectedVoucher.totalCost.toFixed(1)} {currencySymbol}</span></div>
-                        <div className="flex justify-between"><span>{t("Paid:", "পরিশোধ:")}</span><span className="font-mono text-emerald-600">{selectedVoucher.totalPaid.toFixed(1)} {currencySymbol}</span></div>
-                        {selectedVoucher.totalDue > 0 && <div className="flex justify-between text-red-600 font-black"><span>{t("Due:", "বাকি:")}</span><span className="font-mono">{selectedVoucher.totalDue.toFixed(1)} {currencySymbol}</span></div>}
+                          </thead>
+                          <tbody>
+                            {selectedVoucher.items.map((item: any, i: number) => (
+                              <tr key={i} className={i % 2 === 1 ? 'bg-amber-50' : 'bg-teal-50/60'}>
+                                <td className="py-1.5 px-2 border-b border-violet-100">
+                                  <span className="block font-bold text-indigo-800">{item.medicineName}</span>
+                                  {item.batchNo && item.batchNo !== 'N/A' && <span className="block text-sm text-fuchsia-500 italic">{t("Batch:", "ব্যাচ:")} {item.batchNo}</span>}
+                                  {item.expireDate && item.expireDate !== 'N/A' && <span className="block text-sm text-rose-500 italic">{t("Exp:", "মেয়াদ:")} {item.expireDate}</span>}
+                                </td>
+                                <td className="py-1.5 px-2 font-mono text-center font-bold text-violet-700 border-b border-violet-100">{item.quantity}</td>
+                                <td className="py-1.5 px-2 font-mono text-right text-slate-600 border-b border-violet-100">{item.unitPrice?.toFixed(2) || '-'}</td>
+                                <td className="py-1.5 px-2 font-mono text-right font-bold text-emerald-600 border-b border-violet-100">{item.totalCost?.toFixed(1)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+
+                        {/* Totals card */}
+                        <div className="bg-gradient-to-br from-sky-50 to-teal-50 border-2 border-teal-200 rounded-xl p-3 flex flex-col gap-1.5 text-sm text-right font-semibold mb-4">
+                          <div className="flex justify-between"><span className="text-sky-500">{t("Total Cost:", "মোট খরচ:")}</span><span className="font-mono text-indigo-700">{selectedVoucher.totalCost.toFixed(1)} {currencySymbol}</span></div>
+                          <div className="flex justify-between"><span className="text-sky-500">{t("Paid:", "পরিশোধ:")}</span><span className="font-mono text-emerald-600">{selectedVoucher.totalPaid.toFixed(1)} {currencySymbol}</span></div>
+
+                          {selectedVoucher.totalDue > 0 ? (
+                            <div className="flex justify-between items-center bg-gradient-to-r from-rose-600 to-red-500 text-white rounded-lg px-3 py-2 mt-0.5 shadow">
+                              <span className="uppercase text-sm font-black tracking-wide">⚠️ {t("Due", "বাকি")}</span>
+                              <span className="font-mono text-base font-black">{selectedVoucher.totalDue.toFixed(1)} {currencySymbol}</span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between items-center bg-gradient-to-r from-emerald-600 to-teal-500 text-white rounded-lg px-3 py-2 mt-0.5 shadow">
+                              <span className="uppercase text-sm font-black tracking-wide">{t("Fully Paid", "সম্পূর্ণ পরিশোধিত")}</span>
+                              <span className="font-mono text-base font-black">✓</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="text-center border-t-2 border-dashed border-violet-300 pt-3">
+                          <p className="text-sm tracking-[0.3em] text-amber-400 mb-1.5">✦ ✦ ✦ ✦ ✦</p>
+                          <p className="text-sm font-black uppercase tracking-tight bg-gradient-to-r from-fuchsia-600 to-indigo-600 bg-clip-text text-transparent">{t("Thank You!", "ধন্যবাদ!")}</p>
+                          <p className="text-sm text-slate-400 mt-1">{pharmacyName} · {pharmacyAddress}</p>
+                        </div>
                       </div>
-                      <div className="border-b border-dashed border-slate-400 my-3"></div>
-                      <p className="text-sm font-bold uppercase">{t("Thank you!", "ধন্যবাদ!")}</p>
                     </div>
                   </div>
                 )}
@@ -5012,6 +5424,157 @@ export default function Home() {
           })()}
 
           {/* =========================================================
+              TAB 4B: COMPANY PURCHASE HISTORY (lifetime totals per company)
+          ========================================================= */}
+          {activeTab === "company_purchase_history" && checkShouldRenderTabOption("company_purchase_history_view") && (
+            <div className={`ccard cc-violet p-4 rounded-xl border shadow-sm print:p-0 print:border-none print:shadow-none print:bg-transparent print:rounded-none ${isDarkMode ? 'bg-violet-950/40 border-violet-600' : 'bg-violet-50 border-violet-300'}`}>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2 print:hidden">
+                <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">🏭 {t("Company Purchase History", "কোম্পানি ক্রয় ইতিহাস")}</h3>
+                <div className="flex items-center gap-3">
+                  <div className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {t("Total Purchased:", "মোট ক্রয়:")} <span className="text-violet-500 font-mono font-black">{grandTotalPurchaseCost.toFixed(1)} {currencySymbol}</span>
+                  </div>
+                  <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">🖨️ {t("Print", "প্রিন্ট")}</button>
+                </div>
+              </div>
+
+              {/* Search Bar */}
+              <div className="mb-3 print:hidden">
+                <input
+                  type="text"
+                  value={companyPurchaseSearch}
+                  onChange={e => setCompanyPurchaseSearch(e.target.value)}
+                  placeholder={t("Search by company name...", "কোম্পানির নাম দিয়ে খুঁজুন...")}
+                  className={`w-full px-3 py-2 rounded-xl border text-sm outline-none transition ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-800 placeholder-slate-400'}`}
+                />
+              </div>
+
+              {companyPurchaseSummary.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 italic text-sm">{t("No purchase history yet.", "এখনো কোনো ক্রয়ের ইতিহাস নেই।")}</div>
+              ) : (() => {
+                const filtered = companyPurchaseSearch.trim()
+                  ? companyPurchaseSummary.filter((c: any) => c.company.toLowerCase().includes(companyPurchaseSearch.toLowerCase()))
+                  : companyPurchaseSummary;
+                const grandQty = filtered.reduce((s: number, c: any) => s + c.totalQty, 0);
+                const grandCost = filtered.reduce((s: number, c: any) => s + c.totalCost, 0);
+                const grandCount = filtered.reduce((s: number, c: any) => s + c.purchaseCount, 0);
+
+                return (
+                  <>
+                    {/* Screen view */}
+                    <div className="overflow-x-auto print:hidden">
+                      {filtered.length === 0 ? (
+                        <div className="text-center py-8 text-slate-400 italic text-sm">{t("No results found.", "কোনো ফলাফল পাওয়া যায়নি।")}</div>
+                      ) : (
+                      <table className="w-full text-left text-sm border-collapse" style={{minWidth:'500px'}}>
+                        <thead>
+                          <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                            <th className="p-2.5">#</th>
+                            <th className="p-2.5">{t("Company Name", "কোম্পানির নাম")}</th>
+                            <th className="p-2.5 text-right">{t("Total Quantity Purchased", "মোট ক্রয়কৃত পরিমাণ")}</th>
+                            <th className="p-2.5 text-right">{t("Total Amount", "মোট টাকা")}</th>
+                            <th className="p-2.5 text-center">{t("Purchases", "ক্রয় সংখ্যা")}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700/10">
+                          {filtered.map((c: any, idx: number) => (
+                            <tr key={c.company} className="hover:bg-slate-500/5 transition-colors">
+                              <td className="p-2.5 text-slate-400">{idx + 1}</td>
+                              <td className="p-2.5 font-black">{c.company}</td>
+                              <td className="p-2.5 text-right font-mono text-slate-400">{c.totalQty} {t("pcs", "টি")}</td>
+                              <td className="p-2.5 text-right font-mono font-black text-violet-500 text-sm">{c.totalCost.toFixed(1)} {currencySymbol}</td>
+                              <td className="p-2.5 text-center font-mono text-slate-400">{c.purchaseCount}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className={`font-black text-sm border-t-2 ${isDarkMode ? 'border-slate-600 bg-slate-900/40' : 'border-slate-300 bg-slate-100'}`}>
+                            <td colSpan={2} className="px-2.5 py-2 text-right uppercase">{t("Total:", "মোট:")}</td>
+                            <td className="px-2.5 py-2 text-right font-mono text-slate-400">{grandQty} {t("pcs", "টি")}</td>
+                            <td className="px-2.5 py-2 text-right font-mono text-violet-500">{grandCost.toFixed(1)} {currencySymbol}</td>
+                            <td className="px-2.5 py-2 text-center font-mono text-slate-400">{grandCount}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                      )}
+                    </div>
+
+                    {/* Colorful print-only report */}
+                    <div className="hidden print:block w-full p-0 cph-print-report">
+                      <div className="w-full bg-white rounded-2xl border-2 border-violet-300 overflow-hidden font-mono shadow-xl">
+
+                        {/* Branded gradient header */}
+                        <div className="bg-gradient-to-br from-fuchsia-600 via-violet-600 to-indigo-600 text-white text-center px-5 pt-6 pb-5 relative overflow-hidden">
+                          <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-amber-400/30"></div>
+                          <div className="absolute -bottom-8 -left-8 w-28 h-28 rounded-full bg-teal-300/25"></div>
+                          <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-white/20 border border-white/50 flex items-center justify-center font-black text-lg relative overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
+                          <h3 className="font-black text-base uppercase tracking-wide relative">{pharmacyName}</h3>
+                          <p className="text-sm opacity-90 leading-snug mt-0.5 relative">{pharmacySlogan}</p>
+                          <p className="text-sm font-semibold mt-1.5 opacity-95 relative">📍 {pharmacyAddress}</p>
+                        </div>
+
+                        <div className="px-5 pb-5" style={{ background: 'linear-gradient(180deg,#fff7ed,#ffffff 30%)' }}>
+                          {/* Ticket-style title pill */}
+                          <div className="flex justify-center mt-3 mb-4">
+                            <span className="bg-slate-900 text-amber-300 text-sm font-black px-4 py-2 rounded-full uppercase tracking-wide shadow-lg border-2 border-amber-400 whitespace-nowrap">🏭 {t("Company Purchase History", "কোম্পানি ক্রয় ইতিহাস")}</span>
+                          </div>
+
+                          {/* Report meta info card */}
+                          <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border-2 border-violet-200 rounded-xl p-3 mb-4 flex flex-col gap-1 text-sm">
+                            <div className="flex justify-between"><span className="text-violet-500 font-semibold">{t("Generated On:", "তৈরি হয়েছে:")}</span><span className="font-bold text-indigo-700">{new Date().toLocaleDateString()}</span></div>
+                            <div className="flex justify-between"><span className="text-violet-500 font-semibold">{t("Companies Listed:", "কোম্পানি সংখ্যা:")}</span><span className="font-bold text-fuchsia-600">{filtered.length}</span></div>
+                          </div>
+
+                          {/* Companies table */}
+                          <table className="w-full text-left border-collapse mb-4 text-sm overflow-hidden rounded-lg">
+                            <thead>
+                              <tr className="bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white">
+                                <th className="py-1.5 px-2 font-bold rounded-l-lg">#</th>
+                                <th className="py-1.5 px-2 font-bold">{t("Company Name", "কোম্পানির নাম")}</th>
+                                <th className="py-1.5 px-2 font-mono text-right font-bold">{t("Qty", "পরিমাণ")}</th>
+                                <th className="py-1.5 px-2 font-mono text-right font-bold">{t("Amount", "টাকা")}</th>
+                                <th className="py-1.5 px-2 font-mono text-center font-bold rounded-r-lg">{t("Purchases", "ক্রয়")}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filtered.map((c: any, idx: number) => (
+                                <tr key={c.company} className={idx % 2 === 1 ? 'bg-amber-50' : 'bg-teal-50/60'}>
+                                  <td className="py-1.5 px-2 border-b border-violet-100 text-slate-400">{idx + 1}</td>
+                                  <td className="py-1.5 px-2 border-b border-violet-100 font-bold text-indigo-800">{c.company}</td>
+                                  <td className="py-1.5 px-2 font-mono text-right border-b border-violet-100 text-slate-600">{c.totalQty} {t("pcs", "টি")}</td>
+                                  <td className="py-1.5 px-2 font-mono text-right border-b border-violet-100 font-bold text-emerald-600">{c.totalCost.toFixed(1)} {currencySymbol}</td>
+                                  <td className="py-1.5 px-2 font-mono text-center border-b border-violet-100 font-bold text-violet-700">{c.purchaseCount}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+
+                          {/* Totals card */}
+                          <div className="bg-gradient-to-br from-sky-50 to-teal-50 border-2 border-teal-200 rounded-xl p-3 flex flex-col gap-1.5 text-sm text-right font-semibold mb-4">
+                            <div className="flex justify-between"><span className="text-sky-500">{t("Total Quantity:", "মোট পরিমাণ:")}</span><span className="font-mono text-indigo-700">{grandQty} {t("pcs", "টি")}</span></div>
+                            <div className="flex justify-between"><span className="text-sky-500">{t("Total Purchases:", "মোট ক্রয় সংখ্যা:")}</span><span className="font-mono text-indigo-700">{grandCount}</span></div>
+                            <div className="flex justify-between items-center bg-gradient-to-r from-emerald-600 to-teal-500 text-white rounded-lg px-3 py-2 mt-0.5 shadow">
+                              <span className="uppercase text-sm font-black tracking-wide">{t("Grand Total", "সর্বমোট")}</span>
+                              <span className="font-mono text-base font-black">{grandCost.toFixed(1)} {currencySymbol}</span>
+                            </div>
+                          </div>
+
+                          {/* Footer */}
+                          <div className="text-center border-t-2 border-dashed border-violet-300 pt-3">
+                            <p className="text-sm tracking-[0.3em] text-amber-400 mb-1.5">✦ ✦ ✦ ✦ ✦</p>
+                            <p className="text-sm font-black uppercase tracking-tight bg-gradient-to-r from-fuchsia-600 to-indigo-600 bg-clip-text text-transparent">{t("End of Report", "প্রতিবেদনের সমাপ্তি")}</p>
+                            <p className="text-sm text-slate-400 mt-1">{pharmacyName} · {pharmacyAddress}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* =========================================================
               TAB 5: INVOICES
           ========================================================= */}
           {activeTab === "invoices" && checkShouldRenderTabOption("invoices") && (
@@ -5066,6 +5629,7 @@ export default function Home() {
                         <td className="p-2.5 text-center">
                           <div className="flex gap-2 justify-center">
                             <button onClick={() => viewInvoiceLog(inv)} className="bg-slate-500 hover:bg-slate-600 text-white font-bold text-sm px-2 py-0.5 rounded transition">🔍</button>
+                            <button onClick={() => { setLastInvoice(inv); setShowReceipt(true); setTimeout(() => { playSound('print'); window.print(); }, 300); }} className="bg-teal-500/10 text-teal-500 hover:bg-teal-500 hover:text-white font-bold text-sm px-2 py-0.5 rounded transition">🖨️</button>
                             {checkShouldRenderTabOption("returns") && !inv.isReturned && (
                               <button onClick={() => openReturnInterface(inv)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 py-0.5 rounded transition">🔄</button>
                             )}
@@ -5087,8 +5651,8 @@ export default function Home() {
               TAB 6: DUE LIST
           ========================================================= */}
           {activeTab === "due_list" && checkShouldRenderTabOption("due_list_view") && (
-            <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-rose-950/50 border-rose-600' : 'bg-rose-50 border-rose-300'}`}>
-              <div className="flex items-center justify-between mb-3">
+            <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm print:p-0 print:border-none print:shadow-none print:bg-transparent print:rounded-none ${isDarkMode ? 'bg-rose-950/50 border-rose-600' : 'bg-rose-50 border-rose-300'}`}>
+              <div className="flex items-center justify-between mb-3 print:hidden">
                 <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">💳 {t("Customer Due List", "গ্রাহকের বাকি তালিকা")}</h3>
                 <div className="flex items-center gap-3">
                   <div className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -5099,7 +5663,7 @@ export default function Home() {
               </div>
 
               {/* Search Bar */}
-              <div className="mb-3">
+              <div className="mb-3 print:hidden">
                 <input
                   type="text"
                   value={dueSearch}
@@ -5111,66 +5675,295 @@ export default function Home() {
 
               {dueList.length === 0 ? (
                 <div className="text-center py-12 text-slate-400 italic text-sm">{t("No outstanding dues.", "কোনো বাকি নেই।")}</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  {(() => {
-                    const filtered = dueSearch.trim()
-                      ? dueList.filter(d =>
-                          d.customerName.toLowerCase().includes(dueSearch.toLowerCase()) ||
-                          (d.phone && d.phone.includes(dueSearch))
-                        )
-                      : dueList;
-                    return filtered.length === 0 ? (
-                      <div className="text-center py-8 text-slate-400 italic text-sm">{t("No results found.", "কোনো ফলাফল পাওয়া যায়নি।")}</div>
-                    ) : (
-                  <table className="w-full text-left text-sm border-collapse" style={{minWidth:'500px'}}>
-                    <thead>
-                      <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                        <th className="p-2.5">#</th>
-                        <th className="p-2.5">{t("Customer Name", "গ্রাহকের নাম")}</th>
-                        <th className="p-2.5">{t("Phone", "ফোন")}</th>
-                        <th className="p-2.5">{t("Invoices", "রশিদ")}</th>
-                        <th className="p-2.5 text-right">{t("Total Due", "মোট বাকি")}</th>
-                        <th className="p-2.5 text-center">{t("Action", "কার্যক্রম")}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-700/10">
-                      {filtered.map((due, idx) => (
-                        <tr key={due.id} className="hover:bg-slate-500/5 transition-colors">
-                          <td className="p-2.5 text-slate-400">{idx + 1}</td>
-                          <td className="p-2.5 font-black">{due.customerName}</td>
-                          <td className="p-2.5 font-mono text-slate-400">{due.phone}</td>
-                          <td className="p-2.5 text-slate-400 text-sm">
-                            {due.invoices.map((inv: any) => (
-                              <span key={inv.invoiceId} className="mr-2">{inv.invoiceId} ({inv.amount.toFixed(1)})</span>
-                            ))}
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-black text-red-500 text-sm">{due.totalDue.toFixed(1)} {currencySymbol}</td>
-                          <td className="p-2.5 text-center">
-                            <button onClick={() => { setDuePaymentModal(due); setDuePayAmount(""); }} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1 rounded transition">
-                              💰 {t("Collect Payment", "পরিশোধ নিন")}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                    );
-                  })()}
+              ) : (() => {
+                const filtered = dueSearch.trim()
+                  ? dueList.filter(d =>
+                      d.customerName.toLowerCase().includes(dueSearch.toLowerCase()) ||
+                      (d.phone && d.phone.includes(dueSearch))
+                    )
+                  : dueList;
+                const grandDue = filtered.reduce((s: number, d: any) => s + d.totalDue, 0);
+
+                return (
+                  <>
+                    {/* Screen view */}
+                    <div className="overflow-x-auto print:hidden">
+                      {filtered.length === 0 ? (
+                        <div className="text-center py-8 text-slate-400 italic text-sm">{t("No results found.", "কোনো ফলাফল পাওয়া যায়নি।")}</div>
+                      ) : (
+                      <table className="w-full text-left text-sm border-collapse" style={{minWidth:'500px'}}>
+                        <thead>
+                          <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                            <th className="p-2.5">#</th>
+                            <th className="p-2.5">{t("Customer Name", "গ্রাহকের নাম")}</th>
+                            <th className="p-2.5">{t("Phone", "ফোন")}</th>
+                            <th className="p-2.5">{t("Invoices", "রশিদ")}</th>
+                            <th className="p-2.5 text-right">{t("Total Due", "মোট বাকি")}</th>
+                            <th className="p-2.5 text-center">{t("Action", "কার্যক্রম")}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700/10">
+                          {filtered.map((due, idx) => (
+                            <tr key={due.id} className="hover:bg-slate-500/5 transition-colors">
+                              <td className="p-2.5 text-slate-400">{idx + 1}</td>
+                              <td className="p-2.5 font-black">{due.customerName}</td>
+                              <td className="p-2.5 font-mono text-slate-400">{due.phone}</td>
+                              <td className="p-2.5 text-slate-400 text-sm">
+                                {due.invoices.map((inv: any) => (
+                                  <span key={inv.invoiceId} className="mr-2">{inv.invoiceId} ({inv.amount.toFixed(1)})</span>
+                                ))}
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-black text-red-500 text-sm">{due.totalDue.toFixed(1)} {currencySymbol}</td>
+                              <td className="p-2.5 text-center">
+                                <button onClick={() => { setDuePaymentModal(due); setDuePayAmount(""); }} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1 rounded transition">
+                                  💰 {t("Collect Payment", "পরিশোধ নিন")}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      )}
+                    </div>
+
+                    {/* Colorful print-only report */}
+                    <div className="hidden print:block w-full p-0 cph-print-report">
+                      <div className="w-full bg-white rounded-2xl border-2 border-violet-300 overflow-hidden font-mono shadow-xl">
+
+                        {/* Branded gradient header */}
+                        <div className="bg-gradient-to-br from-rose-600 via-red-600 to-amber-500 text-white text-center px-5 pt-6 pb-5 relative overflow-hidden">
+                          <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-amber-300/30"></div>
+                          <div className="absolute -bottom-8 -left-8 w-28 h-28 rounded-full bg-rose-300/25"></div>
+                          <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-white/20 border border-white/50 flex items-center justify-center font-black text-lg relative overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
+                          <h3 className="font-black text-base uppercase tracking-wide relative">{pharmacyName}</h3>
+                          <p className="text-sm opacity-90 leading-snug mt-0.5 relative">{pharmacySlogan}</p>
+                          <p className="text-sm font-semibold mt-1.5 opacity-95 relative">📍 {pharmacyAddress}</p>
+                        </div>
+
+                        <div className="px-5 pb-5" style={{ background: 'linear-gradient(180deg,#fff1f2,#ffffff 30%)' }}>
+                          {/* Ticket-style title pill */}
+                          <div className="flex justify-center mt-3 mb-4">
+                            <span className="bg-slate-900 text-amber-300 text-sm font-black px-4 py-2 rounded-full uppercase tracking-wide shadow-lg border-2 border-amber-400 whitespace-nowrap">💳 {t("Customer Due List", "গ্রাহকের বাকি তালিকা")}</span>
+                          </div>
+
+                          {/* Report meta info card */}
+                          <div className="bg-gradient-to-br from-rose-50 to-orange-50 border-2 border-rose-200 rounded-xl p-3 mb-4 flex flex-col gap-1 text-sm">
+                            <div className="flex justify-between"><span className="text-rose-500 font-semibold">{t("Generated On:", "তৈরি হয়েছে:")}</span><span className="font-bold text-red-700">{new Date().toLocaleDateString()}</span></div>
+                            <div className="flex justify-between"><span className="text-rose-500 font-semibold">{t("Customers Listed:", "গ্রাহক সংখ্যা:")}</span><span className="font-bold text-amber-600">{filtered.length}</span></div>
+                          </div>
+
+                          {/* Due table */}
+                          <table className="w-full text-left border-collapse mb-4 text-sm overflow-hidden rounded-lg">
+                            <thead>
+                              <tr className="bg-gradient-to-r from-rose-600 to-amber-500 text-white">
+                                <th className="py-1.5 px-2 font-bold rounded-l-lg">#</th>
+                                <th className="py-1.5 px-2 font-bold">{t("Customer", "গ্রাহক")}</th>
+                                <th className="py-1.5 px-2 font-mono font-bold">{t("Phone", "ফোন")}</th>
+                                <th className="py-1.5 px-2 font-bold">{t("Invoices", "রশিদ")}</th>
+                                <th className="py-1.5 px-2 font-mono text-right font-bold rounded-r-lg">{t("Total Due", "মোট বাকি")}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filtered.map((due: any, idx: number) => (
+                                <tr key={due.id} className={idx % 2 === 1 ? 'bg-amber-50' : 'bg-rose-50/60'}>
+                                  <td className="py-1.5 px-2 border-b border-rose-100 text-slate-400">{idx + 1}</td>
+                                  <td className="py-1.5 px-2 border-b border-rose-100 font-bold text-red-800">{due.customerName}</td>
+                                  <td className="py-1.5 px-2 border-b border-rose-100 font-mono text-slate-600">{due.phone}</td>
+                                  <td className="py-1.5 px-2 border-b border-rose-100 text-sm text-violet-600">
+                                    {due.invoices.map((inv: any) => (
+                                      <span key={inv.invoiceId} className="mr-2">{inv.invoiceId} ({inv.amount.toFixed(1)})</span>
+                                    ))}
+                                  </td>
+                                  <td className="py-1.5 px-2 font-mono text-right border-b border-rose-100 font-bold text-red-600">{due.totalDue.toFixed(1)} {currencySymbol}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+
+                          {/* Totals card */}
+                          <div className="bg-gradient-to-br from-orange-50 to-amber-50 border-2 border-amber-200 rounded-xl p-3 flex flex-col gap-1.5 text-sm text-right font-semibold mb-4">
+                            <div className="flex justify-between items-center bg-gradient-to-r from-rose-600 to-red-500 text-white rounded-lg px-3 py-2 mt-0.5 shadow">
+                              <span className="uppercase text-sm font-black tracking-wide">⚠️ {t("Grand Total Due", "সর্বমোট বাকি")}</span>
+                              <span className="font-mono text-base font-black">{grandDue.toFixed(1)} {currencySymbol}</span>
+                            </div>
+                          </div>
+
+                          {/* Footer */}
+                          <div className="text-center border-t-2 border-dashed border-rose-300 pt-3">
+                            <p className="text-sm tracking-[0.3em] text-amber-400 mb-1.5">✦ ✦ ✦ ✦ ✦</p>
+                            <p className="text-sm font-black uppercase tracking-tight bg-gradient-to-r from-rose-600 to-amber-500 bg-clip-text text-transparent">{t("End of Report", "প্রতিবেদনের সমাপ্তি")}</p>
+                            <p className="text-sm text-slate-400 mt-1">{pharmacyName} · {pharmacyAddress}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* =========================================================
+              TAB 6B: DUE COLLECTION LIST (history of who paid off dues)
+          ========================================================= */}
+          {activeTab === "due_collection" && checkShouldRenderTabOption("due_collection_view") && (
+            <div className={`ccard cc-emerald p-4 rounded-xl border shadow-sm print:p-0 print:border-none print:shadow-none print:bg-transparent print:rounded-none ${isDarkMode ? 'bg-emerald-950/40 border-emerald-600' : 'bg-emerald-50 border-emerald-300'}`}>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2 print:hidden">
+                <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">📒 {t("Due Collection List", "বাকি আদায় তালিকা")}</h3>
+                <div className="flex items-center gap-3">
+                  <div className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {t("Total Collected:", "মোট আদায়:")} <span className="text-emerald-500 font-mono font-black">{dueCollectionLog.reduce((sum: number, l: any) => sum + (l.amount || 0), 0).toFixed(1)} {currencySymbol}</span>
+                  </div>
+                  <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">🖨️ {t("Print", "প্রিন্ট")}</button>
                 </div>
-              )}
+              </div>
+
+              {/* Search Bar */}
+              <div className="mb-3 print:hidden">
+                <input
+                  type="text"
+                  value={dueCollectionSearch}
+                  onChange={e => setDueCollectionSearch(e.target.value)}
+                  placeholder={t("Search by name or phone...", "নাম বা নম্বর দিয়ে খুঁজুন...")}
+                  className={`w-full px-3 py-2 rounded-xl border text-sm outline-none transition ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-800 placeholder-slate-400'}`}
+                />
+              </div>
+
+              {dueCollectionLog.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 italic text-sm">{t("No due collections recorded yet.", "এখনো কোনো বাকি আদায় হয়নি।")}</div>
+              ) : (() => {
+                const filtered = dueCollectionSearch.trim()
+                  ? dueCollectionLog.filter((l: any) =>
+                      (l.customerName || "").toLowerCase().includes(dueCollectionSearch.toLowerCase()) ||
+                      (l.phone && l.phone.includes(dueCollectionSearch))
+                    )
+                  : dueCollectionLog;
+                const grandCollected = filtered.reduce((s: number, l: any) => s + (l.amount || 0), 0);
+
+                return (
+                  <>
+                    {/* Screen view */}
+                    <div className="overflow-x-auto print:hidden">
+                      {filtered.length === 0 ? (
+                        <div className="text-center py-8 text-slate-400 italic text-sm">{t("No results found.", "কোনো ফলাফল পাওয়া যায়নি।")}</div>
+                      ) : (
+                      <table className="w-full text-left text-sm border-collapse" style={{minWidth:'500px'}}>
+                        <thead>
+                          <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                            <th className="p-2.5">#</th>
+                            <th className="p-2.5">{t("Customer Name", "গ্রাহকের নাম")}</th>
+                            <th className="p-2.5">{t("Phone", "ফোন")}</th>
+                            <th className="p-2.5">{t("Date", "তারিখ")}</th>
+                            <th className="p-2.5 text-right">{t("Amount Collected", "আদায়কৃত পরিমাণ")}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700/10">
+                          {filtered.map((entry: any, idx: number) => (
+                            <tr key={entry.id} className="hover:bg-slate-500/5 transition-colors">
+                              <td className="p-2.5 text-slate-400">{idx + 1}</td>
+                              <td className="p-2.5 font-black">{entry.customerName}</td>
+                              <td className="p-2.5 font-mono text-slate-400">{entry.phone || "N/A"}</td>
+                              <td className="p-2.5 text-slate-400 text-sm">{entry.dateString}</td>
+                              <td className="p-2.5 text-right font-mono font-black text-emerald-500 text-sm">{(entry.amount || 0).toFixed(1)} {currencySymbol}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      )}
+                    </div>
+
+                    {/* Colorful print-only report */}
+                    <div className="hidden print:block w-full p-0 cph-print-report">
+                      <div className="w-full bg-white rounded-2xl border-2 border-emerald-300 overflow-hidden font-mono shadow-xl">
+
+                        {/* Branded gradient header */}
+                        <div className="bg-gradient-to-br from-emerald-600 via-teal-600 to-sky-500 text-white text-center px-5 pt-6 pb-5 relative overflow-hidden">
+                          <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-amber-300/30"></div>
+                          <div className="absolute -bottom-8 -left-8 w-28 h-28 rounded-full bg-sky-300/25"></div>
+                          <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-white/20 border border-white/50 flex items-center justify-center font-black text-lg relative overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
+                          <h3 className="font-black text-base uppercase tracking-wide relative">{pharmacyName}</h3>
+                          <p className="text-sm opacity-90 leading-snug mt-0.5 relative">{pharmacySlogan}</p>
+                          <p className="text-sm font-semibold mt-1.5 opacity-95 relative">📍 {pharmacyAddress}</p>
+                        </div>
+
+                        <div className="px-5 pb-5" style={{ background: 'linear-gradient(180deg,#ecfdf5,#ffffff 30%)' }}>
+                          {/* Ticket-style title pill */}
+                          <div className="flex justify-center mt-3 mb-4">
+                            <span className="bg-slate-900 text-amber-300 text-sm font-black px-4 py-2 rounded-full uppercase tracking-wide shadow-lg border-2 border-amber-400 whitespace-nowrap">📒 {t("Due Collection List", "বাকি আদায় তালিকা")}</span>
+                          </div>
+
+                          {/* Report meta info card */}
+                          <div className="bg-gradient-to-br from-emerald-50 to-sky-50 border-2 border-emerald-200 rounded-xl p-3 mb-4 flex flex-col gap-1 text-sm">
+                            <div className="flex justify-between"><span className="text-emerald-500 font-semibold">{t("Generated On:", "তৈরি হয়েছে:")}</span><span className="font-bold text-teal-700">{new Date().toLocaleDateString()}</span></div>
+                            <div className="flex justify-between"><span className="text-emerald-500 font-semibold">{t("Entries Listed:", "এন্ট্রি সংখ্যা:")}</span><span className="font-bold text-sky-600">{filtered.length}</span></div>
+                          </div>
+
+                          {/* Collections table */}
+                          <table className="w-full text-left border-collapse mb-4 text-sm overflow-hidden rounded-lg">
+                            <thead>
+                              <tr className="bg-gradient-to-r from-emerald-600 to-sky-500 text-white">
+                                <th className="py-1.5 px-2 font-bold rounded-l-lg">#</th>
+                                <th className="py-1.5 px-2 font-bold">{t("Customer", "গ্রাহক")}</th>
+                                <th className="py-1.5 px-2 font-mono font-bold">{t("Phone", "ফোন")}</th>
+                                <th className="py-1.5 px-2 font-bold">{t("Date", "তারিখ")}</th>
+                                <th className="py-1.5 px-2 font-mono text-right font-bold rounded-r-lg">{t("Amount", "পরিমাণ")}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filtered.map((entry: any, idx: number) => (
+                                <tr key={entry.id} className={idx % 2 === 1 ? 'bg-amber-50' : 'bg-emerald-50/60'}>
+                                  <td className="py-1.5 px-2 border-b border-emerald-100 text-slate-400">{idx + 1}</td>
+                                  <td className="py-1.5 px-2 border-b border-emerald-100 font-bold text-teal-800">{entry.customerName}</td>
+                                  <td className="py-1.5 px-2 border-b border-emerald-100 font-mono text-slate-600">{entry.phone || "N/A"}</td>
+                                  <td className="py-1.5 px-2 border-b border-emerald-100 text-sm text-violet-600">{entry.dateString}</td>
+                                  <td className="py-1.5 px-2 font-mono text-right border-b border-emerald-100 font-bold text-emerald-600">{(entry.amount || 0).toFixed(1)} {currencySymbol}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+
+                          {/* Totals card */}
+                          <div className="bg-gradient-to-br from-sky-50 to-emerald-50 border-2 border-sky-200 rounded-xl p-3 flex flex-col gap-1.5 text-sm text-right font-semibold mb-4">
+                            <div className="flex justify-between items-center bg-gradient-to-r from-emerald-600 to-teal-500 text-white rounded-lg px-3 py-2 mt-0.5 shadow">
+                              <span className="uppercase text-sm font-black tracking-wide">✅ {t("Grand Total Collected", "সর্বমোট আদায়")}</span>
+                              <span className="font-mono text-base font-black">{grandCollected.toFixed(1)} {currencySymbol}</span>
+                            </div>
+                          </div>
+
+                          {/* Footer */}
+                          <div className="text-center border-t-2 border-dashed border-emerald-300 pt-3">
+                            <p className="text-sm tracking-[0.3em] text-amber-400 mb-1.5">✦ ✦ ✦ ✦ ✦</p>
+                            <p className="text-sm font-black uppercase tracking-tight bg-gradient-to-r from-emerald-600 to-sky-500 bg-clip-text text-transparent">{t("End of Report", "প্রতিবেদনের সমাপ্তি")}</p>
+                            <p className="text-sm text-slate-400 mt-1">{pharmacyName} · {pharmacyAddress}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
           {/* =========================================================
               TAB 7: RETURNS
           ========================================================= */}
-          {activeTab === "returns" && checkShouldRenderTabOption("returns") && (
+          {activeTab === "returns" && checkShouldRenderTabOption("returns") && (() => {
+            const returnsList = invoices.filter(i => i.isReturned && i.returnDetails);
+            const totalRefund = returnsList.reduce((s, i) => s + i.returnDetails.refundedAmount, 0);
+            const cashCount = returnsList.filter(i => i.returnDetails.action === 'CASH_REFUND').length;
+            const creditCount = returnsList.length - cashCount;
+            return (
             <div className={`ccard cc-green p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-green-950/50 border-green-600' : 'bg-green-50 border-green-300'}`}>
-              <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-2">🔄 {t("Returns & Exchanges", "ফেরত ও বিনিময়")}</h3>
-              <p className="text-sm text-slate-400 mb-4">{t("Log of orders where a return or exchange was processed.", "যে সব অর্ডার ফেরত বা বিনিময় করা হয়েছে।")}</p>
+              <div className="flex items-center justify-between mb-2 print:hidden">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">🔄 {t("Returns & Exchanges", "ফেরত ও বিনিময়")}</h3>
+                  <p className="text-sm text-slate-400 mt-0.5">{t("Log of orders where a return or exchange was processed.", "যে সব অর্ডার ফেরত বা বিনিময় করা হয়েছে।")}</p>
+                </div>
+                <button onClick={() => window.print()} className="bg-pink-500 hover:bg-pink-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow">🖨️ {t("Print", "প্রিন্ট")}</button>
+              </div>
 
-              <div className="overflow-x-auto w-full">
+              <div className="overflow-x-auto w-full print:hidden">
                 <table className="w-full text-left text-sm border-collapse" style={{minWidth:'600px'}}>
                   <thead>
                     <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
@@ -5183,7 +5976,7 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-700/10">
-                    {invoices.filter(i => i.isReturned && i.returnDetails).map(inv => (
+                    {returnsList.map(inv => (
                       <tr key={inv.invoiceId} className="hover:bg-slate-500/5">
                         <td className="p-2.5 font-mono font-black text-red-400">{inv.invoiceId}</td>
                         <td className="p-2.5 font-bold">{inv.customer}</td>
@@ -5197,14 +5990,103 @@ export default function Home() {
                         <td className="p-2.5 text-slate-400 italic truncate max-w-xs">{inv.returnDetails.reason}</td>
                       </tr>
                     ))}
-                    {invoices.filter(i => i.isReturned).length === 0 && (
+                    {returnsList.length === 0 && (
                       <tr><td colSpan={6} className="text-center p-8 text-slate-400 italic">{t("No returns logged.", "কোনো ফেরত নেই।")}</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
+
+              {/* Colorful print-only report */}
+              <div className="hidden print:block w-full p-0 cph-print-report">
+                <div className="w-full bg-white rounded-2xl border-2 border-pink-300 overflow-hidden font-mono shadow-xl">
+
+                  {/* Branded gradient header */}
+                  <div className="bg-gradient-to-br from-rose-600 via-pink-600 to-fuchsia-600 text-white text-center px-5 pt-6 pb-5 relative overflow-hidden">
+                    <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-amber-300/25"></div>
+                    <div className="absolute -bottom-8 -left-8 w-28 h-28 rounded-full bg-teal-300/25"></div>
+                    <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-white/20 border border-white/50 flex items-center justify-center font-black text-lg relative overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
+                    <h3 className="font-black text-base uppercase tracking-wide relative">{pharmacyName}</h3>
+                    <p className="text-sm opacity-90 leading-snug mt-0.5 relative">{pharmacySlogan}</p>
+                    <p className="text-sm font-semibold mt-1.5 opacity-95 relative">📍 {pharmacyAddress}</p>
+                  </div>
+
+                  <div className="px-5 pb-5" style={{ background: 'linear-gradient(180deg,#fdf2f8,#ffffff 30%)' }}>
+                    {/* Ticket-style title pill */}
+                    <div className="flex justify-center mt-3 mb-4">
+                      <span className="bg-slate-900 text-amber-300 text-sm font-black px-4 py-2 rounded-full uppercase tracking-wide shadow-lg border-2 border-amber-400 whitespace-nowrap">🔄 {t("Returns & Exchanges", "ফেরত ও বিনিময়")}</span>
+                    </div>
+
+                    {/* Report meta info card */}
+                    <div className="bg-gradient-to-br from-pink-50 to-rose-50 border-2 border-pink-200 rounded-xl p-3 mb-4 flex flex-col gap-1 text-sm">
+                      <div className="flex justify-between"><span className="text-pink-500 font-semibold">{t("Generated On:", "তৈরি হয়েছে:")}</span><span className="font-bold text-fuchsia-700">{new Date().toLocaleDateString()}</span></div>
+                      <div className="flex justify-between"><span className="text-pink-500 font-semibold">{t("Total Returns:", "মোট ফেরত:")}</span><span className="font-bold text-rose-600">{returnsList.length}</span></div>
+                    </div>
+
+                    {/* Summary cards row */}
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-xl p-2.5 text-center">
+                        <p className="text-sm font-bold uppercase text-amber-500">{t("Cash Refunds", "নগদ ফেরত")}</p>
+                        <p className="text-base font-black text-amber-700">{cashCount}</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-indigo-50 to-violet-50 border-2 border-indigo-200 rounded-xl p-2.5 text-center">
+                        <p className="text-sm font-bold uppercase text-indigo-500">{t("Store Credits", "স্টোর ক্রেডিট")}</p>
+                        <p className="text-base font-black text-indigo-700">{creditCount}</p>
+                      </div>
+                    </div>
+
+                    {/* Returns table */}
+                    <table className="w-full text-left border-collapse mb-4 text-sm overflow-hidden rounded-lg">
+                      <thead>
+                        <tr className="bg-gradient-to-r from-rose-600 to-fuchsia-600 text-white">
+                          <th className="py-1.5 px-2 font-bold rounded-l-lg">{t("Invoice", "রশিদ")}</th>
+                          <th className="py-1.5 px-2 font-bold">{t("Customer", "গ্রাহক")}</th>
+                          <th className="py-1.5 px-2 font-bold">{t("Type", "ধরন")}</th>
+                          <th className="py-1.5 px-2 font-mono text-right font-bold">{t("Refund", "ফেরত টাকা")}</th>
+                          <th className="py-1.5 px-2 font-bold rounded-r-lg">{t("Date", "তারিখ")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {returnsList.map((inv, idx) => (
+                          <tr key={inv.invoiceId} className={idx % 2 === 1 ? 'bg-pink-50' : 'bg-rose-50/50'}>
+                            <td className="py-1.5 px-2 border-b border-pink-100 font-bold text-fuchsia-800">{inv.invoiceId}</td>
+                            <td className="py-1.5 px-2 border-b border-pink-100 text-slate-600">{inv.customer}</td>
+                            <td className="py-1.5 px-2 border-b border-pink-100">
+                              <span className={`text-sm font-black px-1.5 py-0.5 rounded ${inv.returnDetails.action === 'CASH_REFUND' ? 'bg-amber-500/10 text-amber-600' : 'bg-indigo-500/10 text-indigo-600'}`}>
+                                {inv.returnDetails.action === 'CASH_REFUND' ? t("Cash", "নগদ") : t("Credit", "ক্রেডিট")}
+                              </span>
+                            </td>
+                            <td className="py-1.5 px-2 font-mono text-right border-b border-pink-100 font-bold text-red-600">-{inv.returnDetails.refundedAmount.toFixed(1)} {currencySymbol}</td>
+                            <td className="py-1.5 px-2 border-b border-pink-100 text-slate-500 text-sm">{inv.returnDetails.timestamp}</td>
+                          </tr>
+                        ))}
+                        {returnsList.length === 0 && (
+                          <tr><td colSpan={5} className="text-center p-8 text-slate-400 italic">{t("No returns logged.", "কোনো ফেরত নেই।")}</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+
+                    {/* Totals card */}
+                    <div className="bg-gradient-to-br from-rose-50 to-red-50 border-2 border-red-200 rounded-xl p-3 flex flex-col gap-1.5 text-sm text-right font-semibold mb-4">
+                      <div className="flex justify-between items-center bg-gradient-to-r from-rose-600 to-red-600 text-white rounded-lg px-3 py-2 mt-0.5 shadow">
+                        <span className="uppercase text-sm font-black tracking-wide">{t("Total Refunded", "মোট ফেরত টাকা")}</span>
+                        <span className="font-mono text-base font-black">{totalRefund.toFixed(1)} {currencySymbol}</span>
+                      </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="text-center border-t-2 border-dashed border-pink-300 pt-3">
+                      <p className="text-sm tracking-[0.3em] text-amber-400 mb-1.5">✦ ✦ ✦ ✦ ✦</p>
+                      <p className="text-sm font-black uppercase tracking-tight bg-gradient-to-r from-rose-600 to-fuchsia-600 bg-clip-text text-transparent">{t("End of Report", "প্রতিবেদনের সমাপ্তি")}</p>
+                      <p className="text-sm text-slate-400 mt-1">{pharmacyName} · {pharmacyAddress}</p>
+                      <p className="text-sm text-slate-400 mt-1">{t("Printed on:", "প্রিন্ট তারিখ:")} {new Date().toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* =========================================================
               TAB: REPORT - Full Stock Report with Print
@@ -5219,15 +6101,8 @@ export default function Home() {
                 <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow">🖨️ {t("Print Report", "রিপোর্ট প্রিন্ট করুন")}</button>
               </div>
 
-              {/* Print Header - only shows on print */}
-              <div className="hidden print:block mb-4 text-center border-b pb-3">
-                <h1 className="text-xl font-black">{pharmacyName}</h1>
-                <p className="text-sm">{pharmacyAddress}</p>
-                <h2 className="text-base font-bold mt-2">{t("Stock Report", "স্টক রিপোর্ট")} — {new Date().toLocaleDateString()}</h2>
-              </div>
-
               {/* Summary Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 print:hidden">
                 <div className={`ccard cc-blue p-3 rounded-xl border text-center ${isDarkMode ? 'bg-blue-950/50 border-blue-600' : 'bg-blue-50 border-blue-300'}`}>
                   <p className={`text-sm font-bold uppercase ${isDarkMode ? 'text-slate-400' : 'text-teal-600'}`}>{t("Total Items", "মোট আইটেম")}</p>
                   <p className="text-xl font-black text-teal-500">{medicines.length}</p>
@@ -5247,7 +6122,7 @@ export default function Home() {
               </div>
 
               {/* Full Medicine Table */}
-              <div className="overflow-x-auto w-full">
+              <div className="overflow-x-auto w-full print:hidden">
                 <table className="w-full text-left text-sm border-collapse" style={{minWidth:'600px'}}>
                   <thead>
                     <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
@@ -5310,9 +6185,104 @@ export default function Home() {
                 </table>
               </div>
 
-              {/* Print footer */}
-              <div className="hidden print:block mt-6 pt-3 border-t text-center text-sm text-slate-500">
-                <p>{t("Printed on:", "প্রিন্ট তারিখ:")} {new Date().toLocaleString()} | {pharmacyName}</p>
+              {/* Colorful print-only report */}
+              <div className="hidden print:block w-full p-0 cph-print-report">
+                <div className="w-full bg-white rounded-2xl border-2 border-orange-300 overflow-hidden font-mono shadow-xl">
+
+                  {/* Branded gradient header */}
+                  <div className="bg-gradient-to-br from-amber-600 via-orange-600 to-rose-600 text-white text-center px-5 pt-6 pb-5 relative overflow-hidden">
+                    <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-teal-300/25"></div>
+                    <div className="absolute -bottom-8 -left-8 w-28 h-28 rounded-full bg-amber-300/25"></div>
+                    <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-white/20 border border-white/50 flex items-center justify-center font-black text-lg relative overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
+                    <h3 className="font-black text-base uppercase tracking-wide relative">{pharmacyName}</h3>
+                    <p className="text-sm opacity-90 leading-snug mt-0.5 relative">{pharmacySlogan}</p>
+                    <p className="text-sm font-semibold mt-1.5 opacity-95 relative">📍 {pharmacyAddress}</p>
+                  </div>
+
+                  <div className="px-5 pb-5" style={{ background: 'linear-gradient(180deg,#fff7ed,#ffffff 30%)' }}>
+                    {/* Ticket-style title pill */}
+                    <div className="flex justify-center mt-3 mb-4">
+                      <span className="bg-slate-900 text-amber-300 text-sm font-black px-4 py-2 rounded-full uppercase tracking-wide shadow-lg border-2 border-amber-400 whitespace-nowrap">📋 {t("Stock Report", "স্টক রিপোর্ট")}</span>
+                    </div>
+
+                    {/* Report meta info card */}
+                    <div className="bg-gradient-to-br from-orange-50 to-amber-50 border-2 border-orange-200 rounded-xl p-3 mb-4 flex flex-col gap-1 text-sm">
+                      <div className="flex justify-between"><span className="text-orange-500 font-semibold">{t("Generated On:", "তৈরি হয়েছে:")}</span><span className="font-bold text-rose-700">{new Date().toLocaleDateString()}</span></div>
+                      <div className="flex justify-between"><span className="text-orange-500 font-semibold">{t("Total Items:", "মোট আইটেম:")}</span><span className="font-bold text-amber-600">{medicines.length}</span></div>
+                    </div>
+
+                    {/* Summary cards row */}
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      <div className="bg-gradient-to-br from-sky-50 to-blue-50 border-2 border-blue-200 rounded-xl p-2.5 text-center">
+                        <p className="text-sm font-bold uppercase text-blue-500">{t("Total Stock (pcs)", "মোট স্টক (পিস)")}</p>
+                        <p className="text-base font-black text-blue-700">{medicines.reduce((s, m) => s + m.stock, 0)}</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-xl p-2.5 text-center">
+                        <p className="text-sm font-bold uppercase text-amber-500">{t("Buy Value", "ক্রয় মূল্য মোট")}</p>
+                        <p className="text-base font-black text-amber-700">{totalStockValue.toFixed(0)} {currencySymbol}</p>
+                      </div>
+                    </div>
+
+                    {/* Full medicine table */}
+                    <table className="w-full text-left border-collapse mb-4 text-sm overflow-hidden rounded-lg">
+                      <thead>
+                        <tr className="bg-gradient-to-r from-amber-600 to-rose-600 text-white">
+                          <th className="py-1.5 px-2 font-bold rounded-l-lg">#</th>
+                          <th className="py-1.5 px-2 font-bold">{t("Medicine", "ওষুধ")}</th>
+                          <th className="py-1.5 px-2 font-bold">{t("Generic", "জেনেরিক")}</th>
+                          <th className="py-1.5 px-2 font-mono text-center font-bold">{t("Stock", "স্টক")}</th>
+                          <th className="py-1.5 px-2 font-mono text-right font-bold">{t("Buy", "ক্রয়")}</th>
+                          <th className="py-1.5 px-2 font-mono text-right font-bold">{t("Sell", "বিক্রয়")}</th>
+                          <th className="py-1.5 px-2 font-mono text-right font-bold rounded-r-lg">{t("Sell Total", "বিক্রয় মোট")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {medicines.map((med, idx) => {
+                          const isLow = med.stock <= (med.lowStockAlert || activeThreshold);
+                          const isExpired = new Date(med.expire) < new Date();
+                          return (
+                            <tr key={med.id} className={idx % 2 === 1 ? 'bg-amber-50' : 'bg-orange-50/50'}>
+                              <td className="py-1.5 px-2 border-b border-orange-100 text-slate-400">{idx + 1}</td>
+                              <td className="py-1.5 px-2 border-b border-orange-100 font-bold text-rose-800">
+                                {med.name}
+                                {isExpired && <span className="ml-1 text-sm bg-red-500/10 text-red-500 font-black px-1 py-0.5 rounded uppercase">{t("Expired", "মেয়াদ শেষ")}</span>}
+                                {!isExpired && isLow && <span className="ml-1 text-sm bg-amber-500/10 text-amber-600 font-black px-1 py-0.5 rounded uppercase">⚠️ {t("Low", "কম")}</span>}
+                              </td>
+                              <td className="py-1.5 px-2 border-b border-orange-100 text-slate-500 italic">{med.generic || '-'}</td>
+                              <td className="py-1.5 px-2 font-mono text-center border-b border-orange-100 font-bold">
+                                <span className={isLow ? 'text-red-500' : 'text-emerald-600'}>{med.stock}</span>
+                              </td>
+                              <td className="py-1.5 px-2 font-mono text-right border-b border-orange-100 text-slate-600">{med.buyPrice.toFixed(1)}</td>
+                              <td className="py-1.5 px-2 font-mono text-right border-b border-orange-100 font-bold text-teal-600">{med.price.toFixed(1)}</td>
+                              <td className="py-1.5 px-2 font-mono text-right border-b border-orange-100 font-bold text-emerald-600">{(med.price * med.stock).toFixed(1)}</td>
+                            </tr>
+                          );
+                        })}
+                        {medicines.length === 0 && (
+                          <tr><td colSpan={7} className="text-center p-8 text-slate-400 italic">{t("No medicines in stock.", "কোনো মাল নেই।")}</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+
+                    {/* Totals card */}
+                    <div className="bg-gradient-to-br from-sky-50 to-teal-50 border-2 border-teal-200 rounded-xl p-3 flex flex-col gap-1.5 text-sm text-right font-semibold mb-4">
+                      <div className="flex justify-between"><span className="text-sky-500">{t("Total Stock:", "মোট স্টক:")}</span><span className="font-mono text-rose-700">{medicines.reduce((s, m) => s + m.stock, 0)} {t("pcs", "টি")}</span></div>
+                      <div className="flex justify-between"><span className="text-sky-500">{t("Buy Value:", "ক্রয় মূল্য:")}</span><span className="font-mono text-amber-700">{totalStockValue.toFixed(1)} {currencySymbol}</span></div>
+                      <div className="flex justify-between items-center bg-gradient-to-r from-emerald-600 to-teal-500 text-white rounded-lg px-3 py-2 mt-0.5 shadow">
+                        <span className="uppercase text-sm font-black tracking-wide">{t("Sell Value", "বিক্রয় মূল্য")}</span>
+                        <span className="font-mono text-base font-black">{totalStockRetailValue.toFixed(1)} {currencySymbol}</span>
+                      </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="text-center border-t-2 border-dashed border-orange-300 pt-3">
+                      <p className="text-sm tracking-[0.3em] text-amber-400 mb-1.5">✦ ✦ ✦ ✦ ✦</p>
+                      <p className="text-sm font-black uppercase tracking-tight bg-gradient-to-r from-amber-600 to-rose-600 bg-clip-text text-transparent">{t("End of Report", "প্রতিবেদনের সমাপ্তি")}</p>
+                      <p className="text-sm text-slate-400 mt-1">{pharmacyName} · {pharmacyAddress}</p>
+                      <p className="text-sm text-slate-400 mt-1">{t("Printed on:", "প্রিন্ট তারিখ:")} {new Date().toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -5331,21 +6301,13 @@ export default function Home() {
                 <button onClick={() => window.print()} className="bg-purple-500 hover:bg-purple-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow print:hidden">🖨️ {t("Print", "প্রিন্ট")}</button>
               </div>
 
-              {/* Print Header */}
-              <div className="hidden print:block mb-4 text-center border-b pb-3">
-                <h1 className="text-xl font-black">{pharmacyName}</h1>
-                <p className="text-sm">{pharmacyAddress}</p>
-                <h2 className="text-base font-bold mt-2">🌙 {t("Daily Closing Report", "দৈনিক ক্লোজিং রিপোর্ট")}</h2>
-                <p className="text-sm text-slate-500">{new Date().toLocaleDateString('bn-BD', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              </div>
-
               {/* Date Badge */}
-              <div className={`text-center mb-4 py-2 rounded-xl font-bold text-sm ${isDarkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-50 text-purple-700 border border-purple-200'}`}>
+              <div className={`text-center mb-4 py-2 rounded-xl font-bold text-sm print:hidden ${isDarkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-50 text-purple-700 border border-purple-200'}`}>
                 📅 {new Date().toLocaleDateString('bn-BD', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               </div>
 
               {/* Summary Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4 print:hidden">
                 {checkShouldRenderTabOption("closing_total_sales") && (
                 <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-emerald-900/30 border-emerald-700' : 'bg-emerald-50 border-emerald-300'}`}>
                   <div className="text-lg font-black text-emerald-500 font-mono">{computedDailySalesAmount.toFixed(0)} {currencySymbol}</div>
@@ -5386,7 +6348,7 @@ export default function Home() {
 
               {/* Due Collection */}
               {checkShouldRenderTabOption("closing_due_collection") && computedDailyDueCollection > 0 && (
-                <div className={`p-3 rounded-xl border mb-4 text-center ${isDarkMode ? 'bg-violet-900/30 border-violet-700' : 'bg-violet-50 border-violet-300'}`}>
+                <div className={`p-3 rounded-xl border mb-4 text-center print:hidden ${isDarkMode ? 'bg-violet-900/30 border-violet-700' : 'bg-violet-50 border-violet-300'}`}>
                   <div className="text-lg font-black text-violet-500 font-mono">{computedDailyDueCollection.toFixed(0)} {currencySymbol}</div>
                   <div className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>💵 {t("Due Collected Today", "আজ বাকি আদায়")}</div>
                 </div>
@@ -5394,7 +6356,7 @@ export default function Home() {
 
               {/* Final Summary Box */}
               {checkShouldRenderTabOption("closing_final_summary") && (
-              <div className={`p-4 rounded-xl border-2 ${isDarkMode ? 'bg-slate-700/50 border-purple-700' : 'bg-purple-50 border-purple-300'}`}>
+              <div className={`p-4 rounded-xl border-2 print:hidden ${isDarkMode ? 'bg-slate-700/50 border-purple-700' : 'bg-purple-50 border-purple-300'}`}>
                 <h4 className="text-sm font-black uppercase tracking-wider text-purple-500 mb-3 text-center">📊 {t("End of Day Summary", "দিনের শেষ হিসাব")}</h4>
                 <div className="flex flex-col gap-2 text-sm">
                   <div className="flex justify-between">
@@ -5425,10 +6387,104 @@ export default function Home() {
               </div>
               )}
 
-              {/* Print Footer */}
-              <div className="hidden print:block mt-6 pt-3 border-t text-center text-sm text-slate-500">
-                <p>{t("Printed on:", "প্রিন্ট তারিখ:")} {new Date().toLocaleString()} | {pharmacyName}</p>
-                <p className="mt-1 font-bold">{t("— Closing Report End —", "— ক্লোজিং রিপোর্ট শেষ —")}</p>
+              {/* Colorful print-only report */}
+              <div className="hidden print:block w-full p-0 cph-print-report">
+                <div className="w-full bg-white rounded-2xl border-2 border-violet-300 overflow-hidden font-mono shadow-xl">
+
+                  {/* Branded gradient header */}
+                  <div className="bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-600 text-white text-center px-5 pt-6 pb-5 relative overflow-hidden">
+                    <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-amber-300/25"></div>
+                    <div className="absolute -bottom-8 -left-8 w-28 h-28 rounded-full bg-teal-300/25"></div>
+                    <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-white/20 border border-white/50 flex items-center justify-center font-black text-lg relative overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
+                    <h3 className="font-black text-base uppercase tracking-wide relative">{pharmacyName}</h3>
+                    <p className="text-sm opacity-90 leading-snug mt-0.5 relative">{pharmacySlogan}</p>
+                    <p className="text-sm font-semibold mt-1.5 opacity-95 relative">📍 {pharmacyAddress}</p>
+                  </div>
+
+                  <div className="px-5 pb-5" style={{ background: 'linear-gradient(180deg,#faf5ff,#ffffff 30%)' }}>
+                    {/* Ticket-style title pill */}
+                    <div className="flex justify-center mt-3 mb-4">
+                      <span className="bg-slate-900 text-amber-300 text-sm font-black px-4 py-2 rounded-full uppercase tracking-wide shadow-lg border-2 border-amber-400 whitespace-nowrap">🌙 {t("Daily Closing Report", "দৈনিক ক্লোজিং রিপোর্ট")}</span>
+                    </div>
+
+                    {/* Date info card */}
+                    <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border-2 border-violet-200 rounded-xl p-3 mb-4 text-center">
+                      <span className="font-bold text-indigo-700 text-sm">📅 {new Date().toLocaleDateString('bn-BD', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                    </div>
+
+                    {/* Summary cards grid */}
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      {checkShouldRenderTabOption("closing_total_sales") && (
+                        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-xl p-2.5 text-center">
+                          <div className="text-base font-black text-emerald-600">{computedDailySalesAmount.toFixed(0)} {currencySymbol}</div>
+                          <div className="text-sm font-bold text-emerald-500 mt-0.5">💰 {t("Total Sales", "মোট বিক্রয়")}</div>
+                        </div>
+                      )}
+                      {checkShouldRenderTabOption("closing_cash_received") && (
+                        <div className="bg-gradient-to-br from-teal-50 to-sky-50 border-2 border-teal-200 rounded-xl p-2.5 text-center">
+                          <div className="text-base font-black text-teal-600">{(computedDailySalesAmount - computedDailyDue).toFixed(0)} {currencySymbol}</div>
+                          <div className="text-sm font-bold text-teal-500 mt-0.5">✅ {t("Cash Received", "নগদ পেয়েছি")}</div>
+                        </div>
+                      )}
+                      {checkShouldRenderTabOption("closing_profit") && (
+                        <div className="bg-gradient-to-br from-sky-50 to-blue-50 border-2 border-blue-200 rounded-xl p-2.5 text-center">
+                          <div className="text-base font-black text-blue-600">{computedDailyProfitAmount.toFixed(0)} {currencySymbol}</div>
+                          <div className="text-sm font-bold text-blue-500 mt-0.5">📈 {t("Today's Profit", "আজকের লাভ")}</div>
+                        </div>
+                      )}
+                      {checkShouldRenderTabOption("closing_due") && (
+                        <div className="bg-gradient-to-br from-rose-50 to-red-50 border-2 border-red-200 rounded-xl p-2.5 text-center">
+                          <div className="text-base font-black text-red-600">{computedDailyDue.toFixed(0)} {currencySymbol}</div>
+                          <div className="text-sm font-bold text-red-500 mt-0.5">⚠️ {t("Today's Due", "আজকের বাকি")}</div>
+                        </div>
+                      )}
+                      {checkShouldRenderTabOption("closing_bkash") && (
+                        <div className="bg-gradient-to-br from-pink-50 to-fuchsia-50 border-2 border-pink-200 rounded-xl p-2.5 text-center">
+                          <div className="text-base font-black text-pink-600">{computedDailyBkash.toFixed(0)} {currencySymbol}</div>
+                          <div className="text-sm font-bold text-pink-500 mt-0.5">📱 {t("bKash/Nagad", "বিকাশ/নগদ")}</div>
+                        </div>
+                      )}
+                      {checkShouldRenderTabOption("closing_discount") && (
+                        <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-xl p-2.5 text-center">
+                          <div className="text-base font-black text-amber-600">{computedDailyDiscount.toFixed(0)} {currencySymbol}</div>
+                          <div className="text-sm font-bold text-amber-500 mt-0.5">🏷️ {t("Discount Given", "ছাড় দিয়েছি")}</div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Due collection */}
+                    {checkShouldRenderTabOption("closing_due_collection") && computedDailyDueCollection > 0 && (
+                      <div className="bg-gradient-to-br from-violet-50 to-purple-50 border-2 border-violet-200 rounded-xl p-3 mb-4 text-center">
+                        <div className="text-base font-black text-violet-600">{computedDailyDueCollection.toFixed(0)} {currencySymbol}</div>
+                        <div className="text-sm font-bold text-violet-500 mt-0.5">💵 {t("Due Collected Today", "আজ বাকি আদায়")}</div>
+                      </div>
+                    )}
+
+                    {/* Final summary card */}
+                    {checkShouldRenderTabOption("closing_final_summary") && (
+                      <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border-2 border-violet-200 rounded-xl p-3 flex flex-col gap-1.5 text-sm text-right font-semibold mb-4">
+                        <h4 className="text-sm font-black uppercase tracking-wider text-violet-600 mb-1 text-center">📊 {t("End of Day Summary", "দিনের শেষ হিসাব")}</h4>
+                        <div className="flex justify-between"><span className="text-violet-400">{t("Total Sales:", "মোট বিক্রয়:")}</span><span className="font-mono text-emerald-600">{computedDailySalesAmount.toFixed(1)} {currencySymbol}</span></div>
+                        <div className="flex justify-between"><span className="text-violet-400">{t("Discount:", "ছাড়:")}</span><span className="font-mono text-amber-600">- {computedDailyDiscount.toFixed(1)} {currencySymbol}</span></div>
+                        <div className="flex justify-between"><span className="text-violet-400">{t("Due Created:", "নতুন বাকি:")}</span><span className="font-mono text-red-600">- {computedDailyDue.toFixed(1)} {currencySymbol}</span></div>
+                        <div className="flex justify-between"><span className="text-violet-400">{t("Due Collected:", "বাকি আদায়:")}</span><span className="font-mono text-violet-600">+ {computedDailyDueCollection.toFixed(1)} {currencySymbol}</span></div>
+                        <div className="flex justify-between items-center bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg px-3 py-2 mt-0.5 shadow">
+                          <span className="uppercase text-sm font-black tracking-wide">{t("Cash in Hand", "মোট নগদ হাতে")}</span>
+                          <span className="font-mono text-base font-black">{(computedDailySalesAmount - computedDailyDue + computedDailyDueCollection).toFixed(1)} {currencySymbol}</span>
+                        </div>
+                        <div className="flex justify-between text-sm"><span className="text-violet-400">{t("Net Profit Today:", "আজকের নিট লাভ:")}</span><span className="font-mono text-blue-600">{computedDailyProfitAmount.toFixed(1)} {currencySymbol}</span></div>
+                      </div>
+                    )}
+
+                    {/* Footer */}
+                    <div className="text-center border-t-2 border-dashed border-violet-300 pt-3">
+                      <p className="text-sm tracking-[0.3em] text-amber-400 mb-1.5">✦ ✦ ✦ ✦ ✦</p>
+                      <p className="text-sm font-black uppercase tracking-tight bg-gradient-to-r from-violet-600 to-indigo-600 bg-clip-text text-transparent">{t("— Closing Report End —", "— ক্লোজিং রিপোর্ট শেষ —")}</p>
+                      <p className="text-sm text-slate-400 mt-1">{pharmacyName} · {pharmacyAddress}</p>
+                      <p className="text-sm text-slate-400 mt-1">{t("Printed on:", "প্রিন্ট তারিখ:")} {new Date().toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -5457,7 +6513,53 @@ export default function Home() {
                   </div>
                   <div>
                     <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Logo Text / Icon (e.g. M+, 💊)", "লোগো টেক্সট/আইকন")}</label>
-                    <input type="text" value={settingsLogo} onChange={e => setSettingsLogo(e.target.value)} className={`w-full px-3 py-2 rounded-xl border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                    <input type="text" value={settingsLogo.startsWith('data:image') ? '' : settingsLogo} onChange={e => setSettingsLogo(e.target.value)} placeholder={settingsLogo.startsWith('data:image') ? t("Image selected — clear to type text", "ছবি নির্বাচিত — টেক্সট লিখতে মুছুন") : ""} className={`w-full px-3 py-2 rounded-xl border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+
+                    <label className={`block text-sm font-bold mb-1 mt-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Or upload a logo image", "অথবা লোগো ছবি আপলোড করুন")}</label>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-14 h-14 rounded-xl border flex items-center justify-center overflow-hidden shrink-0 font-black text-lg ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                        {settingsLogo.startsWith('data:image')
+                          ? <img src={settingsLogo} alt="logo preview" className="w-full h-full object-cover" />
+                          : <span className="text-teal-500">{settingsLogo || "M+"}</span>
+                        }
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            if (!file.type.startsWith('image/')) { alert(t("Please select a valid image file!", "একটি সঠিক ছবি ফাইল নির্বাচন করুন!")); return; }
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const img = new window.Image();
+                              img.onload = () => {
+                                const maxSize = 200;
+                                let w = img.width, h = img.height;
+                                if (w > h) { if (w > maxSize) { h = Math.round(h * (maxSize / w)); w = maxSize; } }
+                                else { if (h > maxSize) { w = Math.round(w * (maxSize / h)); h = maxSize; } }
+                                const canvas = document.createElement('canvas');
+                                canvas.width = w; canvas.height = h;
+                                const ctx = canvas.getContext('2d');
+                                if (ctx) {
+                                  ctx.drawImage(img, 0, 0, w, h);
+                                  const dataUrl = canvas.toDataURL('image/png');
+                                  setSettingsLogo(dataUrl);
+                                }
+                              };
+                              img.src = ev.target?.result as string;
+                            };
+                            reader.readAsDataURL(file);
+                            e.target.value = '';
+                          }}
+                          className={`text-sm w-full file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:font-bold file:text-sm file:bg-teal-500 file:text-white hover:file:bg-teal-600 file:cursor-pointer cursor-pointer ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}
+                        />
+                        {settingsLogo.startsWith('data:image') && (
+                          <button onClick={() => setSettingsLogo("M+")} className="text-sm font-bold text-red-500 hover:text-red-600 text-left">✕ {t("Remove image, use text instead", "ছবি মুছুন, টেক্সট ব্যবহার করুন")}</button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <button onClick={handleSaveWebsiteConfig} className="bg-teal-500 hover:bg-teal-600 text-white font-black px-4 py-2 rounded-xl text-sm transition">{t("Save Info", "তথ্য সংরক্ষণ")}</button>
                 </div>
@@ -5717,8 +6819,10 @@ export default function Home() {
                   { key: "inventory",        label: t("Stock / Inventory", "স্টক") },
                   { key: "procurement",      label: t("Stock In (Purchase)", "মাল কিনুন") },
                   { key: "purchase_history", label: t("Purchase History", "ক্রয় ইতিহাস") },
+                  { key: "company_purchase_history_view", label: t("Company Purchase History", "কোম্পানি ক্রয় ইতিহাস") },
                   { key: "invoices",         label: t("Invoices", "রশিদ") },
                   { key: "due_list_view",    label: t("Due List", "বাকি তালিকা") },
+                  { key: "due_collection_view", label: t("Due Collection List", "বাকি আদায় তালিকা") },
                   { key: "report_view",      label: t("Report", "রিপোর্ট") },
                   { key: "closing_report",   label: t("Closing Report", "ক্লোজিং রিপোর্ট") },
                   { key: "returns",          label: t("Returns", "ফেরত") },
@@ -5939,7 +7043,7 @@ export default function Home() {
                 </div>
                 <div>
                   <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Due Amount", "বাকি পরিমাণ")}</label>
-                  <input type="number" value={invoiceDue} onChange={e => setInvoiceDue(e.target.value)} className={`w-full p-1.5 font-mono rounded border outline-none text-sm ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`} />
+                  <input type="number" value={invoiceDue} readOnly disabled title={t("Auto-calculated from Cash Given", "নগদ দিয়েছে থেকে স্বয়ংক্রিয় হিসাব")} className={`w-full p-1.5 font-mono rounded border outline-none text-sm cursor-not-allowed opacity-80 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`} />
                 </div>
               </div>
 
@@ -6021,88 +7125,100 @@ export default function Home() {
           MODAL 3: PRINT RECEIPT
       ========================================================= */}
       {showReceipt && lastInvoice && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
-          <div className="max-w-sm w-full bg-white text-slate-950 p-5 rounded-xl shadow-2xl font-mono text-sm border border-slate-200 print:shadow-none print:border-none print:w-full print:p-0">
+        <div onClick={() => setShowReceipt(false)} className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
+          <div onClick={(e) => e.stopPropagation()} className="receipt-print max-w-sm w-full bg-white text-slate-950 rounded-2xl shadow-2xl text-sm border border-slate-200 overflow-hidden print:shadow-none print:border-none print:w-full print:rounded-none">
 
-            <div className="flex justify-between items-center border-b pb-2 mb-4 print:hidden">
-              <button onClick={triggerPrintReceipt} className="bg-teal-500 hover:bg-teal-600 text-white font-bold py-1 px-3 rounded uppercase tracking-wider text-sm transition shadow">🖨️ {t("Print", "প্রিন্ট")}</button>
-              <button onClick={() => setShowReceipt(false)} className="text-red-500 hover:underline font-bold text-sm uppercase">✕ {t("Close", "বন্ধ")}</button>
+            {/* Control bar — hidden when printing */}
+            <div className="flex justify-between items-center px-4 py-2.5 border-b bg-slate-50 print:hidden">
+              <button onClick={triggerPrintReceipt} className="bg-teal-500 hover:bg-teal-600 text-white font-bold py-1.5 px-3.5 rounded-lg uppercase tracking-wider text-sm transition shadow">🖨️ {t("Print", "প্রিন্ট")}</button>
+              <button onClick={() => setShowReceipt(false)} className="text-red-500 hover:text-red-600 font-bold text-sm uppercase">✕ {t("Close", "বন্ধ")}</button>
             </div>
 
-            <div className="text-center mb-4">
-              <h3 className="font-black text-sm uppercase tracking-tight">{pharmacyName}</h3>
-              <p className="text-sm opacity-80 leading-snug">{pharmacySlogan}</p>
-              <p className="text-sm font-bold mt-0.5">{pharmacyAddress}</p>
-              <div className="border-b border-dashed border-slate-400 my-2"></div>
-              <h4 className="font-black text-sm tracking-wider uppercase">{t("SALES RECEIPT", "বিক্রয় রশিদ")}</h4>
+            {/* Branded header band */}
+            <div className="bg-gradient-to-br from-teal-600 to-emerald-500 text-white text-center px-5 pt-6 pb-8">
+              <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-white/15 border border-white/40 flex items-center justify-center font-black text-lg overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
+              <h3 className="font-black text-base uppercase tracking-wide">{pharmacyName}</h3>
+              <p className="text-sm opacity-90 leading-snug mt-0.5">{pharmacySlogan}</p>
+              <p className="text-sm font-semibold mt-1.5 opacity-95">📍 {pharmacyAddress}</p>
             </div>
 
-            <div className="flex flex-col gap-0.5 text-sm mb-3">
-              <div className="flex justify-between"><span>{t("Invoice ID:", "রশিদ নং:")}</span><span className="font-bold text-teal-600">{lastInvoice.invoiceId}</span></div>
-              <div className="flex justify-between"><span>{t("Customer:", "গ্রাহক:")}</span><span className="font-bold">{lastInvoice.customer}</span></div>
-              <div className="flex justify-between"><span>{t("Phone:", "ফোন:")}</span><span>{lastInvoice.phone}</span></div>
-              <div className="flex justify-between"><span>{t("Date:", "তারিখ:")}</span><span>{lastInvoice.dateString}</span></div>
-              <div className="flex justify-between"><span>{t("Payment:", "পেমেন্ট:")}</span><span className="font-bold">{lastInvoice.paymentMethod}</span></div>
-            </div>
+            <div className="font-mono px-5 pb-5">
+              {/* Ticket-style title pill, overlapping the header band */}
+              <div className="flex justify-center -mt-4 mb-4">
+                <span className="bg-slate-950 text-white text-sm font-black px-4 py-1.5 rounded-full uppercase tracking-widest shadow-lg">🧾 {t("Sales Receipt", "বিক্রয় রশিদ")}</span>
+              </div>
 
-            <div className="border-b border-dashed border-slate-400 my-2"></div>
+              {/* Invoice meta info card */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 flex flex-col gap-1 text-sm">
+                <div className="flex justify-between"><span className="text-slate-500">{t("Invoice ID:", "রশিদ নং:")}</span><span className="font-bold text-teal-600">{lastInvoice.invoiceId}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">{t("Customer:", "গ্রাহক:")}</span><span className="font-bold">{lastInvoice.customer}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">{t("Phone:", "ফোন:")}</span><span>{lastInvoice.phone}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">{t("Date:", "তারিখ:")}</span><span>{lastInvoice.dateString}</span></div>
+                <div className="flex justify-between items-center"><span className="text-slate-500">{t("Payment:", "পেমেন্ট:")}</span><span className="font-bold bg-teal-100 text-teal-700 px-2 py-0.5 rounded-md text-sm">{lastInvoice.paymentMethod}</span></div>
+              </div>
 
-            <table className="w-full text-left text-sm border-collapse mb-3">
-              <thead>
-                <tr className="font-black border-b border-slate-300">
-                  <th className="py-1">{t("Item", "আইটেম")}</th>
-                  <th className="py-1 font-mono text-center">{t("Qty", "পরিমাণ")}</th>
-                  <th className="py-1 font-mono text-right">{t("Total", "মোট")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {lastInvoice.items.map((item: any) => (
-                  <tr key={item.id}>
-                    <td className="py-1">
-                      <span className="block font-bold">{item.name}</span>
-                      <span className="text-sm opacity-70 italic">{t("Rate:", "মূল্য:")} {item.price}</span>
-                    </td>
-                    <td className="py-1 font-mono text-center">{item.qty}</td>
-                    <td className="py-1 font-mono text-right">{((parseInt(item.qty) || 0) * item.price).toFixed(1)}</td>
+              {/* Items table */}
+              <table className="w-full text-left border-collapse mb-4 text-sm overflow-hidden rounded-lg">
+                <thead>
+                  <tr className="bg-slate-900 text-white">
+                    <th className="py-1.5 px-2 font-bold rounded-l-lg">{t("Item", "আইটেম")}</th>
+                    <th className="py-1.5 px-2 font-mono text-center font-bold">{t("Qty", "পরিমাণ")}</th>
+                    <th className="py-1.5 px-2 font-mono text-right font-bold rounded-r-lg">{t("Total", "মোট")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {lastInvoice.items.map((item: any, idx: number) => (
+                    <tr key={item.id} className={idx % 2 === 1 ? 'bg-slate-50' : 'bg-white'}>
+                      <td className="py-1.5 px-2">
+                        <span className="block font-bold">{item.name}</span>
+                        <span className="text-sm opacity-70 italic">{t("Rate:", "মূল্য:")} {item.price}</span>
+                      </td>
+                      <td className="py-1.5 px-2 font-mono text-center">{item.qty}</td>
+                      <td className="py-1.5 px-2 font-mono text-right font-bold">{((parseInt(item.qty) || 0) * item.price).toFixed(1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-            <div className="border-b border-dashed border-slate-400 my-2"></div>
+              {/* Totals card */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col gap-1.5 text-sm text-right font-semibold mb-4">
+                <div className="flex justify-between"><span className="text-slate-500">{t("Subtotal:", "মোট:")}</span><span className="font-mono">{lastInvoice.subTotal.toFixed(1)} {currencySymbol}</span></div>
+                {lastInvoice.vat > 0 && <div className="flex justify-between"><span className="text-slate-500">{t("VAT:", "ভ্যাট:")}</span><span className="font-mono">+{lastInvoice.vat.toFixed(1)}</span></div>}
+                {lastInvoice.discount > 0 && <div className="flex justify-between text-red-600"><span>{t("Discount:", "ছাড়:")}</span><span className="font-mono">-{lastInvoice.discount.toFixed(1)}</span></div>}
 
-            <div className="flex flex-col gap-1 text-sm text-right font-semibold">
-              <div className="flex justify-between"><span className="text-slate-500">{t("Subtotal:", "মোট:")}</span><span className="font-mono">{lastInvoice.subTotal.toFixed(1)} {currencySymbol}</span></div>
-              {lastInvoice.vat > 0 && <div className="flex justify-between"><span className="text-slate-500">{t("VAT:", "ভ্যাট:")}</span><span className="font-mono">+{lastInvoice.vat.toFixed(1)}</span></div>}
-              {lastInvoice.discount > 0 && <div className="flex justify-between text-red-600"><span>{t("Discount:", "ছাড়:")}</span><span className="font-mono">-{lastInvoice.discount.toFixed(1)}</span></div>}
-              <div className="flex justify-between border-t border-dashed border-slate-400 pt-1 font-black text-sm text-slate-950">
-                <span>{t("NET PAYABLE:", "মোট পরিশোধ:")}</span>
-                <span className="font-mono text-teal-600 font-black">{lastInvoice.finalBill.toFixed(1)} {currencySymbol}</span>
-              </div>
-              <div className="border-b border-slate-200 my-1"></div>
-              <div className="flex justify-between text-sm font-semibold text-slate-600">
-                <span>{t("Cash Received:", "নগদ পেয়েছি:")}</span>
-                <span className="font-mono">{(lastInvoice.cashReceived || lastInvoice.finalBill).toFixed(1)} {currencySymbol}</span>
-              </div>
-              <div className="flex justify-between text-sm font-semibold text-slate-600">
-                <span>{t("Change Given:", "ফেরত দিয়েছি:")}</span>
-                <span className="font-mono">{Math.max(0, (lastInvoice.cashReceived || lastInvoice.finalBill) - lastInvoice.finalBill).toFixed(1)} {currencySymbol}</span>
-              </div>
-              {lastInvoice.due > 0 && (
-                <div className="flex justify-between text-sm font-black text-red-600">
-                  <span>{t("UNPAID DUE:", "বাকি:")}</span>
-                  <span className="font-mono">{lastInvoice.due.toFixed(1)} {currencySymbol}</span>
+                <div className="flex justify-between items-center bg-teal-600 text-white rounded-lg px-3 py-2 mt-0.5">
+                  <span className="uppercase text-sm font-black tracking-wide">{t("Net Payable", "মোট পরিশোধ")}</span>
+                  <span className="font-mono text-base font-black">{lastInvoice.finalBill.toFixed(1)} {currencySymbol}</span>
                 </div>
-              )}
-            </div>
 
-            <div className="border-b border-dashed border-slate-400 my-3"></div>
-            <div className="text-center text-sm font-bold uppercase tracking-tight">
-              <p>{lastInvoice.footerMsg || receiptFooterMsg}</p>
+                <div className="flex justify-between text-sm font-semibold text-slate-600 mt-1">
+                  <span>{t("Cash Received:", "নগদ পেয়েছি:")}</span>
+                  <span className="font-mono">{(lastInvoice.cashReceived || lastInvoice.finalBill).toFixed(1)} {currencySymbol}</span>
+                </div>
+                <div className="flex justify-between text-sm font-semibold text-slate-600">
+                  <span>{t("Change Given:", "ফেরত দিয়েছি:")}</span>
+                  <span className="font-mono">{Math.max(0, (lastInvoice.cashReceived || lastInvoice.finalBill) - lastInvoice.finalBill).toFixed(1)} {currencySymbol}</span>
+                </div>
+
+                {lastInvoice.due > 0 && (
+                  <div className="flex justify-between items-center bg-red-600 text-white rounded-lg px-3 py-2 mt-0.5">
+                    <span className="uppercase text-sm font-black tracking-wide">⚠️ {t("Unpaid Due", "বাকি")}</span>
+                    <span className="font-mono text-base font-black">{lastInvoice.due.toFixed(1)} {currencySymbol}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="text-center border-t-2 border-dashed border-slate-300 pt-3">
+                <p className="text-sm tracking-[0.3em] text-slate-300 mb-1.5">✦ ✦ ✦ ✦ ✦</p>
+                <p className="text-sm font-black uppercase tracking-tight text-teal-600">{lastInvoice.footerMsg || receiptFooterMsg}</p>
+                <p className="text-sm text-slate-400 mt-1">{pharmacyName} · {pharmacyAddress}</p>
+              </div>
             </div>
           </div>
         </div>
       )}
+
 
       {/* =========================================================
           MODAL 4: DUE PAYMENT COLLECTION
