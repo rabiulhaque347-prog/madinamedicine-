@@ -54,8 +54,13 @@ const CLOUD_SYNC_KEYS = [
   'madina_v7_admin_pass',
   'madina_v7_staff_user',
   'madina_v7_staff_pass',
+  'madina_v7_creator_user',
+  'madina_v7_creator_pass',
   'madina_v7_secret_code',
   'madina_v7_staff_perms',
+  'madina_v7_admin_perms',
+  'madina_v7_system_locked',
+  'madina_v7_creator_notice',
   'madina_v7_name',
   'madina_v7_slogan',
   'madina_v7_address',
@@ -480,13 +485,36 @@ const themeStyles: Record<string, React.CSSProperties> = {
   } as React.CSSProperties,
 }
 
+// ============================================================
+// CREATOR PANEL — "digital rain" backdrop columns, generated once
+// at module load (NOT inside the component) so the conditionally
+// -rendered Creator branch never has to call a Hook to produce it —
+// that would break React's rules of Hooks since that branch only
+// renders for some users on some renders.
+// ============================================================
+const MATRIX_RAIN_GLYPHS = "01アイウエオカキクケコサシスセソ#$%&<>{}[]/\\=+*";
+const MATRIX_RAIN_COLUMNS = Array.from({ length: 18 }, (_, i) => {
+  const glyphCount = 18 + Math.floor(Math.random() * 14);
+  let chars = "";
+  for (let j = 0; j < glyphCount; j++) {
+    chars += MATRIX_RAIN_GLYPHS[Math.floor(Math.random() * MATRIX_RAIN_GLYPHS.length)] + "\n";
+  }
+  return {
+    id: i,
+    left: (i / 18) * 100 + (Math.random() * 3 - 1.5),
+    duration: 9 + Math.random() * 10,
+    delay: Math.random() * -14,
+    chars,
+  };
+});
+
 export default function Home() {
 
   // ============================================================
   // LOGIN STATE
   // ============================================================
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loginRole, setLoginRole] = useState<"admin" | "staff">("admin");
+  const [loginRole, setLoginRole] = useState<"admin" | "staff" | "creator">("admin");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -498,20 +526,71 @@ export default function Home() {
   const [showLoginPass, setShowLoginPass] = useState(false);
 
   // ============================================================
+  // SECRET CREATOR ACCESS — the "Creator" tab is intentionally NOT
+  // visible on the login screen, so regular Admin/Staff users never
+  // even know it exists. The real Creator unlocks it with a hidden
+  // gesture: tap the logo 5× quickly (mobile-friendly) OR press the
+  // keyboard shortcut Ctrl+Alt+C (desktop-friendly). Once unlocked,
+  // a small badge briefly appears confirming Creator mode is active.
+  // ============================================================
+  const [creatorTabUnlocked, setCreatorTabUnlocked] = useState(false);
+  const [logoTapCount, setLogoTapCount] = useState(0);
+  const logoTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleLogoSecretTap = useCallback(() => {
+    setLogoTapCount(prev => {
+      const next = prev + 1;
+      if (logoTapTimerRef.current) clearTimeout(logoTapTimerRef.current);
+      if (next >= 5) {
+        setCreatorTabUnlocked(true);
+        setLoginRole("creator");
+        logoTapTimerRef.current = null;
+        return 0;
+      }
+      logoTapTimerRef.current = setTimeout(() => setLogoTapCount(0), 1500);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleSecretKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.altKey && (e.key === "c" || e.key === "C")) {
+        setCreatorTabUnlocked(true);
+        setLoginRole("creator");
+      }
+    };
+    window.addEventListener("keydown", handleSecretKey);
+    return () => window.removeEventListener("keydown", handleSecretKey);
+  }, []);
+
+  // ============================================================
   // CREDENTIALS & SECURITY
   // ============================================================
   const [adminUsername, setAdminUsername] = useState("admin");
   const [adminPassword, setAdminPassword] = useState("2026");
   const [staffUsername, setStaffUsername] = useState("staff");
   const [staffPassword, setStaffPassword] = useState("staff123");
+  const [creatorUsername, setCreatorUsername] = useState("creator");
+  const [creatorPassword, setCreatorPassword] = useState("Creator@2026");
   const [secretCode, setSecretCode] = useState("MADINA2026");
   const [currentPassCheck, setCurrentPassCheck] = useState("");
+  const [credentialsUnlockError, setCredentialsUnlockError] = useState("");
   const [newUsernameInput, setNewUsernameInput] = useState("admin");
   const [newPasswordInput, setNewPasswordInput] = useState("2026");
   const [newStaffUsernameInput, setNewStaffUsernameInput] = useState("staff");
   const [newStaffPasswordInput, setNewStaffPasswordInput] = useState("staff123");
+  const [newCreatorUsernameInput, setNewCreatorUsernameInput] = useState("creator");
+  const [newCreatorPasswordInput, setNewCreatorPasswordInput] = useState("Creator@2026");
   const [newSecretCodeInput, setNewSecretCodeInput] = useState("MADINA2026");
   const [isCredentialsFormUnlocked, setIsCredentialsFormUnlocked] = useState(false);
+  // isCredentialsFormUnlockedRef always mirrors isCredentialsFormUnlocked so the
+  // Firebase realtime listener (which is set up once and would otherwise close
+  // over a stale "false") can check, at the moment a cloud update arrives,
+  // whether the Creator currently has the credentials form open/being edited —
+  // and if so, skip overwriting those draft input fields so typed changes are
+  // never silently wiped out mid-edit by an unrelated sync from another device.
+  const isCredentialsFormUnlockedRef = useRef(false);
+  useEffect(() => { isCredentialsFormUnlockedRef.current = isCredentialsFormUnlocked; }, [isCredentialsFormUnlocked]);
 
   // ============================================================
   // LANGUAGE
@@ -523,7 +602,9 @@ export default function Home() {
   // ============================================================
   // ROLE & PERMISSIONS
   // ============================================================
-  const [currentUserRole, setCurrentUserRole] = useState<"ADMIN" | "STAFF">("ADMIN");
+  const [currentUserRole, setCurrentUserRole] = useState<"ADMIN" | "STAFF" | "CREATOR">("ADMIN");
+  const [creatorActiveTab, setCreatorActiveTab] = useState<"overview" | "admin" | "staff" | "settings">("overview");
+
 
   const [staffVisibleModules, setStaffVisibleModules] = useState<{ [key: string]: boolean }>({
     pos: true,
@@ -592,6 +673,33 @@ export default function Home() {
     closing_due_collection: true,
     closing_final_summary: true,
   });
+
+  const [adminVisibleModules, setAdminVisibleModules] = useState<{ [key: string]: boolean }>({
+    pos: true, inventory: true, procurement: true, purchase_history: true, invoices: true, returns: true,
+    analytics: true, settings: true, modules_menu: true, daily_profit_view: true, monthly_profit_view: true,
+    low_stock_alerts: true, expired_meds_view: true, supplier_management: true, batch_tracking: true,
+    customer_database: true, sales_reports: true, purchase_reports: true, vat_tax_calculator: true,
+    discount_manager: true, receipt_customizer: true, user_role_switcher: true, backup_restore: true,
+    advanced_analytics: true, medicine_suggestions_db: true, company_database: true, rack_management: true,
+    expiry_tracker: true, profit_margin_calculator: true, invoice_search: true, return_analytics: true,
+    stock_value_calculator: true, category_wise_stock: true, monthly_purchases_view: true, daily_purchases_view: true,
+    financials_summary_card: true, revenue_chart_view: true, due_list_view: true, due_collection_view: true,
+    company_purchase_history_view: true, bkash_nagad_view: true, report_view: true, yearly_sales_view: true,
+    yearly_purchase_view: true, yearly_profit_view: true, yearly_due_view: true, daily_sale_view: true,
+    monthly_sale_view: true, daily_due_view: true, monthly_due_view: true, monthly_due_collection_view: true,
+    daily_due_collection_view: true, monthly_discount_view: true, yearly_discount_view: true,
+    closing_report: true, closing_total_sales: true, closing_cash_received: true, closing_profit: true,
+    closing_due: true, closing_bkash: true, closing_discount: true, closing_due_collection: true,
+    closing_final_summary: true,
+  });
+
+  // ============================================================
+  // CREATOR SYSTEM CONTROLS — lock entire app for Admin/Staff,
+  // and a notice/description shown to Admin & Staff.
+  // ============================================================
+  const [systemLocked, setSystemLocked] = useState(false);
+  const [creatorNotice, setCreatorNotice] = useState("");
+  const [creatorNoticeInput, setCreatorNoticeInput] = useState("");
   // ============================================================
   // TODAY KEY — used to force daily stats re-computation at midnight
   // ============================================================
@@ -997,11 +1105,26 @@ export default function Home() {
       const savedStaffPass = g('madina_v7_staff_pass');
       if (savedStaffPass) { setStaffPassword(savedStaffPass); setNewStaffPasswordInput(savedStaffPass); }
 
+      const savedCreatorUser = g('madina_v7_creator_user');
+      if (savedCreatorUser) { setCreatorUsername(savedCreatorUser); setNewCreatorUsernameInput(savedCreatorUser); }
+
+      const savedCreatorPass = g('madina_v7_creator_pass');
+      if (savedCreatorPass) { setCreatorPassword(savedCreatorPass); setNewCreatorPasswordInput(savedCreatorPass); }
+
       const savedSecret = g('madina_v7_secret_code');
       if (savedSecret) { setSecretCode(savedSecret); setNewSecretCodeInput(savedSecret); }
 
       const savedPermissions = g('madina_v7_staff_perms');
       if (savedPermissions) setStaffVisibleModules(prev => ({ ...prev, ...JSON.parse(savedPermissions) }));
+
+      const savedAdminPermissions = g('madina_v7_admin_perms');
+      if (savedAdminPermissions) setAdminVisibleModules(prev => ({ ...prev, ...JSON.parse(savedAdminPermissions) }));
+
+      const savedLock = g('madina_v7_system_locked');
+      if (savedLock) setSystemLocked(savedLock === "1");
+
+      const savedNotice = g('madina_v7_creator_notice');
+      if (savedNotice !== null && savedNotice !== undefined) { setCreatorNotice(savedNotice); setCreatorNoticeInput(savedNotice); }
     };
 
     if (!isFirebaseConfigured()) {
@@ -1125,12 +1248,34 @@ export default function Home() {
       apply('madina_v7_vat', setVatPercentage, (s: string) => s);
       apply('madina_v7_threshold', setLowStockThreshold, (s: string) => s);
       apply('madina_v7_footer', setReceiptFooterMsg, (s: string) => s);
-      apply('madina_v7_admin_user', (v: string) => { setAdminUsername(v); setNewUsernameInput(v); }, (s: string) => s);
-      apply('madina_v7_admin_pass', (v: string) => { setAdminPassword(v); setNewPasswordInput(v); }, (s: string) => s);
-      apply('madina_v7_staff_user', (v: string) => { setStaffUsername(v); setNewStaffUsernameInput(v); }, (s: string) => s);
-      apply('madina_v7_staff_pass', (v: string) => { setStaffPassword(v); setNewStaffPasswordInput(v); }, (s: string) => s);
-      apply('madina_v7_secret_code', (v: string) => { setSecretCode(v); setNewSecretCodeInput(v); }, (s: string) => s);
+      // NOTE: the canonical credential values (used for actually logging in)
+      // always stay in sync with the cloud. But the "...Input" fields are the
+      // LIVE DRAFT shown inside the unlocked Creator/Admin/Staff credentials
+      // form — if we kept overwriting those on every cloud update, then any
+      // unrelated save happening anywhere in the app (a checkout, a stock
+      // edit, etc. from ANY device) would silently erase whatever the
+      // Creator was in the middle of typing, making "Unlock -> edit -> Save"
+      // look like it "does nothing". So we only refresh the draft mirror
+      // when the form is locked/closed; while it's open for editing we leave
+      // the draft alone (it gets freshly re-seeded from the latest values
+      // the instant the form is unlocked — see handleVerifyCurrentPassword).
+      const formIsBeingEdited = isCredentialsFormUnlockedRef.current;
+      apply('madina_v7_admin_user', (v: string) => { setAdminUsername(v); if (!formIsBeingEdited) setNewUsernameInput(v); }, (s: string) => s);
+      apply('madina_v7_admin_pass', (v: string) => { setAdminPassword(v); if (!formIsBeingEdited) setNewPasswordInput(v); }, (s: string) => s);
+      apply('madina_v7_staff_user', (v: string) => { setStaffUsername(v); if (!formIsBeingEdited) setNewStaffUsernameInput(v); }, (s: string) => s);
+      apply('madina_v7_staff_pass', (v: string) => { setStaffPassword(v); if (!formIsBeingEdited) setNewStaffPasswordInput(v); }, (s: string) => s);
+      apply('madina_v7_creator_user', (v: string) => { setCreatorUsername(v); if (!formIsBeingEdited) setNewCreatorUsernameInput(v); }, (s: string) => s);
+      apply('madina_v7_creator_pass', (v: string) => { setCreatorPassword(v); if (!formIsBeingEdited) setNewCreatorPasswordInput(v); }, (s: string) => s);
+      apply('madina_v7_secret_code', (v: string) => { setSecretCode(v); if (!formIsBeingEdited) setNewSecretCodeInput(v); }, (s: string) => s);
       apply('madina_v7_staff_perms', (v: any) => setStaffVisibleModules((prev: any) => ({ ...prev, ...v })));
+      apply('madina_v7_admin_perms', (v: any) => setAdminVisibleModules((prev: any) => ({ ...prev, ...v })));
+      apply('madina_v7_system_locked', (v: string) => setSystemLocked(v === "1"), (s: string) => s);
+      // Same reasoning as the credentials draft above: keep the live "banner"
+      // (creatorNotice, shown to Admin/Staff) always in sync with the cloud,
+      // but don't keep overwriting the Creator's notice textarea draft on
+      // every unrelated cloud update — otherwise typing a notice could get
+      // wiped out mid-sentence by, e.g., a sale happening on another device.
+      apply('madina_v7_creator_notice', (v: string) => { setCreatorNotice(v); }, (s: string) => s);
 
       setSyncStatus('synced');
       setTimeout(() => setSyncStatus('idle'), 3000);
@@ -1215,7 +1360,21 @@ export default function Home() {
     setLoginLoading(true);
     setTimeout(() => {
       setLoginLoading(false);
-      if (loginRole === "admin") {
+      if (loginRole === "creator") {
+        if (loginUsername === creatorUsername && loginPassword === creatorPassword) {
+          playSound('login');
+          setIsLoggedIn(true);
+          setCurrentUserRole("CREATOR");
+          const session = { date: new Date().toDateString(), role: "CREATOR" };
+          localStorage.setItem('madina_v7_session', JSON.stringify(session));
+          setLoginUsername(""); setLoginPassword("");
+        } else {
+          playSound('error');
+          setLoginShake(true);
+          setTimeout(() => setLoginShake(false), 600);
+          setLoginError(t("Wrong username or password!", "ভুল ইউজারনেম বা পাসওয়ার্ড!"));
+        }
+      } else if (loginRole === "admin") {
         if (loginUsername === adminUsername && loginPassword === adminPassword) {
           playSound('login');
           setIsLoggedIn(true);
@@ -1266,7 +1425,11 @@ export default function Home() {
         setForgotError(t("Please enter a new password!", "নতুন পাসওয়ার্ড লিখুন!"));
         return;
       }
-      if (loginRole === "admin") {
+      if (loginRole === "creator") {
+        setCreatorPassword(forgotNewPass);
+        cloudSet('madina_v7_creator_pass', forgotNewPass);
+        setNewCreatorPasswordInput(forgotNewPass);
+      } else if (loginRole === "admin") {
         setAdminPassword(forgotNewPass);
         cloudSet('madina_v7_admin_pass', forgotNewPass);
         setNewPasswordInput(forgotNewPass);
@@ -1286,7 +1449,7 @@ export default function Home() {
   // ============================================================
   // ROLE TOGGLE
   // ============================================================
-  const handleRoleToggle = (role: "ADMIN" | "STAFF") => {
+  const handleRoleToggle = (role: "ADMIN" | "STAFF" | "CREATOR") => {
     setCurrentUserRole(role);
     const session = { date: new Date().toDateString(), role };
     localStorage.setItem('madina_v7_session', JSON.stringify(session));
@@ -1301,8 +1464,53 @@ export default function Home() {
     cloudSet('madina_v7_staff_perms', JSON.stringify(updatedPerms));
   };
 
+  const toggleAdminPermissionField = (moduleKey: string) => {
+    const updatedPerms = { ...adminVisibleModules, [moduleKey]: !adminVisibleModules[moduleKey] };
+    setAdminVisibleModules(updatedPerms);
+    cloudSet('madina_v7_admin_perms', JSON.stringify(updatedPerms));
+  };
+
+  // Bulk helpers used by the Creator panel's "Select All / Clear All" controls
+  const setStaffPermissionGroup = (keys: string[], value: boolean) => {
+    const updatedPerms = { ...staffVisibleModules };
+    keys.forEach(k => { updatedPerms[k] = value; });
+    setStaffVisibleModules(updatedPerms);
+    cloudSet('madina_v7_staff_perms', JSON.stringify(updatedPerms));
+  };
+
+  const setAdminPermissionGroup = (keys: string[], value: boolean) => {
+    const updatedPerms = { ...adminVisibleModules };
+    keys.forEach(k => { updatedPerms[k] = value; });
+    setAdminVisibleModules(updatedPerms);
+    cloudSet('madina_v7_admin_perms', JSON.stringify(updatedPerms));
+  };
+
+  const toggleSystemLock = async () => {
+    const next = !systemLocked;
+    setSystemLocked(next);
+    const ok = await cloudSet('madina_v7_system_locked', next ? "1" : "0");
+    if (!ok) {
+      // Roll back the optimistic UI change — without this, the Creator could
+      // believe the app is locked for Admin/Staff when the cloud write never
+      // actually went through (e.g. internet dropped at the wrong moment).
+      setSystemLocked(!next);
+      alert(t("❌ Could not save — check your internet connection and try again.", "❌ সংরক্ষণ করা যায়নি — ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।"));
+    }
+  };
+
+  const saveCreatorNotice = async () => {
+    setCreatorNotice(creatorNoticeInput);
+    const ok = await cloudSet('madina_v7_creator_notice', creatorNoticeInput);
+    if (ok) {
+      alert(t("✅ Notice saved! Admin & Staff will see it.", "✅ নোটিশ সংরক্ষিত হয়েছে! অ্যাডমিন ও স্টাফ এটি দেখতে পাবে।"));
+    } else {
+      alert(t("❌ Could not save — check your internet connection and try again.", "❌ সংরক্ষণ করা যায়নি — ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।"));
+    }
+  };
+
   const checkShouldRenderTabOption = (tabKey: string) => {
-    if (currentUserRole === "ADMIN") return true;
+    if (currentUserRole === "CREATOR") return true;
+    if (currentUserRole === "ADMIN") return !!adminVisibleModules[tabKey];
     return !!staffVisibleModules[tabKey];
   };
 
@@ -2227,30 +2435,139 @@ export default function Home() {
   // ============================================================
   const handleVerifyCurrentPassword = (e: React.FormEvent) => {
     e.preventDefault();
-    if (currentPassCheck === adminPassword) {
+    setCredentialsUnlockError("");
+    if (currentUserRole !== "CREATOR") {
+      const msg = t("❌ Only the Creator account can manage Admin & Staff credentials!", "❌ শুধুমাত্র ক্রিয়েটর অ্যাকাউন্ট অ্যাডমিন ও স্টাফের লগইন তথ্য পরিবর্তন করতে পারবে!");
+      setCredentialsUnlockError(msg);
+      alert(msg);
+      setCurrentPassCheck("");
+      return;
+    }
+    // Trim to avoid invisible leading/trailing spaces (common with mobile
+    // keyboards / autofill) silently causing a mismatch.
+    if (currentPassCheck.trim() === "") {
+      setCredentialsUnlockError(t("⚠️ Please type your Creator password first.", "⚠️ আগে আপনার ক্রিয়েটর পাসওয়ার্ড টাইপ করুন।"));
+      return;
+    }
+    if (currentPassCheck === creatorPassword) {
+      // Re-seed every draft field from the latest known values right as we
+      // unlock, so the Creator is always editing fresh data — not whatever
+      // was loaded at page-mount time (which may now be stale on a long-open
+      // tab while other devices have been making changes in the cloud).
+      setNewUsernameInput(adminUsername);
+      setNewPasswordInput(adminPassword);
+      setNewStaffUsernameInput(staffUsername);
+      setNewStaffPasswordInput(staffPassword);
+      setNewCreatorUsernameInput(creatorUsername);
+      setNewCreatorPasswordInput(creatorPassword);
+      setNewSecretCodeInput(secretCode);
       setIsCredentialsFormUnlocked(true);
       setCurrentPassCheck("");
+      setCredentialsUnlockError("");
     } else {
-      alert(t("❌ Wrong current password!", "❌ ভুল পাসওয়ার্ড!"));
+      const msg = t("❌ Wrong current password!", "❌ ভুল পাসওয়ার্ড!");
+      setCredentialsUnlockError(msg);
+      alert(msg);
       setCurrentPassCheck("");
     }
   };
 
-  const handleSaveNewCredentials = (e: React.FormEvent) => {
+  // Split into three role-scoped save handlers — previously a single shared
+  // handler saved Admin + Staff + Creator credentials together on every tab,
+  // so saving on (say) the Staff tab would silently re-write Admin/Creator
+  // credentials too (harmless if the draft fields were still fresh, but a
+  // landmine if a stale value was sitting in an unrelated draft field).
+  // Each tab's form now only touches the one role it's actually editing.
+  const handleSaveAdminCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (currentUserRole !== "CREATOR") return;
     if (!newUsernameInput.trim() || !newPasswordInput.trim()) { alert(t("⚠️ Fields cannot be empty!", "⚠️ ফিল্ড খালি রাখা যাবে না!")); return; }
+    setAdminUsername(newUsernameInput);
+    setAdminPassword(newPasswordInput);
+    const results = await Promise.all([
+      cloudSet('madina_v7_admin_user', newUsernameInput),
+      cloudSet('madina_v7_admin_pass', newPasswordInput),
+    ]);
+    if (results.every(ok => ok)) {
+      setIsCredentialsFormUnlocked(false);
+      alert(t("✅ Admin credentials updated!", "✅ অ্যাডমিন লগইন তথ্য আপডেট হয়েছে!"));
+    } else {
+      alert(t("❌ Could not save — check your internet connection and try again. Your old credentials are still active.", "❌ সংরক্ষণ করা যায়নি — ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন। আপনার পুরাতন লগইন তথ্যই সক্রিয় আছে।"));
+    }
+  };
+
+  const handleSaveStaffCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (currentUserRole !== "CREATOR") return;
+    if (!newStaffUsernameInput.trim() || !newStaffPasswordInput.trim()) { alert(t("⚠️ Fields cannot be empty!", "⚠️ ফিল্ড খালি রাখা যাবে না!")); return; }
+    setStaffUsername(newStaffUsernameInput);
+    setStaffPassword(newStaffPasswordInput);
+    const results = await Promise.all([
+      cloudSet('madina_v7_staff_user', newStaffUsernameInput),
+      cloudSet('madina_v7_staff_pass', newStaffPasswordInput),
+    ]);
+    if (results.every(ok => ok)) {
+      setIsCredentialsFormUnlocked(false);
+      alert(t("✅ Staff credentials updated!", "✅ স্টাফ লগইন তথ্য আপডেট হয়েছে!"));
+    } else {
+      alert(t("❌ Could not save — check your internet connection and try again. Your old credentials are still active.", "❌ সংরক্ষণ করা যায়নি — ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন। আপনার পুরাতন লগইন তথ্যই সক্রিয় আছে।"));
+    }
+  };
+
+  const handleSaveCreatorCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (currentUserRole !== "CREATOR") return;
+    if (!newCreatorUsernameInput.trim() || !newCreatorPasswordInput.trim()) { alert(t("⚠️ Fields cannot be empty!", "⚠️ ফিল্ড খালি রাখা যাবে না!")); return; }
+    setCreatorUsername(newCreatorUsernameInput);
+    setCreatorPassword(newCreatorPasswordInput);
+    setSecretCode(newSecretCodeInput);
+    const results = await Promise.all([
+      cloudSet('madina_v7_creator_user', newCreatorUsernameInput),
+      cloudSet('madina_v7_creator_pass', newCreatorPasswordInput),
+      cloudSet('madina_v7_secret_code', newSecretCodeInput),
+    ]);
+    if (results.every(ok => ok)) {
+      setIsCredentialsFormUnlocked(false);
+      alert(t("✅ Creator credentials updated!", "✅ ক্রিয়েটর লগইন তথ্য আপডেট হয়েছে!"));
+    } else {
+      alert(t("❌ Could not save — check your internet connection and try again. Your old credentials are still active.", "❌ সংরক্ষণ করা যায়নি — ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন। আপনার পুরাতন লগইন তথ্যই সক্রিয় আছে।"));
+    }
+  };
+
+
+  // This page's "Settings" screen (further below) intentionally shows all
+  // three roles' credentials together in ONE combined form, so it needs a
+  // combined save. Kept separate from the three Creator-panel tab handlers
+  // above, which each save only their own single role.
+  const handleSaveAllCredentialsCombined = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (currentUserRole !== "CREATOR") return;
+    if (!newUsernameInput.trim() || !newPasswordInput.trim() || !newStaffUsernameInput.trim() || !newStaffPasswordInput.trim() || !newCreatorUsernameInput.trim() || !newCreatorPasswordInput.trim()) {
+      alert(t("⚠️ Fields cannot be empty!", "⚠️ ফিল্ড খালি রাখা যাবে না!"));
+      return;
+    }
     setAdminUsername(newUsernameInput);
     setAdminPassword(newPasswordInput);
     setStaffUsername(newStaffUsernameInput);
     setStaffPassword(newStaffPasswordInput);
+    setCreatorUsername(newCreatorUsernameInput);
+    setCreatorPassword(newCreatorPasswordInput);
     setSecretCode(newSecretCodeInput);
-    cloudSet('madina_v7_admin_user', newUsernameInput);
-    cloudSet('madina_v7_admin_pass', newPasswordInput);
-    cloudSet('madina_v7_staff_user', newStaffUsernameInput);
-    cloudSet('madina_v7_staff_pass', newStaffPasswordInput);
-    cloudSet('madina_v7_secret_code', newSecretCodeInput);
-    setIsCredentialsFormUnlocked(false);
-    alert(t("✅ Credentials updated!", "✅ লগইন তথ্য আপডেট হয়েছে!"));
+    const results = await Promise.all([
+      cloudSet('madina_v7_admin_user', newUsernameInput),
+      cloudSet('madina_v7_admin_pass', newPasswordInput),
+      cloudSet('madina_v7_staff_user', newStaffUsernameInput),
+      cloudSet('madina_v7_staff_pass', newStaffPasswordInput),
+      cloudSet('madina_v7_creator_user', newCreatorUsernameInput),
+      cloudSet('madina_v7_creator_pass', newCreatorPasswordInput),
+      cloudSet('madina_v7_secret_code', newSecretCodeInput),
+    ]);
+    if (results.every(ok => ok)) {
+      setIsCredentialsFormUnlocked(false);
+      alert(t("✅ Credentials updated!", "✅ লগইন তথ্য আপডেট হয়েছে!"));
+    } else {
+      alert(t("❌ Could not save — check your internet connection and try again. Your old credentials are still active.", "❌ সংরক্ষণ করা যায়নি — ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন। আপনার পুরাতন লগইন তথ্যই সক্রিয় আছে।"));
+    }
   };
 
   const handleSaveWebsiteConfig = () => {
@@ -2865,17 +3182,33 @@ export default function Home() {
 
           <div className={`rounded-2xl shadow-2xl border p-6 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white/95 border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-card'], borderColor: (activeThemeStyle as any)['--theme-border'], color: (activeThemeStyle as any)['--theme-text'] } : {}}>
 
-            {/* Logo */}
+            {/* Logo — tap 5x quickly to secretly reveal Creator login */}
             <div className="text-center mb-6">
-              <div className="animate-logo-pulse w-16 h-16 rounded-2xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-lg font-black text-xl mx-auto mb-3 overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
+              <div
+                onClick={handleLogoSecretTap}
+                className={`animate-logo-pulse w-16 h-16 rounded-2xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-lg font-black text-xl mx-auto mb-3 overflow-hidden cursor-pointer select-none transition-transform ${logoTapCount > 0 ? 'scale-95' : ''}`}
+              >
+                {pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover pointer-events-none" /> : pharmacyLogo}
+              </div>
               <h1 className="font-black text-lg text-teal-600">{pharmacyName}</h1>
               <p className={`text-sm font-semibold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{pharmacySlogan}</p>
             </div>
 
           {!showForgotPass ? (
             <>
-              {/* Login Type Toggle */}
+              {/* Login Type Toggle — Creator tab stays hidden unless secretly unlocked */}
+              {creatorTabUnlocked && (
+                <div className={`flex items-center justify-between gap-2 mb-2 px-3 py-1.5 rounded-lg border text-sm font-bold animate-login-slide ${isDarkMode ? 'bg-amber-500/10 border-amber-500/40 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-600'}`}>
+                  <span>🛡️ {t("Creator mode unlocked", "ক্রিয়েটর মোড আনলক হয়েছে")}</span>
+                  <button onClick={() => { setCreatorTabUnlocked(false); setLoginRole("admin"); }} className="text-slate-400 hover:text-red-500 font-black">✕</button>
+                </div>
+              )}
               <div className={`flex p-1 rounded-xl mb-4 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
+                {creatorTabUnlocked && (
+                  <button onClick={() => setLoginRole("creator")} className={`flex-1 py-2 rounded-lg text-sm font-black transition-all btn-press ${loginRole === "creator" ? 'bg-amber-500 text-white shadow' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    🛡️ {t("Creator", "ক্রিয়েটর")}
+                  </button>
+                )}
                 <button onClick={() => setLoginRole("admin")} className={`flex-1 py-2 rounded-lg text-sm font-black transition-all btn-press ${loginRole === "admin" ? 'bg-teal-500 text-white shadow' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   👑 {t("Admin", "অ্যাডমিন")}
                 </button>
@@ -2966,6 +3299,548 @@ export default function Home() {
               <button onClick={() => { setShowForgotPass(false); setForgotStep("secret"); setForgotSecretInput(""); setForgotNewPass(""); setForgotError(""); }} className="w-full text-slate-400 text-sm font-bold mt-3 hover:underline">← {t("Back to Login", "লগইনে ফিরুন")}</button>
             </>
           )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  // CREATOR CONTROL PANEL — Creator does NOT use the POS/sales app.
+  // Creator's only job: control & manage the Admin and Staff accounts
+  // (credentials + what features Staff can see). No sales dashboard here.
+  // ============================================================
+  if (isLoggedIn && currentUserRole === "CREATOR") {
+    const permGroups = [
+      {
+        label: t("Main Menus", "প্রধান মেনু"),
+        icon: "📌",
+        items: [
+          { key: "pos",              label: t("Sell / POS", "বিক্রয়") },
+          { key: "analytics",        label: t("Dashboard", "ড্যাশবোর্ড") },
+          { key: "inventory",        label: t("Stock / Inventory", "স্টক") },
+          { key: "procurement",      label: t("Stock In (Purchase)", "মাল কিনুন") },
+          { key: "purchase_history", label: t("Purchase History", "ক্রয় ইতিহাস") },
+          { key: "company_purchase_history_view", label: t("Company Purchase History", "কোম্পানি ক্রয় ইতিহাস") },
+          { key: "invoices",         label: t("Invoices", "রশিদ") },
+          { key: "due_list_view",    label: t("Due List", "বাকি তালিকা") },
+          { key: "due_collection_view", label: t("Due Collection List", "বাকি আদায় তালিকা") },
+          { key: "report_view",      label: t("Report", "রিপোর্ট") },
+          { key: "closing_report",   label: t("Closing Report", "ক্লোজিং রিপোর্ট") },
+          { key: "returns",          label: t("Returns", "ফেরত") },
+        ]
+      },
+      {
+        label: t("Closing Report Sections", "ক্লোজিং রিপোর্ট সেকশন"),
+        icon: "🌙",
+        items: [
+          { key: "closing_total_sales",    label: t("Total Sales Card", "মোট বিক্রয় কার্ড") },
+          { key: "closing_cash_received",  label: t("Cash Received Card", "নগদ পেয়েছি কার্ড") },
+          { key: "closing_profit",         label: t("Today's Profit Card", "আজকের লাভ কার্ড") },
+          { key: "closing_due",            label: t("Today's Due Card", "আজকের বাকি কার্ড") },
+          { key: "closing_bkash",          label: t("bKash/Nagad Card", "বিকাশ/নগদ কার্ড") },
+          { key: "closing_discount",       label: t("Discount Card", "ছাড় কার্ড") },
+          { key: "closing_due_collection", label: t("Due Collection Card", "বাকি আদায় কার্ড") },
+          { key: "closing_final_summary",  label: t("End of Day Summary", "দিনের শেষ হিসাব") },
+        ]
+      },
+      {
+        label: t("Dashboard Cards", "ড্যাশবোর্ড কার্ড"),
+        icon: "📊",
+        items: [
+          { key: "daily_sale_view",         label: t("Today's Sale", "আজকের বিক্রয়") },
+          { key: "monthly_sale_view",       label: t("Monthly Sale", "মাসিক বিক্রয়") },
+          { key: "daily_profit_view",       label: t("Today's Profit", "আজকের লাভ") },
+          { key: "monthly_profit_view",     label: t("Monthly Profit", "মাসিক লাভ") },
+          { key: "daily_purchases_view",    label: t("Today's Purchase", "আজকের ক্রয়") },
+          { key: "monthly_purchases_view",  label: t("Monthly Purchase", "মাসিক ক্রয়") },
+          { key: "daily_due_view",          label: t("Today's Due", "আজকের বাকি") },
+          { key: "monthly_due_view",        label: t("Monthly Due", "মাসিক বাকি") },
+          { key: "daily_due_collection_view",  label: t("Today's Due Collection", "আজকের বাকি আদায়") },
+          { key: "monthly_due_collection_view", label: t("Monthly Due Collection", "মাসিক বাকি আদায়") },
+          { key: "bkash_nagad_view",        label: t("bKash/Nagad Stats", "বিকাশ/নগদ তথ্য") },
+          { key: "low_stock_alerts",        label: t("Low Stock Alerts", "কম স্টক সতর্কতা") },
+          { key: "expired_meds_view",       label: t("Expired Medicines", "মেয়াদ শেষ ওষুধ") },
+          { key: "stock_value_calculator",  label: t("Stock Value Summary", "স্টক মূল্য সারসংক্ষেপ") },
+          { key: "category_wise_stock",     label: t("Category Stock View", "ক্যাটাগরি স্টক") },
+          { key: "financials_summary_card", label: t("Financial Summary", "আর্থিক সারসংক্ষেপ") },
+          { key: "revenue_chart_view",      label: t("Revenue Chart", "রাজস্ব চার্ট") },
+          { key: "yearly_sales_view",       label: t("Yearly Sale", "বার্ষিক বিক্রয়") },
+          { key: "yearly_purchase_view",    label: t("Yearly Purchase", "বার্ষিক ক্রয়") },
+          { key: "yearly_profit_view",      label: t("Yearly Profit", "বার্ষিক লাভ") },
+          { key: "yearly_due_view",         label: t("Yearly Due", "বার্ষিক বাকি") },
+          { key: "monthly_discount_view",   label: t("Monthly Discount", "মাসিক ছাড়") },
+          { key: "yearly_discount_view",    label: t("Yearly Discount", "বার্ষিক ছাড়") },
+        ]
+      },
+      {
+        label: t("Inventory & Stock", "ইনভেন্টরি ও স্টক"),
+        icon: "📦",
+        items: [
+          { key: "rack_management",         label: t("Rack Location", "র‍্যাক লোকেশন") },
+          { key: "expiry_tracker",          label: t("Expiry Tracker", "মেয়াদ ট্র্যাকার") },
+          { key: "batch_tracking",          label: t("Batch Tracking", "ব্যাচ ট্র্যাকিং") },
+          { key: "supplier_management",     label: t("Supplier Info", "সরবরাহকারী তথ্য") },
+          { key: "medicine_suggestions_db", label: t("Medicine Name Suggestions", "ওষুধের নাম সাজেশন") },
+          { key: "company_database",        label: t("Company Database", "কোম্পানি ডেটাবেজ") },
+        ]
+      },
+      {
+        label: t("Sales & Reports", "বিক্রয় ও রিপোর্ট"),
+        icon: "🧾",
+        items: [
+          { key: "sales_reports",           label: t("Sales Reports", "বিক্রয় রিপোর্ট") },
+          { key: "purchase_reports",        label: t("Purchase Reports", "ক্রয় রিপোর্ট") },
+          { key: "invoice_search",          label: t("Invoice Search", "রশিদ খোঁজা") },
+          { key: "return_analytics",        label: t("Return Analytics", "ফেরত বিশ্লেষণ") },
+          { key: "advanced_analytics",      label: t("Advanced Analytics", "উন্নত বিশ্লেষণ") },
+        ]
+      },
+      {
+        label: t("POS / Checkout Options", "বিক্রয় / চেকআউট"),
+        icon: "🛒",
+        items: [
+          { key: "discount_manager",        label: t("Discount Manager", "ছাড় ব্যবস্থাপনা") },
+          { key: "vat_tax_calculator",      label: t("VAT / Tax Calculator", "ভ্যাট ক্যালকুলেটর") },
+          { key: "receipt_customizer",      label: t("Receipt Customizer", "রশিদ কাস্টমাইজ") },
+          { key: "customer_database",       label: t("Customer Database", "গ্রাহক ডেটাবেজ") },
+          { key: "profit_margin_calculator",label: t("Profit Margin View", "লাভের হার দেখা") },
+        ]
+      },
+      {
+        label: t("System Access", "সিস্টেম অ্যাক্সেস"),
+        icon: "🔐",
+        items: [
+          { key: "settings",           label: t("Settings Page", "সেটিংস") },
+          { key: "user_role_switcher", label: t("Role Switcher", "রোল সুইচার") },
+          { key: "backup_restore",     label: t("Backup / Factory Reset", "ব্যাকআপ / রিসেট") },
+        ]
+      },
+    ];
+
+    return (
+      <div className="min-h-screen font-mono antialiased bg-black text-green-300 relative overflow-x-hidden">
+        <style>{`
+          @keyframes hk-scan { 0%{transform:translateY(-100%)} 100%{transform:translateY(100%)} }
+          @keyframes hk-pulse { 0%,100%{box-shadow:0 0 6px rgba(34,197,94,0.35),0 0 0px rgba(34,197,94,0)} 50%{box-shadow:0 0 18px rgba(74,222,128,0.65),0 0 36px rgba(34,197,94,0.3)} }
+          @keyframes hk-blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+          @keyframes hk-flicker { 0%,100%{opacity:0.4} 50%{opacity:0.65} 92%{opacity:0.4} 93%{opacity:0.9} 94%{opacity:0.3} 95%{opacity:0.55} }
+          @keyframes hk-glow-text { 0%,100%{text-shadow:0 0 6px rgba(74,222,128,0.6),0 0 14px rgba(34,197,94,0.35)} 50%{text-shadow:0 0 12px rgba(134,239,172,0.9),0 0 26px rgba(34,197,94,0.55)} }
+          @keyframes hk-glitch { 0%,91%,100%{transform:translate(0,0)} 92%{transform:translate(-2px,1px); text-shadow:2px 0 #ff2b6d,-2px 0 #00fff9} 93%{transform:translate(2px,-1px); text-shadow:-2px 0 #ff2b6d,2px 0 #00fff9} 94%{transform:translate(-1px,0)} 95%{transform:translate(0,0)} }
+          @keyframes hk-rise { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+          @keyframes hk-rain { from{transform:translateY(-60%)} to{transform:translateY(160%)} }
+          @keyframes hk-dot-pulse { 0%,100%{opacity:1; box-shadow:0 0 4px #4ade80,0 0 8px #4ade80} 50%{opacity:0.4; box-shadow:0 0 2px #4ade80} }
+          .hk-anim-in { animation: hk-rise 0.35s ease both; }
+          .hk-card { background: linear-gradient(180deg, rgba(6,22,12,0.88), rgba(2,8,5,0.92)); border: 1px solid rgba(34,197,94,0.3); }
+          .hk-card:hover { border-color: rgba(74,222,128,0.6); }
+          .hk-glow { animation: hk-pulse 3.2s ease-in-out infinite; }
+          .hk-title-glow { animation: hk-glow-text 2.6s ease-in-out infinite, hk-glitch 5s linear infinite; }
+          .hk-cursor { display:inline-block; width:8px; background:#4ade80; margin-left:4px; animation: hk-blink 1s steps(1) infinite; }
+          .hk-scanline { position:absolute; left:0; right:0; height:140px; background: linear-gradient(180deg, rgba(74,222,128,0) 0%, rgba(74,222,128,0.07) 50%, rgba(74,222,128,0) 100%); animation: hk-scan 6s linear infinite; pointer-events:none; }
+          .hk-crt-lines { background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.35) 0px, rgba(0,0,0,0.35) 1px, transparent 1px, transparent 3px); }
+          .hk-rain-col { position:absolute; top:0; font-size:13px; line-height:1.15; white-space:pre-line; color:rgba(74,222,128,0.55); text-shadow:0 0 6px rgba(74,222,128,0.5); animation-name: hk-rain; animation-timing-function: linear; animation-iteration-count: infinite; }
+          .hk-live-dot { width:7px; height:7px; border-radius:9999px; background:#4ade80; animation: hk-dot-pulse 1.6s ease-in-out infinite; }
+        `}</style>
+
+        {/* Digital rain backdrop — classic hacker/matrix flavor, purely decorative */}
+        <div className="fixed inset-0 pointer-events-none overflow-hidden opacity-40">
+          {MATRIX_RAIN_COLUMNS.map(col => (
+            <div
+              key={col.id}
+              className="hk-rain-col"
+              style={{ left: `${col.left}%`, animationDuration: `${col.duration}s`, animationDelay: `${col.delay}s` }}
+            >
+              {col.chars}
+            </div>
+          ))}
+        </div>
+
+        {/* Faint matrix grid backdrop */}
+        <div className="fixed inset-0 pointer-events-none opacity-[0.07]" style={{ backgroundImage: 'linear-gradient(rgba(34,197,94,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(34,197,94,0.5) 1px, transparent 1px)', backgroundSize: '26px 26px' }}></div>
+        {/* CRT scanline texture + power-flicker overlay */}
+        <div className="hk-crt-lines fixed inset-0 pointer-events-none opacity-30"></div>
+        <div className="hk-flicker fixed inset-0 pointer-events-none" style={{ background: 'rgba(74,222,128,0.025)' }}></div>
+        <div className="hk-scanline"></div>
+
+        {/* Top bar — terminal style */}
+        <div className="relative z-10 border-b border-green-700/40 bg-black/80 backdrop-blur-sm">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className="hk-glow w-11 h-11 rounded-lg bg-gradient-to-br from-green-700 to-emerald-950 border border-green-400/50 flex items-center justify-center text-green-200 font-black text-xl">👾</div>
+              <div>
+                <h1 className="hk-title-glow font-black text-base sm:text-lg leading-tight text-green-200 tracking-widest uppercase">
+                  {t("Creator_Panel", "ক্রিয়েটর_প্যানেল")}<span className="hk-cursor">&nbsp;</span>
+                </h1>
+                <p className="text-sm text-green-500/80 font-bold tracking-wide flex items-center gap-1.5">
+                  <span className="hk-live-dot"></span>
+                  root@{pharmacyName.replace(/\s+/g, '_').toLowerCase()}:~$ {t("full_access", "সম্পূর্ণ_অ্যাক্সেস")}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center p-0.5 rounded-lg border border-green-700/50 bg-green-950/40">
+                <button onClick={() => handleLanguageChange("en")} className={`px-2 py-1 rounded-md text-sm font-black transition ${language === "en" ? 'bg-green-600 text-white' : 'text-green-400/70'}`}>EN</button>
+                <button onClick={() => handleLanguageChange("bn")} className={`px-2 py-1 rounded-md text-sm font-black transition ${language === "bn" ? 'bg-green-600 text-white' : 'text-green-400/70'}`}>বাং</button>
+              </div>
+              <button onClick={handleLogout} className="bg-green-950/60 border border-green-700/50 text-green-300 hover:bg-red-700 hover:text-white hover:border-red-500 font-bold text-sm px-3 py-2 rounded-lg transition uppercase tracking-wide">
+                {t(">> Logout", ">> লগআউট")}
+              </button>
+            </div>
+          </div>
+
+          {/* Tab navigation — terminal style */}
+          <div className="flex gap-1 px-4 sm:px-6 pb-2 overflow-x-auto">
+            {[
+              { key: "overview", label: t("Overview", "ওভারভিউ"), icon: "◆" },
+              { key: "admin",    label: t("Admin Control", "অ্যাডমিন কন্ট্রোল"), icon: "▣" },
+              { key: "staff",    label: t("Staff Control", "স্টাফ কন্ট্রোল"), icon: "▣" },
+              { key: "settings", label: t("Settings", "সেটিংস"), icon: "⚙" },
+            ].map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setCreatorActiveTab(tab.key as any)}
+                className={`px-3.5 py-1.5 rounded-md text-sm font-black uppercase tracking-wider whitespace-nowrap transition-all border ${
+                  creatorActiveTab === tab.key
+                    ? 'bg-green-700/30 border-green-400 text-green-100 hk-glow'
+                    : 'bg-transparent border-green-900/50 text-green-500/70 hover:text-green-300 hover:border-green-600/60'
+                }`}
+              >
+                <span className="mr-1.5">{tab.icon}</span>{tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <main className="relative z-10 max-w-5xl mx-auto p-4 sm:p-6 flex flex-col gap-5">
+
+          {/* ============================ OVERVIEW TAB ============================ */}
+          {creatorActiveTab === "overview" && (
+            <div className="hk-anim-in flex flex-col gap-5">
+              <div className="hk-card rounded-xl p-4 text-sm font-semibold text-green-200 shadow-lg">
+                <span className="text-green-400 font-black">[ {t("SYSTEM", "সিস্টেম")} ]</span> {t("As Creator, you control the Admin and Staff accounts and decide what they can access. You do not use the Sell/POS dashboard yourself — that's done by Admin & Staff.", "ক্রিয়েটর হিসেবে আপনি অ্যাডমিন ও স্টাফের অ্যাকাউন্ট নিয়ন্ত্রণ করেন এবং তারা কী দেখতে পারবে তা ঠিক করেন। বিক্রয়/POS ড্যাশবোর্ড আপনি নিজে ব্যবহার করবেন না — সেটা অ্যাডমিন ও স্টাফ করবে।")}
+              </div>
+
+              {/* System Lock */}
+              <div className="hk-card rounded-xl p-4 shadow-lg">
+                <h3 className="text-sm font-black uppercase tracking-widest text-red-400 mb-1">⛔ {t("System Lock", "সিস্টেম লক")}</h3>
+                <p className="text-sm text-green-400/70 font-semibold mb-3">{t("One tap to hide every menu/option from Admin & Staff. They can still log in, but will only see your notice message until you unlock it.", "এক ট্যাপে অ্যাডমিন ও স্টাফের সব মেনু/অপশন বন্ধ করে দিন। তারা লগইন করতে পারবে, কিন্তু আপনি আনলক না করা পর্যন্ত শুধু আপনার নোটিশ দেখবে।")}</p>
+                <div onClick={toggleSystemLock} className={`cursor-pointer select-none flex items-center justify-between gap-3 p-3 rounded-xl border transition-all ${systemLocked ? 'border-red-500 bg-red-500/10' : 'border-green-800/50 bg-black/40'}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{systemLocked ? '🔒' : '🔓'}</span>
+                    <span className={`text-sm font-black ${systemLocked ? 'text-red-400' : 'text-green-300'}`}>
+                      {systemLocked ? t("EVERYTHING LOCKED — tap to unlock", "সব বন্ধ — খুলতে ট্যাপ করুন") : t("App is OPEN — tap to lock everything", "অ্যাপ চালু আছে — সব বন্ধ করতে ট্যাপ করুন")}
+                    </span>
+                  </div>
+                  <div className={`w-11 h-6 rounded-full transition-colors flex items-center px-0.5 ${systemLocked ? 'bg-red-500' : 'bg-green-900'}`}>
+                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${systemLocked ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notice for Admin & Staff */}
+              <div className="hk-card rounded-xl p-4 shadow-lg">
+                <h3 className="text-sm font-black uppercase tracking-widest text-green-300 mb-1">📡 {t("Broadcast Notice", "নোটিশ পাঠান")}</h3>
+                <p className="text-sm text-green-400/70 font-semibold mb-3">{t("Write a message — it will show on top of the screen for Admin & Staff.", "একটি বার্তা লিখুন — এটি অ্যাডমিন ও স্টাফের স্ক্রিনের উপরে দেখাবে।")}</p>
+                <textarea
+                  value={creatorNoticeInput}
+                  onChange={e => setCreatorNoticeInput(e.target.value)}
+                  placeholder={t("> type a notice for Admin & Staff...", "> অ্যাডমিন ও স্টাফের জন্য নোটিশ লিখুন...")}
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-xl border border-green-800/50 bg-black/60 text-green-100 placeholder-green-600/60 text-sm outline-none focus:border-green-400 mb-2"
+                />
+                <div className="flex gap-2 justify-end">
+                  {creatorNotice && <button onClick={() => { setCreatorNoticeInput(""); setCreatorNotice(""); cloudSet('madina_v7_creator_notice', ""); }} className="px-3 py-1.5 text-sm font-bold rounded bg-green-950/60 text-green-400 hover:text-lime-400 transition">{t("Clear", "মুছুন")}</button>}
+                  <button onClick={saveCreatorNotice} className="bg-green-700 hover:bg-green-600 text-white font-black text-sm px-4 py-1.5 rounded uppercase tracking-wider shadow hk-glow">{t("Broadcast", "পাঠান")}</button>
+                </div>
+              </div>
+
+              {/* Secret access reminder */}
+              <div className="hk-card rounded-xl p-3.5 text-sm font-semibold flex items-center gap-2 text-green-400/80">
+                <span className="text-lg">🔑</span>
+                <span>{t("Reminder: the Creator login is hidden from everyone else. Get back here by tapping the login logo 5× quickly, or pressing Ctrl+Alt+C on desktop.", "মনে রাখুন: ক্রিয়েটর লগইন সবার কাছ থেকে গোপন রাখা আছে। লগইন স্ক্রিনে লোগোতে দ্রুত ৫ বার ট্যাপ করুন, বা Ctrl+Alt+C চাপুন।")}</span>
+              </div>
+            </div>
+          )}
+
+          {/* ============================ ADMIN TAB ============================ */}
+          {creatorActiveTab === "admin" && (
+            <div className="hk-anim-in flex flex-col gap-5">
+              {/* Admin credentials */}
+              <div className="hk-card rounded-xl p-4 shadow-lg">
+                <h3 className="text-sm font-black uppercase tracking-widest text-green-300 mb-3">👑 {t("Admin Login Credentials", "অ্যাডমিন লগইন তথ্য")}</h3>
+                {!isCredentialsFormUnlocked ? (
+                  <form onSubmit={handleVerifyCurrentPassword} className="flex flex-col gap-2">
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="password"
+                        placeholder={t("> enter Creator password to unlock...", "> আনলক করতে ক্রিয়েটর পাসওয়ার্ড দিন...")}
+                        value={currentPassCheck}
+                        onChange={e => { setCurrentPassCheck(e.target.value); if (credentialsUnlockError) setCredentialsUnlockError(""); }}
+                        className="px-3 py-1.5 text-sm rounded border border-green-800/50 bg-black/60 text-green-100 placeholder-green-600/60 outline-none flex-1 focus:border-green-400"
+                      />
+                      <button type="submit" className="bg-green-700 hover:bg-green-600 text-white text-sm font-bold px-3 py-1.5 rounded uppercase transition">{t("Unlock", "আনলক")}</button>
+                    </div>
+                    {credentialsUnlockError && (
+                      <p className="text-sm font-bold text-red-400">{credentialsUnlockError}</p>
+                    )}
+                  </form>
+                ) : (
+                  <form onSubmit={handleSaveAdminCredentials} className="flex flex-col gap-3 text-sm">
+                    <h4 className="text-sm font-black text-lime-400 uppercase">✅ {t("Unlocked", "আনলক হয়েছে")}</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-green-400">{t("Admin Username", "অ্যাডমিন ইউজারনেম")}</label>
+                        <input type="text" value={newUsernameInput} onChange={e => setNewUsernameInput(e.target.value)} className="w-full px-2 py-1.5 rounded border border-green-800/50 bg-black/60 text-green-100 outline-none focus:border-green-400" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-green-400">{t("Admin Password", "অ্যাডমিন পাসওয়ার্ড")}</label>
+                        <input type="text" value={newPasswordInput} onChange={e => setNewPasswordInput(e.target.value)} className="w-full px-2 py-1.5 rounded border border-green-800/50 bg-black/60 text-green-100 font-mono outline-none focus:border-green-400" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button type="button" onClick={() => setIsCredentialsFormUnlocked(false)} className="px-3 py-1.5 text-sm font-bold rounded bg-green-950/60 text-green-400 hover:text-lime-400 transition">{t("Cancel", "বাতিল")}</button>
+                      <button type="submit" className="bg-green-700 hover:bg-green-600 text-white font-black text-sm px-4 py-1.5 rounded uppercase tracking-wider shadow">{t("Save", "সংরক্ষণ")}</button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
+              {/* Quick action */}
+              <div className="hk-card flex flex-wrap items-center justify-between gap-3 rounded-xl p-3.5">
+                <p className="text-sm font-bold text-green-400">⚡ {t("Quick Action", "কুইক অ্যাকশন")}</p>
+                <button
+                  onClick={() => { setAdminVisibleModules({ ...staffVisibleModules }); cloudSet('madina_v7_admin_perms', JSON.stringify(staffVisibleModules)); }}
+                  className="text-sm font-bold px-3 py-1.5 rounded-lg bg-green-900/40 text-green-300 hover:bg-green-800/60 transition"
+                >
+                  {t("Copy Staff → Admin", "স্টাফ → অ্যাডমিনে কপি")}
+                </button>
+              </div>
+
+              {/* Admin permissions */}
+              <div className="hk-card rounded-xl p-4 shadow-lg">
+                <h3 className="text-sm font-black uppercase tracking-widest text-green-300 mb-1">▣ {t("Admin Permissions", "অ্যাডমিন অনুমতি")}</h3>
+                <p className="text-sm text-green-400/70 font-semibold mb-5">{t("Control exactly what the Admin account can see and use inside the app.", "অ্যাডমিন অ্যাকাউন্ট অ্যাপের ভেতরে ঠিক কী দেখতে ও ব্যবহার করতে পারবে তা নিয়ন্ত্রণ করুন।")}</p>
+                <div className="flex flex-col gap-5">
+                  {permGroups.map(group => {
+                    const groupKeys = group.items.map(i => i.key);
+                    return (
+                    <div key={group.label}>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-black uppercase tracking-widest flex items-center gap-1.5 text-green-500">
+                          <span>{group.icon}</span><span>{group.label}</span>
+                        </h4>
+                        <div className="flex gap-1.5">
+                          <button onClick={() => setAdminPermissionGroup(groupKeys, true)} className="text-sm font-bold px-2 py-0.5 rounded-md bg-green-900/40 text-green-300 hover:bg-green-800/60 transition">{t("All On", "সব চালু")}</button>
+                          <button onClick={() => setAdminPermissionGroup(groupKeys, false)} className="text-sm font-bold px-2 py-0.5 rounded-md bg-black/50 text-green-600 hover:bg-green-950 transition">{t("All Off", "সব বন্ধ")}</button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {group.items.map(({ key, label }) => {
+                          const isOn = !!adminVisibleModules[key];
+                          return (
+                            <div
+                              key={key}
+                              onClick={() => toggleAdminPermissionField(key)}
+                              className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer select-none transition-all ${isOn ? 'border-lime-500/70 bg-lime-500/10' : 'border-green-900/50 bg-black/40 opacity-50'}`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm">{isOn ? '✅' : '❌'}</span>
+                                <span className={`text-sm font-bold ${isOn ? 'text-green-100' : 'text-green-600'}`}>{label}</span>
+                              </div>
+                              <div className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${isOn ? 'bg-lime-500' : 'bg-green-900'}`}>
+                                <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${isOn ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );})}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ============================ STAFF TAB ============================ */}
+          {creatorActiveTab === "staff" && (
+            <div className="hk-anim-in flex flex-col gap-5">
+              {/* Staff credentials */}
+              <div className="hk-card rounded-xl p-4 shadow-lg">
+                <h3 className="text-sm font-black uppercase tracking-widest text-green-300 mb-3">🧑‍💼 {t("Staff Login Credentials", "স্টাফ লগইন তথ্য")}</h3>
+                {!isCredentialsFormUnlocked ? (
+                  <form onSubmit={handleVerifyCurrentPassword} className="flex flex-col gap-2">
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="password"
+                        placeholder={t("> enter Creator password to unlock...", "> আনলক করতে ক্রিয়েটর পাসওয়ার্ড দিন...")}
+                        value={currentPassCheck}
+                        onChange={e => { setCurrentPassCheck(e.target.value); if (credentialsUnlockError) setCredentialsUnlockError(""); }}
+                        className="px-3 py-1.5 text-sm rounded border border-green-800/50 bg-black/60 text-green-100 placeholder-green-600/60 outline-none flex-1 focus:border-green-400"
+                      />
+                      <button type="submit" className="bg-green-700 hover:bg-green-600 text-white text-sm font-bold px-3 py-1.5 rounded uppercase transition">{t("Unlock", "আনলক")}</button>
+                    </div>
+                    {credentialsUnlockError && (
+                      <p className="text-sm font-bold text-red-400">{credentialsUnlockError}</p>
+                    )}
+                  </form>
+                ) : (
+                  <form onSubmit={handleSaveStaffCredentials} className="flex flex-col gap-3 text-sm">
+                    <h4 className="text-sm font-black text-lime-400 uppercase">✅ {t("Unlocked", "আনলক হয়েছে")}</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-green-400">{t("Staff Username", "স্টাফ ইউজারনেম")}</label>
+                        <input type="text" value={newStaffUsernameInput} onChange={e => setNewStaffUsernameInput(e.target.value)} className="w-full px-2 py-1.5 rounded border border-green-800/50 bg-black/60 text-green-100 outline-none focus:border-green-400" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-green-400">{t("Staff Password", "স্টাফ পাসওয়ার্ড")}</label>
+                        <input type="text" value={newStaffPasswordInput} onChange={e => setNewStaffPasswordInput(e.target.value)} className="w-full px-2 py-1.5 rounded border border-green-800/50 bg-black/60 text-green-100 font-mono outline-none focus:border-green-400" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button type="button" onClick={() => setIsCredentialsFormUnlocked(false)} className="px-3 py-1.5 text-sm font-bold rounded bg-green-950/60 text-green-400 hover:text-lime-400 transition">{t("Cancel", "বাতিল")}</button>
+                      <button type="submit" className="bg-green-700 hover:bg-green-600 text-white font-black text-sm px-4 py-1.5 rounded uppercase tracking-wider shadow">{t("Save", "সংরক্ষণ")}</button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
+              {/* Quick action */}
+              <div className="hk-card flex flex-wrap items-center justify-between gap-3 rounded-xl p-3.5">
+                <p className="text-sm font-bold text-green-400">⚡ {t("Quick Action", "কুইক অ্যাকশন")}</p>
+                <button
+                  onClick={() => { setStaffVisibleModules({ ...adminVisibleModules }); cloudSet('madina_v7_staff_perms', JSON.stringify(adminVisibleModules)); }}
+                  className="text-sm font-bold px-3 py-1.5 rounded-lg bg-green-900/40 text-green-300 hover:bg-green-800/60 transition"
+                >
+                  {t("Copy Admin → Staff", "অ্যাডমিন → স্টাফে কপি")}
+                </button>
+              </div>
+
+              {/* Staff permissions */}
+              <div className="hk-card rounded-xl p-4 shadow-lg">
+                <h3 className="text-sm font-black uppercase tracking-widest text-green-300 mb-1">▣ {t("Staff Permissions", "স্টাফ অনুমতি")}</h3>
+                <p className="text-sm text-green-400/70 font-semibold mb-5">{t("Control exactly what the Staff account can see and use inside the app.", "স্টাফ অ্যাকাউন্ট অ্যাপের ভেতরে ঠিক কী দেখতে ও ব্যবহার করতে পারবে তা নিয়ন্ত্রণ করুন।")}</p>
+                <div className="flex flex-col gap-5">
+                  {permGroups.map(group => {
+                    const groupKeys = group.items.map(i => i.key);
+                    return (
+                    <div key={group.label}>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-black uppercase tracking-widest flex items-center gap-1.5 text-green-500">
+                          <span>{group.icon}</span><span>{group.label}</span>
+                        </h4>
+                        <div className="flex gap-1.5">
+                          <button onClick={() => setStaffPermissionGroup(groupKeys, true)} className="text-sm font-bold px-2 py-0.5 rounded-md bg-green-900/40 text-green-300 hover:bg-green-800/60 transition">{t("All On", "সব চালু")}</button>
+                          <button onClick={() => setStaffPermissionGroup(groupKeys, false)} className="text-sm font-bold px-2 py-0.5 rounded-md bg-black/50 text-green-600 hover:bg-green-950 transition">{t("All Off", "সব বন্ধ")}</button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {group.items.map(({ key, label }) => {
+                          const isOn = !!staffVisibleModules[key];
+                          return (
+                            <div
+                              key={key}
+                              onClick={() => toggleStaffPermissionField(key)}
+                              className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer select-none transition-all ${isOn ? 'border-lime-500/70 bg-lime-500/10' : 'border-green-900/50 bg-black/40 opacity-50'}`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm">{isOn ? '✅' : '❌'}</span>
+                                <span className={`text-sm font-bold ${isOn ? 'text-green-100' : 'text-green-600'}`}>{label}</span>
+                              </div>
+                              <div className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${isOn ? 'bg-lime-500' : 'bg-green-900'}`}>
+                                <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${isOn ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );})}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ============================ SETTINGS TAB ============================ */}
+          {creatorActiveTab === "settings" && (
+            <div className="hk-anim-in flex flex-col gap-5">
+              <div className="hk-card rounded-xl p-4 shadow-lg">
+                <h3 className="text-sm font-black uppercase tracking-widest text-green-300 mb-3">🛡️ {t("Creator Login & Secret Code", "ক্রিয়েটর লগইন ও সিক্রেট কোড")}</h3>
+                {!isCredentialsFormUnlocked ? (
+                  <form onSubmit={handleVerifyCurrentPassword} className="flex flex-col gap-2">
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="password"
+                        placeholder={t("> enter Creator password to unlock...", "> আনলক করতে ক্রিয়েটর পাসওয়ার্ড দিন...")}
+                        value={currentPassCheck}
+                        onChange={e => { setCurrentPassCheck(e.target.value); if (credentialsUnlockError) setCredentialsUnlockError(""); }}
+                        className="px-3 py-1.5 text-sm rounded border border-green-800/50 bg-black/60 text-green-100 placeholder-green-600/60 outline-none flex-1 focus:border-green-400"
+                      />
+                      <button type="submit" className="bg-green-700 hover:bg-green-600 text-white text-sm font-bold px-3 py-1.5 rounded uppercase transition">{t("Unlock", "আনলক")}</button>
+                    </div>
+                    {credentialsUnlockError && (
+                      <p className="text-sm font-bold text-red-400">{credentialsUnlockError}</p>
+                    )}
+                  </form>
+                ) : (
+                  <form onSubmit={handleSaveCreatorCredentials} className="flex flex-col gap-3 text-sm">
+                    <h4 className="text-sm font-black text-lime-400 uppercase">✅ {t("Unlocked", "আনলক হয়েছে")}</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-green-400">{t("Creator Username", "ক্রিয়েটর ইউজারনেম")}</label>
+                        <input type="text" value={newCreatorUsernameInput} onChange={e => setNewCreatorUsernameInput(e.target.value)} className="w-full px-2 py-1.5 rounded border border-green-800/50 bg-black/60 text-green-100 outline-none focus:border-green-400" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold mb-1 text-green-400">{t("Creator Password", "ক্রিয়েটর পাসওয়ার্ড")}</label>
+                        <input type="text" value={newCreatorPasswordInput} onChange={e => setNewCreatorPasswordInput(e.target.value)} className="w-full px-2 py-1.5 rounded border border-green-800/50 bg-black/60 text-green-100 font-mono outline-none focus:border-green-400" />
+                      </div>
+                      <div className="col-span-1 sm:col-span-2">
+                        <label className="block text-sm font-bold mb-1 text-green-400">{t("Secret Code (for Forgot Password)", "সিক্রেট কোড (পাসওয়ার্ড ভুললে)")}</label>
+                        <input type="text" value={newSecretCodeInput} onChange={e => setNewSecretCodeInput(e.target.value)} className="w-full px-2 py-1.5 rounded border border-green-800/50 bg-black/60 text-green-100 font-mono outline-none focus:border-green-400" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button type="button" onClick={() => setIsCredentialsFormUnlocked(false)} className="px-3 py-1.5 text-sm font-bold rounded bg-green-950/60 text-green-400 hover:text-lime-400 transition">{t("Cancel", "বাতিল")}</button>
+                      <button type="submit" className="bg-green-700 hover:bg-green-600 text-white font-black text-sm px-4 py-1.5 rounded uppercase tracking-wider shadow">{t("Save", "সংরক্ষণ")}</button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
+              <div className="hk-card rounded-xl p-3.5 text-sm font-semibold flex items-center gap-2 text-green-400/80">
+                <span className="text-lg">🔑</span>
+                <span>{t("Tip: anyone who knows your Creator username/password could still log in directly — keep them private and change them periodically.", "টিপ: ক্রিয়েটর ইউজারনেম/পাসওয়ার্ড জানলে কেউ সরাসরি লগইন করতে পারবে — গোপন রাখুন ও নিয়মিত পরিবর্তন করুন।")}</span>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    );
+  }
+
+  // ============================================================
+  // SYSTEM LOCKED BY CREATOR — Admin & Staff CAN still log in, but
+  // every menu/option is hidden; only the Creator's big notice shows.
+  // ============================================================
+  if (isLoggedIn && currentUserRole !== "CREATOR" && systemLocked) {
+    return (
+      <div className={`min-h-screen flex flex-col font-sans antialiased ${isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
+        {/* Minimal top bar — no menu, just identity + logout */}
+        <div className={`flex items-center justify-between px-4 sm:px-6 py-3 border-b ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center text-white font-black overflow-hidden">{pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover" /> : pharmacyLogo}</div>
+            <h1 className="font-black text-base">{pharmacyName}</h1>
+          </div>
+          <button onClick={handleLogout} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-3 py-2 rounded-lg transition uppercase">{t("Logout", "লগআউট")}</button>
+        </div>
+
+        {/* Big centered notice — everything else is hidden */}
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className={`max-w-xl w-full rounded-2xl border p-8 text-center shadow-2xl ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className="text-6xl mb-4">🔒</div>
+            <h1 className="font-black text-2xl mb-4 text-red-500 uppercase tracking-wide">{t("Access Locked", "প্রবেশ বন্ধ করা হয়েছে")}</h1>
+            <p className={`text-lg sm:text-xl font-bold leading-relaxed ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+              {creatorNotice || t("The Creator has temporarily locked this app for everyone.", "ক্রিয়েটর সবার জন্য এই অ্যাপটি সাময়িকভাবে বন্ধ করে রেখেছেন।")}
+            </p>
           </div>
         </div>
       </div>
@@ -3191,8 +4066,8 @@ export default function Home() {
           )}
 
           {/* Role Badge */}
-          <div className={`hidden sm:block px-3 py-1.5 rounded-lg border text-sm font-black uppercase ${currentUserRole === "ADMIN" ? (isDarkMode ? 'bg-teal-500/20 border-teal-500/40 text-teal-400' : 'bg-teal-50 border-teal-200 text-teal-600') : (isDarkMode ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'bg-indigo-50 border-indigo-200 text-indigo-600')}`}>
-            {currentUserRole === "ADMIN" ? `👑 ${t("Admin", "অ্যাডমিন")}` : `👥 ${t("Staff", "স্টাফ")}`}
+          <div className={`hidden sm:block px-3 py-1.5 rounded-lg border text-sm font-black uppercase ${currentUserRole === "CREATOR" ? (isDarkMode ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-600') : currentUserRole === "ADMIN" ? (isDarkMode ? 'bg-teal-500/20 border-teal-500/40 text-teal-400' : 'bg-teal-50 border-teal-200 text-teal-600') : (isDarkMode ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'bg-indigo-50 border-indigo-200 text-indigo-600')}`}>
+            {currentUserRole === "CREATOR" ? `🛡️ ${t("Creator", "ক্রিয়েটর")}` : currentUserRole === "ADMIN" ? `👑 ${t("Admin", "অ্যাডমিন")}` : `👥 ${t("Staff", "স্টাফ")}`}
           </div>
 
           {/* Language Toggle */}
@@ -3214,6 +4089,13 @@ export default function Home() {
           <button onClick={handleLogout} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition uppercase"><span className="hidden sm:inline">{t("Logout", "লগআউট")}</span><span className="sm:hidden">✕</span></button>
         </div>
       </header>
+
+      {/* Creator's notice — shown to Admin & Staff */}
+      {creatorNotice && currentUserRole !== "CREATOR" && (
+        <div className={`px-4 py-2 text-sm font-semibold flex items-center gap-2 print:hidden ${isDarkMode ? 'bg-amber-950/40 text-amber-300 border-b border-amber-800' : 'bg-amber-50 text-amber-700 border-b border-amber-200'}`}>
+          <span>📢</span><span>{creatorNotice}</span>
+        </div>
+      )}
 
       {/* MAIN LAYOUT */}
       <div className="flex-1 flex print:block">
@@ -3314,7 +4196,7 @@ export default function Home() {
             </button>
           )}
 
-          {currentUserRole === "ADMIN" && (
+          {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (
             <button onClick={() => { playSound('tab'); setActiveTab("modules_menu"); }} className={`sidebar-nav-btn snav-perm w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "modules_menu" ? 'bg-teal-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
               <span>🛡️</span><span>{t("Permissions", "অনুমতি")}</span>
             </button>
@@ -3332,10 +4214,10 @@ export default function Home() {
             </div>
             <div className={`p-2 rounded-xl text-sm ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-100'}`}>
               <div className="flex items-center gap-1.5 font-bold mb-1">
-                <span className={`w-2 h-2 rounded-full ${currentUserRole === 'ADMIN' ? 'bg-teal-400' : 'bg-indigo-400'}`}></span>
+                <span className={`w-2 h-2 rounded-full ${currentUserRole === 'CREATOR' ? 'bg-amber-400' : currentUserRole === 'ADMIN' ? 'bg-teal-400' : 'bg-indigo-400'}`}></span>
                 <span className="uppercase tracking-wider text-sm text-slate-400">{t("Logged in as", "লগইন")}</span>
               </div>
-              <p className="font-mono font-black text-sm truncate">{currentUserRole === "ADMIN" ? t("Administrator", "অ্যাডমিন") : t("Staff", "স্টাফ")}</p>
+              <p className="font-mono font-black text-sm truncate">{currentUserRole === "CREATOR" ? t("Creator", "ক্রিয়েটর") : currentUserRole === "ADMIN" ? t("Administrator", "অ্যাডমিন") : t("Staff", "স্টাফ")}</p>
             </div>
             {checkShouldRenderTabOption("backup_restore") && (
               <button onClick={resetDatabase} className="w-full mt-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold py-1 px-2 rounded text-sm transition uppercase tracking-wider">
@@ -3428,7 +4310,7 @@ export default function Home() {
                     <span className="text-xl">📅</span><span>{t("Closing", "ক্লোজিং")}</span>
                   </button>
                 )}
-                {currentUserRole === "ADMIN" && (
+                {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (
                   <button onClick={() => { playSound('tab'); setActiveTab("modules_menu"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "modules_menu" ? 'bg-teal-500 text-white border-teal-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
                     <span className="text-xl">🛡️</span><span>{t("Permissions", "অনুমতি")}</span>
                   </button>
@@ -4755,7 +5637,7 @@ export default function Home() {
                         <th className="p-2.5">{t("Name", "নাম")}</th>
                         <th className="p-2.5">{t("Type", "ধরন")}</th>
                         <th className="p-2.5">{t("Generic", "জেনেরিক")}</th>
-                        {currentUserRole === "ADMIN" && <th className="p-2.5">{t("Buy Price", "ক্রয় মূল্য")}</th>}
+                        {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && <th className="p-2.5">{t("Buy Price", "ক্রয় মূল্য")}</th>}
                         <th className="p-2.5">{t("Sell Price", "বিক্রয় মূল্য")}</th>
                         <th className="p-2.5">{t("Stock", "স্টক")}</th>
                         <th className="p-2.5">{t("Low Alert", "কম স্টক সীমা")}</th>
@@ -4789,7 +5671,7 @@ export default function Home() {
                               {isEditing ? <input type="text" value={editFormData.generic} onChange={e => handleEditFormChange("generic", e.target.value)} className="px-1.5 py-0.5 rounded border text-sm bg-transparent w-full" />
                                 : <span className="block truncate max-w-[100px]">{med.generic}</span>}
                             </td>
-                            {currentUserRole === "ADMIN" && (
+                            {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (
                               <td className="p-2.5 font-mono">
                                 {isEditing ? <input type="number" step="any" value={editFormData.buyPrice} onChange={e => handleEditFormChange("buyPrice", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-16" />
                                   : <span>{med.buyPrice} {currencySymbol}</span>}
@@ -4826,7 +5708,7 @@ export default function Home() {
                               ) : (
                                 <div className="flex gap-1.5 justify-center">
                                   <button onClick={() => startEditing(med)} className="text-teal-500 hover:text-teal-600 font-bold transition">✏️</button>
-                                  {currentUserRole === "ADMIN" && <button onClick={() => deleteMedicine(med.id)} className="text-red-400 hover:text-red-600 font-bold transition">🗑️</button>}
+                                  {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && <button onClick={() => deleteMedicine(med.id)} className="text-red-400 hover:text-red-600 font-bold transition">🗑️</button>}
                                 </div>
                               )}
                             </td>
@@ -5008,7 +5890,7 @@ export default function Home() {
                           <label className={`text-sm font-bold mr-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Paid:", "পরিশোধ:")}</label>
                           <input type="number" value={pAmountPaid} onChange={e => setPAmountPaid(e.target.value)} placeholder={t("Amount paid...", "পরিশোধিত...")} className={`px-2 py-1 rounded border text-sm outline-none font-mono w-28 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                         </div>
-                        {currentUserRole === "ADMIN" && <span className="text-red-400 font-bold font-mono">{t("Due:", "বাকি:")} {bulkCartCalculatedDue.toFixed(1)}</span>}
+                        {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && <span className="text-red-400 font-bold font-mono">{t("Due:", "বাকি:")} {bulkCartCalculatedDue.toFixed(1)}</span>}
                       </div>
                       <button onClick={handleBulkPurchaseMasterSubmit} className="bg-teal-500 hover:bg-teal-600 text-white font-black text-sm px-5 py-2 rounded-xl uppercase tracking-wider shadow transition">
                         📥 {t("Save Purchase", "ক্রয় সংরক্ষণ")}
@@ -5023,7 +5905,7 @@ export default function Home() {
                 <div className="xl:col-span-3">
                   <div className={`ccard cc-emerald p-3 rounded-xl border shadow-sm ${isDarkMode ? 'bg-emerald-950/50 border-emerald-600' : 'bg-emerald-50 border-emerald-300'}`}>
                     <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-2">{t("Purchase History", "ক্রয়ের ইতিহাস")}</h3>
-                    {currentUserRole === "ADMIN" && (
+                    {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (
                       <div className="mb-2 text-sm flex justify-between">
                         <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("Total:", "মোট:")} <strong className="text-teal-500 font-mono">{grandTotalPurchaseCost.toFixed(1)} {currencySymbol}</strong></span>
                         <span className="text-red-400 font-bold">{t("Due:", "বাকি:")} <strong className="font-mono">{grandTotalPurchaseDue.toFixed(1)}</strong></span>
@@ -5034,14 +5916,14 @@ export default function Home() {
                         <div key={log.id} className={`p-2.5 rounded-xl border flex flex-col gap-1 text-sm ${isDarkMode ? 'bg-slate-900/60 border-slate-700/60' : 'bg-slate-50 border-slate-200'}`}>
                           <div className="flex items-center justify-between font-bold">
                             <span className="text-teal-500 truncate max-w-[140px]">{log.medicineName}</span>
-                            {currentUserRole === "ADMIN" && <span className="font-mono text-slate-400">{log.totalCost.toFixed(1)} {currencySymbol}</span>}
+                            {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && <span className="font-mono text-slate-400">{log.totalCost.toFixed(1)} {currencySymbol}</span>}
                           </div>
                           <div className="flex items-center justify-between text-sm text-slate-400 font-semibold">
                             <span>{log.companyName}</span>
                             <span>{log.quantity} pcs</span>
                           </div>
                           <div className="flex items-center justify-between text-sm font-mono border-t pt-1 border-slate-700/5 text-slate-400">
-                            {currentUserRole === "ADMIN" ? <span>{t("Due:", "বাকি:")} <strong className={log.due > 0 ? 'text-red-400' : 'text-slate-400'}>{log.due.toFixed(1)}</strong></span> : <span>-</span>}
+                            {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") ? <span>{t("Due:", "বাকি:")} <strong className={log.due > 0 ? 'text-red-400' : 'text-slate-400'}>{log.due.toFixed(1)}</strong></span> : <span>-</span>}
                             <span>{log.dateString}</span>
                           </div>
                         </div>
@@ -5359,7 +6241,7 @@ export default function Home() {
                                   className={`p-1.5 rounded-lg text-sm font-bold transition btn-press ${isDarkMode ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white' : 'bg-blue-50 text-blue-500 hover:bg-blue-500 hover:text-white'}`}
                                   title={t("Print Invoice", "প্রিন্ট করুন")}
                                 >🖨️</button>
-                                {currentUserRole === "ADMIN" && (
+                                {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (
                                   <button
                                     onClick={() => handleDeleteVoucher(v)}
                                     className={`p-1.5 rounded-lg text-sm font-bold transition btn-press ${isDarkMode ? 'bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white'}`}
@@ -5604,7 +6486,7 @@ export default function Home() {
                       <th className="p-2.5 text-right">{t("Total Bill", "মোট বিল")}</th>
                       <th className="p-2.5 text-right">{t("Payment", "পেমেন্ট")}</th>
                       <th className="p-2.5 text-right text-red-400">{t("Due", "বাকি")}</th>
-                      {currentUserRole === "ADMIN" && <th className="p-2.5 text-right">{t("Profit", "লাভ")}</th>}
+                      {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && <th className="p-2.5 text-right">{t("Profit", "লাভ")}</th>}
                       <th className="p-2.5 text-center">{t("Status", "অবস্থা")}</th>
                       <th className="p-2.5 text-center">{t("Actions", "কার্যক্রম")}</th>
                     </tr>
@@ -5625,7 +6507,7 @@ export default function Home() {
                           </span>
                         </td>
                         <td className="p-2.5 font-mono text-right font-black text-red-400">{(inv.due || 0).toFixed(1)}</td>
-                        {currentUserRole === "ADMIN" && (
+                        {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (
                           <td className={`p-2.5 font-mono text-right font-black ${inv.profit >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>{inv.profit.toFixed(1)}</td>
                         )}
                         <td className="p-2.5 text-center">
@@ -5641,7 +6523,7 @@ export default function Home() {
                             {checkShouldRenderTabOption("returns") && !inv.isReturned && (
                               <button onClick={() => openReturnInterface(inv)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 py-0.5 rounded transition">🔄</button>
                             )}
-                            {currentUserRole === "ADMIN" && (
+                            {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (
                               <button onClick={() => deleteInvoice(inv.invoiceId)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 py-0.5 rounded transition">🗑️</button>
                             )}
                           </div>
@@ -6645,25 +7527,42 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Login Credentials */}
+              {/* Login Credentials — Creator-only management of Admin & Staff accounts */}
               <div className={`ccard cc-teal p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-teal-950/50 border-teal-600' : 'bg-teal-50 border-teal-300'}`}>
                 <h3 className="text-sm font-black uppercase tracking-wider text-teal-500 mb-3">🔐 {t("Login Credentials", "লগইন তথ্য পরিবর্তন")}</h3>
 
-                {!isCredentialsFormUnlocked ? (
-                  <form onSubmit={handleVerifyCurrentPassword} className="flex gap-2 items-center">
-                    <input
-                      type="password"
-                      placeholder={t("Enter current admin password to unlock...", "আনলক করতে বর্তমান পাসওয়ার্ড দিন...")}
-                      value={currentPassCheck}
-                      onChange={e => setCurrentPassCheck(e.target.value)}
-                      className={`px-3 py-1.5 text-sm rounded border outline-none flex-1 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-100 border-slate-200'}`}
-                    />
-                    <button type="submit" className="bg-slate-600 text-white text-sm font-bold px-3 py-1.5 rounded uppercase transition">{t("Unlock", "আনলক")}</button>
+                {currentUserRole !== "CREATOR" ? (
+                  <p className={`text-sm font-bold p-3 rounded-lg ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500'}`}>
+                    🔒 {t("Only the Creator account can view or change Admin & Staff login credentials.", "শুধুমাত্র ক্রিয়েটর অ্যাকাউন্ট অ্যাডমিন ও স্টাফের লগইন তথ্য দেখতে বা পরিবর্তন করতে পারবে।")}
+                  </p>
+                ) : !isCredentialsFormUnlocked ? (
+                  <form onSubmit={handleVerifyCurrentPassword} className="flex flex-col gap-2">
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="password"
+                        placeholder={t("Enter current Creator password to unlock...", "আনলক করতে বর্তমান ক্রিয়েটর পাসওয়ার্ড দিন...")}
+                        value={currentPassCheck}
+                        onChange={e => { setCurrentPassCheck(e.target.value); if (credentialsUnlockError) setCredentialsUnlockError(""); }}
+                        className={`px-3 py-1.5 text-sm rounded border outline-none flex-1 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-100 border-slate-200'}`}
+                      />
+                      <button type="submit" className="bg-slate-600 text-white text-sm font-bold px-3 py-1.5 rounded uppercase transition">{t("Unlock", "আনলক")}</button>
+                    </div>
+                    {credentialsUnlockError && (
+                      <p className="text-sm font-bold text-red-500">{credentialsUnlockError}</p>
+                    )}
                   </form>
                 ) : (
-                  <form onSubmit={handleSaveNewCredentials} className="flex flex-col gap-3 text-sm">
+                  <form onSubmit={handleSaveAllCredentialsCombined} className="flex flex-col gap-3 text-sm">
                     <h4 className="text-sm font-black text-emerald-500 uppercase">✅ {t("Unlocked - Edit credentials below:", "আনলক হয়েছে - নিচে পরিবর্তন করুন:")}</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Creator Username", "ক্রিয়েটর ইউজারনেম")}</label>
+                        <input type="text" value={newCreatorUsernameInput} onChange={e => setNewCreatorUsernameInput(e.target.value)} className={`w-full px-2 py-1.5 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                      </div>
+                      <div>
+                        <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Creator Password", "ক্রিয়েটর পাসওয়ার্ড")}</label>
+                        <input type="text" value={newCreatorPasswordInput} onChange={e => setNewCreatorPasswordInput(e.target.value)} className={`w-full px-2 py-1.5 rounded border outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                      </div>
                       <div>
                         <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Admin Username", "অ্যাডমিন ইউজারনেম")}</label>
                         <input type="text" value={newUsernameInput} onChange={e => setNewUsernameInput(e.target.value)} className={`w-full px-2 py-1.5 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
@@ -6816,7 +7715,7 @@ export default function Home() {
           {/* =========================================================
               TAB: STAFF PERMISSIONS (Admin Only)
           ========================================================= */}
-          {activeTab === "modules_menu" && currentUserRole === "ADMIN" && (() => {
+          {activeTab === "modules_menu" && (currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (() => {
             const permGroups = [
               {
                 label: t("Main Menus", "প্রধান মেনু"),
