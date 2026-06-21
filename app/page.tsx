@@ -2961,6 +2961,148 @@ export default function Home() {
 
   const triggerPrintReceipt = () => { playSound('print'); window.print(); };
 
+  // ============================================================
+  // POS PRINT (80mm thermal receipt printer) — shared helpers
+  // Opens a dedicated popup sized for 80mm thermal paper and prints
+  // a simplified, fast, narrow layout — independent from the normal
+  // colorful A4-style print so both options can sit side-by-side.
+  // ============================================================
+  const posPrint = (title: string, bodyHtml: string) => {
+    playSound('print');
+    const win = window.open('', '_blank', 'width=380,height=640');
+    if (!win) {
+      addToast(t('⚠️ Popup blocked! Please allow popups to use POS Print.', '⚠️ পপআপ ব্লক করা আছে! POS প্রিন্ট চালাতে পপআপ অনুমতি দিন।'), 'error');
+      return;
+    }
+    win.document.write(`<!DOCTYPE html><html><head><title>${title}</title><meta charset="utf-8" />
+      <style>
+        @page { size: 80mm auto; margin: 2mm; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        html, body { margin: 0; padding: 0; }
+        body { width: 76mm; margin: 0 auto; padding: 3mm 0; font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif; font-size: 14px; font-weight: 600; line-height: 1.55; color: #000; -webkit-font-smoothing: antialiased; }
+        .center { text-align: center; }
+        .right { text-align: right; }
+        .bold { font-weight: 800; }
+        .line { border-top: 2px dashed #000; margin: 7px 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+        td, th { padding: 3px 0; vertical-align: top; font-weight: 600; }
+        th { font-weight: 800; }
+        .ttl { font-size: 17px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+        .sm { font-size: 13px; font-weight: 600; }
+        .logo { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; }
+        .row { display: flex; justify-content: space-between; gap: 8px; margin: 1.5px 0; }
+      </style></head><body>${bodyHtml}<script>setTimeout(function(){ window.focus(); window.print(); }, 200);</script></body></html>`);
+    win.document.close();
+  };
+
+  const posShopHeader = (subtitle: string) => `
+    <div class="center" style="margin-bottom:6px;">
+      ${pharmacyLogo && pharmacyLogo.startsWith('data:image') ? `<img src="${pharmacyLogo}" class="logo" style="margin:0 auto 4px;display:block;" />` : ''}
+      <div class="ttl">${pharmacyName}</div>
+      <div class="sm">${pharmacySlogan}</div>
+      <div class="sm">📍 ${pharmacyAddress}</div>
+      <div class="line"></div>
+      <div class="bold" style="font-size:12px;">${subtitle}</div>
+    </div>
+  `;
+
+  const posShopFooter = (msg?: string) => `
+    <div class="line"></div>
+    <div class="center sm" style="margin-top:4px;">
+      <div class="bold">${msg || t('Thank You!', 'ধন্যবাদ!')}</div>
+      <div>${pharmacyName} · ${pharmacyAddress}</div>
+      <div>${t('Printed on:', 'প্রিন্ট তারিখ:')} ${new Date().toLocaleString()}</div>
+    </div>
+  `;
+
+  // POS print for a single sales invoice / receipt (used by checkout receipt + invoices list)
+  const posPrintInvoice = (inv: any) => {
+    const itemsHtml = (inv.items || []).map((item: any) => `
+      <tr>
+        <td colspan="3" class="bold">${item.name}</td>
+      </tr>
+      <tr>
+        <td class="sm">${(item.qty)} x ${Number(item.price).toFixed(1)}</td>
+        <td></td>
+        <td class="right bold">${((parseInt(item.qty) || 0) * item.price).toFixed(1)}</td>
+      </tr>
+    `).join('');
+    const body = `
+      ${posShopHeader('🧾 ' + t('Sales Receipt', 'বিক্রয় রশিদ'))}
+      <div class="sm" style="margin-bottom:4px;">
+        <div class="row"><span>${t('Invoice ID:', 'রশিদ নং:')}</span><span class="bold">${inv.invoiceId}</span></div>
+        <div class="row"><span>${t('Customer:', 'গ্রাহক:')}</span><span>${inv.customer}</span></div>
+        <div class="row"><span>${t('Phone:', 'ফোন:')}</span><span>${inv.phone || ''}</span></div>
+        <div class="row"><span>${t('Date:', 'তারিখ:')}</span><span>${inv.dateString}</span></div>
+        <div class="row"><span>${t('Payment:', 'পেমেন্ট:')}</span><span class="bold">${inv.paymentMethod}</span></div>
+      </div>
+      <div class="line"></div>
+      <table>${itemsHtml}</table>
+      <div class="line"></div>
+      <div class="sm">
+        <div class="row"><span>${t('Subtotal:', 'মোট:')}</span><span>${inv.subTotal.toFixed(1)} ${currencySymbol}</span></div>
+        ${inv.vat > 0 ? `<div class="row"><span>${t('VAT:', 'ভ্যাট:')}</span><span>+${inv.vat.toFixed(1)}</span></div>` : ''}
+        ${inv.discount > 0 ? `<div class="row"><span>${t('Discount:', 'ছাড়:')}</span><span>-${inv.discount.toFixed(1)}</span></div>` : ''}
+        <div class="row bold" style="font-size:12px; margin-top:3px;"><span>${t('Net Payable', 'মোট পরিশোধ')}</span><span>${inv.finalBill.toFixed(1)} ${currencySymbol}</span></div>
+        <div class="row"><span>${t('Cash Received:', 'নগদ পেয়েছি:')}</span><span>${(inv.cashReceived || inv.finalBill).toFixed(1)} ${currencySymbol}</span></div>
+        <div class="row"><span>${t('Change Given:', 'ফেরত দিয়েছি:')}</span><span>${Math.max(0, (inv.cashReceived || inv.finalBill) - inv.finalBill).toFixed(1)} ${currencySymbol}</span></div>
+        ${inv.due > 0 ? `<div class="row bold" style="margin-top:3px;"><span>⚠️ ${t('Unpaid Due', 'বাকি')}</span><span>${inv.due.toFixed(1)} ${currencySymbol}</span></div>` : ''}
+      </div>
+      ${posShopFooter(inv.footerMsg || receiptFooterMsg)}
+    `;
+    posPrint(t('Sales Receipt', 'বিক্রয় রশিদ') + ' ' + inv.invoiceId, body);
+  };
+
+  // POS print for a purchase voucher
+  const posPrintPurchaseVoucher = (v: any) => {
+    const itemsHtml = (v.items || []).map((item: any) => `
+      <tr><td colspan="2" class="bold">${item.medicineName}</td></tr>
+      <tr>
+        <td class="sm">${item.quantity} x ${item.unitPrice?.toFixed(2) || '-'}</td>
+        <td class="right bold">${item.totalCost?.toFixed(1)}</td>
+      </tr>
+    `).join('');
+    const body = `
+      ${posShopHeader('📦 ' + t('Purchase Invoice', 'ক্রয় ভাউচার'))}
+      <div class="sm" style="margin-bottom:4px;">
+        <div class="row"><span>${t('Voucher No:', 'ভাউচার নং:')}</span><span class="bold">${v.voucherId}</span></div>
+        <div class="row"><span>${t('Supplier:', 'সরবরাহকারী:')}</span><span>${v.companyName}</span></div>
+        <div class="row"><span>${t('Date:', 'তারিখ:')}</span><span>${v.dateStr}</span></div>
+      </div>
+      <div class="line"></div>
+      <table>${itemsHtml}</table>
+      <div class="line"></div>
+      <div class="sm">
+        <div class="row"><span>${t('Total Cost:', 'মোট খরচ:')}</span><span>${v.totalCost.toFixed(1)} ${currencySymbol}</span></div>
+        <div class="row"><span>${t('Paid:', 'পরিশোধ:')}</span><span>${v.totalPaid.toFixed(1)} ${currencySymbol}</span></div>
+        <div class="row bold" style="font-size:12px; margin-top:3px;"><span>${v.totalDue > 0 ? '⚠️ ' + t('Due', 'বাকি') : t('Fully Paid', 'সম্পূর্ণ পরিশোধিত')}</span><span>${v.totalDue > 0 ? v.totalDue.toFixed(1) + ' ' + currencySymbol : '✓'}</span></div>
+      </div>
+      ${posShopFooter(t('Thank You!', 'ধন্যবাদ!'))}
+    `;
+    posPrint(t('Purchase Invoice', 'ক্রয় ভাউচার') + ' ' + v.voucherId, body);
+  };
+
+  // Generic POS print for tabular reports (Company Purchase History, Due List,
+  // Due Collection, Returns, Stock Report, Daily Closing Report)
+  const posPrintReport = (subtitleEmojiTitle: string, columns: string[], rows: (string | number)[][], totalsLines: { label: string; value: string; emphasize?: boolean }[], metaLines?: { label: string; value: string }[]) => {
+    const theadHtml = `<tr>${columns.map((c, i) => `<th class="${i === columns.length - 1 ? 'right' : ''}" style="border-bottom:1px solid #000;">${c}</th>`).join('')}</tr>`;
+    const rowsHtml = rows.map(r => `<tr>${r.map((cell, i) => `<td class="${i === r.length - 1 ? 'right' : ''}">${cell}</td>`).join('')}</tr>`).join('');
+    const metaHtml = (metaLines || []).map(m => `<div class="row"><span>${m.label}</span><span class="bold">${m.value}</span></div>`).join('');
+    const totalsHtml = totalsLines.map(tl => `<div class="row ${tl.emphasize ? 'bold' : ''}" style="${tl.emphasize ? 'font-size:12px;margin-top:3px;' : ''}"><span>${tl.label}</span><span>${tl.value}</span></div>`).join('');
+    const body = `
+      ${posShopHeader(subtitleEmojiTitle)}
+      ${metaHtml ? `<div class="sm" style="margin-bottom:4px;">${metaHtml}</div><div class="line"></div>` : ''}
+      <table>
+        <thead>${theadHtml}</thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+      <div class="line"></div>
+      <div class="sm">${totalsHtml}</div>
+      ${posShopFooter(t('End of Report', 'প্রতিবেদনের সমাপ্তি'))}
+    `;
+    posPrint(subtitleEmojiTitle, body);
+  };
+
   const viewInvoiceLog = (invoice: any) => { setLastInvoice(invoice); setShowReceipt(true); };
 
   const deleteInvoice = (invoiceId: string) => {
@@ -3966,6 +4108,30 @@ export default function Home() {
           .cph-print-report { position: static !important; }
           @page { size: auto; margin: 10mm; }
           body, html { background: #fff !important; }
+
+          /* Make all printed receipt/report text clear & bold — easy to read on paper */
+          .receipt-print *, .cph-print-report * {
+            font-weight: 600 !important;
+            opacity: 1 !important;
+          }
+          .receipt-print .text-slate-200, .cph-print-report .text-slate-200,
+          .receipt-print .text-slate-300, .cph-print-report .text-slate-300,
+          .receipt-print .text-slate-400, .cph-print-report .text-slate-400,
+          .receipt-print .text-slate-500, .cph-print-report .text-slate-500,
+          .receipt-print .text-slate-600, .cph-print-report .text-slate-600 {
+            color: #1e293b !important;
+          }
+          .receipt-print .font-semibold, .cph-print-report .font-semibold,
+          .receipt-print .font-bold, .cph-print-report .font-bold,
+          .receipt-print .font-black, .cph-print-report .font-black,
+          .receipt-print th, .cph-print-report th {
+            font-weight: 800 !important;
+          }
+          .receipt-print .text-sm, .cph-print-report .text-sm {
+            font-size: 0.95rem !important;
+            line-height: 1.5 !important;
+          }
+          .receipt-print table, .cph-print-report table { font-size: 0.95rem !important; }
         }
       `}</style>
 
@@ -6241,6 +6407,11 @@ export default function Home() {
                                   className={`p-1.5 rounded-lg text-sm font-bold transition btn-press ${isDarkMode ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white' : 'bg-blue-50 text-blue-500 hover:bg-blue-500 hover:text-white'}`}
                                   title={t("Print Invoice", "প্রিন্ট করুন")}
                                 >🖨️</button>
+                                <button
+                                  onClick={() => posPrintPurchaseVoucher(v)}
+                                  className={`p-1.5 rounded-lg text-sm font-bold transition btn-press ${isDarkMode ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500 hover:text-white' : 'bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white'}`}
+                                  title={t("POS Print", "POS প্রিন্ট")}
+                                >🧾</button>
                                 {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (
                                   <button
                                     onClick={() => handleDeleteVoucher(v)}
@@ -6325,6 +6496,24 @@ export default function Home() {
                     {t("Total Purchased:", "মোট ক্রয়:")} <span className="text-violet-500 font-mono font-black">{grandTotalPurchaseCost.toFixed(1)} {currencySymbol}</span>
                   </div>
                   <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">🖨️ {t("Print", "প্রিন্ট")}</button>
+                  <button onClick={() => {
+                    const filtered = companyPurchaseSearch.trim()
+                      ? companyPurchaseSummary.filter((c: any) => c.company.toLowerCase().includes(companyPurchaseSearch.toLowerCase()))
+                      : companyPurchaseSummary;
+                    const grandQty = filtered.reduce((s: number, c: any) => s + c.totalQty, 0);
+                    const grandCost = filtered.reduce((s: number, c: any) => s + c.totalCost, 0);
+                    const grandCount = filtered.reduce((s: number, c: any) => s + c.purchaseCount, 0);
+                    posPrintReport(
+                      '🏭 ' + t("Company Purchase History", "কোম্পানি ক্রয় ইতিহাস"),
+                      [t("Company", "কোম্পানি"), t("Qty", "পরিমাণ"), t("Amount", "টাকা")],
+                      filtered.map((c: any) => [c.company, c.totalQty, c.totalCost.toFixed(1)]),
+                      [
+                        { label: t("Total Quantity:", "মোট পরিমাণ:"), value: String(grandQty) },
+                        { label: t("Total Purchases:", "মোট ক্রয় সংখ্যা:"), value: String(grandCount) },
+                        { label: t("Grand Total", "সর্বমোট"), value: grandCost.toFixed(1) + ' ' + currencySymbol, emphasize: true },
+                      ]
+                    );
+                  }} className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">🧾 {t("POS Print", "POS প্রিন্ট")}</button>
                 </div>
               </div>
 
@@ -6520,6 +6709,7 @@ export default function Home() {
                           <div className="flex gap-2 justify-center">
                             <button onClick={() => viewInvoiceLog(inv)} className="bg-slate-500 hover:bg-slate-600 text-white font-bold text-sm px-2 py-0.5 rounded transition">🔍</button>
                             <button onClick={() => { setLastInvoice(inv); setShowReceipt(true); setTimeout(() => { playSound('print'); window.print(); }, 300); }} className="bg-teal-500/10 text-teal-500 hover:bg-teal-500 hover:text-white font-bold text-sm px-2 py-0.5 rounded transition">🖨️</button>
+                            <button onClick={() => posPrintInvoice(inv)} title={t("POS Print", "POS প্রিন্ট")} className="bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white font-bold text-sm px-2 py-0.5 rounded transition">🧾</button>
                             {checkShouldRenderTabOption("returns") && !inv.isReturned && (
                               <button onClick={() => openReturnInterface(inv)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 py-0.5 rounded transition">🔄</button>
                             )}
@@ -6542,13 +6732,25 @@ export default function Home() {
           ========================================================= */}
           {activeTab === "due_list" && checkShouldRenderTabOption("due_list_view") && (
             <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm print:p-0 print:border-none print:shadow-none print:bg-transparent print:rounded-none ${isDarkMode ? 'bg-rose-950/50 border-rose-600' : 'bg-rose-50 border-rose-300'}`}>
-              <div className="flex items-center justify-between mb-3 print:hidden">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2 print:hidden">
                 <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">💳 {t("Customer Due List", "গ্রাহকের বাকি তালিকা")}</h3>
                 <div className="flex items-center gap-3">
                   <div className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     {t("Total Outstanding:", "মোট বাকি:")} <span className="text-red-500 font-mono font-black">{totalDueFromCustomers.toFixed(1)} {currencySymbol}</span>
                   </div>
                   <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">🖨️ {t("Print", "প্রিন্ট")}</button>
+                  <button onClick={() => {
+                    const filtered = dueSearch.trim()
+                      ? dueList.filter(d => d.customerName.toLowerCase().includes(dueSearch.toLowerCase()) || (d.phone && d.phone.includes(dueSearch)))
+                      : dueList;
+                    const grandDue = filtered.reduce((s: number, d: any) => s + d.totalDue, 0);
+                    posPrintReport(
+                      '💳 ' + t("Customer Due List", "গ্রাহকের বাকি তালিকা"),
+                      [t("Customer", "গ্রাহক"), t("Phone", "ফোন"), t("Due", "বাকি")],
+                      filtered.map((d: any) => [d.customerName, d.phone || '', d.totalDue.toFixed(1)]),
+                      [{ label: t("Grand Total Due", "সর্বমোট বাকি"), value: grandDue.toFixed(1) + ' ' + currencySymbol, emphasize: true }]
+                    );
+                  }} className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">🧾 {t("POS Print", "POS প্রিন্ট")}</button>
                 </div>
               </div>
 
@@ -6705,6 +6907,18 @@ export default function Home() {
                     {t("Total Collected:", "মোট আদায়:")} <span className="text-emerald-500 font-mono font-black">{dueCollectionLog.reduce((sum: number, l: any) => sum + (l.amount || 0), 0).toFixed(1)} {currencySymbol}</span>
                   </div>
                   <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">🖨️ {t("Print", "প্রিন্ট")}</button>
+                  <button onClick={() => {
+                    const filtered = dueCollectionSearch.trim()
+                      ? dueCollectionLog.filter((l: any) => (l.customerName || "").toLowerCase().includes(dueCollectionSearch.toLowerCase()) || (l.phone && l.phone.includes(dueCollectionSearch)))
+                      : dueCollectionLog;
+                    const grandCollected = filtered.reduce((s: number, l: any) => s + (l.amount || 0), 0);
+                    posPrintReport(
+                      '📒 ' + t("Due Collection List", "বাকি আদায় তালিকা"),
+                      [t("Customer", "গ্রাহক"), t("Date", "তারিখ"), t("Amount", "টাকা")],
+                      filtered.map((l: any) => [l.customerName, l.dateString, (l.amount || 0).toFixed(1)]),
+                      [{ label: t("Grand Total Collected", "সর্বমোট আদায়"), value: grandCollected.toFixed(1) + ' ' + currencySymbol, emphasize: true }]
+                    );
+                  }} className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-3 py-1.5 rounded-lg transition uppercase tracking-wider">🧾 {t("POS Print", "POS প্রিন্ট")}</button>
                 </div>
               </div>
 
@@ -6845,12 +7059,22 @@ export default function Home() {
             const creditCount = returnsList.length - cashCount;
             return (
             <div className={`ccard cc-green p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-green-950/50 border-green-600' : 'bg-green-50 border-green-300'}`}>
-              <div className="flex items-center justify-between mb-2 print:hidden">
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2 print:hidden">
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">🔄 {t("Returns & Exchanges", "ফেরত ও বিনিময়")}</h3>
                   <p className="text-sm text-slate-400 mt-0.5">{t("Log of orders where a return or exchange was processed.", "যে সব অর্ডার ফেরত বা বিনিময় করা হয়েছে।")}</p>
                 </div>
                 <button onClick={() => window.print()} className="bg-pink-500 hover:bg-pink-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow">🖨️ {t("Print", "প্রিন্ট")}</button>
+                <button onClick={() => posPrintReport(
+                  '🔄 ' + t("Returns & Exchanges", "ফেরত ও বিনিময়"),
+                  [t("Invoice", "রশিদ"), t("Customer", "গ্রাহক"), t("Refund", "ফেরত টাকা")],
+                  returnsList.map((inv: any) => [inv.invoiceId, inv.customer, '-' + inv.returnDetails.refundedAmount.toFixed(1)]),
+                  [{ label: t("Total Refunded", "মোট ফেরত টাকা"), value: totalRefund.toFixed(1) + ' ' + currencySymbol, emphasize: true }],
+                  [
+                    { label: t("Cash Refunds:", "নগদ ফেরত:"), value: String(cashCount) },
+                    { label: t("Store Credits:", "স্টোর ক্রেডিট:"), value: String(creditCount) },
+                  ]
+                )} className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow">🧾 {t("POS Print", "POS প্রিন্ট")}</button>
               </div>
 
               <div className="overflow-x-auto w-full print:hidden">
@@ -6983,12 +7207,23 @@ export default function Home() {
           ========================================================= */}
           {activeTab === "report" && checkShouldRenderTabOption("report_view") && (
             <div className={`ccard cc-slate p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-500' : 'bg-slate-100 border-slate-400'}`}>
-              <div className="flex items-center justify-between mb-4 print:hidden">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2 print:hidden">
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-wider text-teal-500">📋 {t("Stock Report", "স্টক রিপোর্ট")}</h3>
                   <p className={`text-sm mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("All medicines currently in stock with prices", "দোকানে বর্তমানে সব মালের তালিকা ও দাম")}</p>
                 </div>
                 <button onClick={() => window.print()} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow">🖨️ {t("Print Report", "রিপোর্ট প্রিন্ট করুন")}</button>
+                <button onClick={() => posPrintReport(
+                  '📋 ' + t("Stock Report", "স্টক রিপোর্ট"),
+                  [t("Medicine", "ওষুধ"), t("Stock", "স্টক"), t("Sell Price", "বিক্রয় মূল্য")],
+                  medicines.map((med: any) => [med.name, med.stock, med.price.toFixed(1)]),
+                  [
+                    { label: t("Total Items:", "মোট আইটেম:"), value: String(medicines.length) },
+                    { label: t("Total Stock (pcs):", "মোট স্টক (পিস):"), value: String(medicines.reduce((s: number, m: any) => s + m.stock, 0)) },
+                    { label: t("Buy Value:", "ক্রয় মূল্য মোট:"), value: totalStockValue.toFixed(1) + ' ' + currencySymbol },
+                    { label: t("Sell Value", "বিক্রয় মূল্য মোট"), value: totalStockRetailValue.toFixed(1) + ' ' + currencySymbol, emphasize: true },
+                  ]
+                )} className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow">🧾 {t("POS Print", "POS প্রিন্ট")}</button>
               </div>
 
               {/* Summary Cards */}
@@ -7183,12 +7418,38 @@ export default function Home() {
           {activeTab === "closing_report" && (
             <div className={`ccard p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'}`}>
               {/* Header */}
-              <div className="flex items-center justify-between mb-4 print:hidden">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2 print:hidden">
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-wider text-purple-500">🌙 {t("Daily Closing Report", "দৈনিক ক্লোজিং রিপোর্ট")}</h3>
                   <p className={`text-sm mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Today's full business summary", "আজকের সম্পূর্ণ ব্যবসার হিসাব")}</p>
                 </div>
                 <button onClick={() => window.print()} className="bg-purple-500 hover:bg-purple-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow print:hidden">🖨️ {t("Print", "প্রিন্ট")}</button>
+                <button onClick={() => {
+                  const cashInHand = computedDailySalesAmount - computedDailyDue + computedDailyDueCollection;
+                  const body = `
+                    ${posShopHeader('🌙 ' + t('Daily Closing Report', 'দৈনিক ক্লোজিং রিপোর্ট'))}
+                    <div class="sm" style="margin-bottom:4px;">
+                      <div class="row"><span>${t('Date:', 'তারিখ:')}</span><span class="bold">${new Date().toLocaleDateString()}</span></div>
+                    </div>
+                    <div class="line"></div>
+                    <div class="sm">
+                      <div class="row"><span>${t('Total Sales:', 'মোট বিক্রয়:')}</span><span>${computedDailySalesAmount.toFixed(1)} ${currencySymbol}</span></div>
+                      <div class="row"><span>${t('Cash Received:', 'নগদ পেয়েছি:')}</span><span>${(computedDailySalesAmount - computedDailyDue).toFixed(1)} ${currencySymbol}</span></div>
+                      <div class="row"><span>${t("Today's Profit:", 'আজকের লাভ:')}</span><span>${computedDailyProfitAmount.toFixed(1)} ${currencySymbol}</span></div>
+                      <div class="row"><span>${t("Today's Due:", 'আজকের বাকি:')}</span><span>${computedDailyDue.toFixed(1)} ${currencySymbol}</span></div>
+                      <div class="row"><span>${t('bKash/Nagad:', 'বিকাশ/নগদ:')}</span><span>${computedDailyBkash.toFixed(1)} ${currencySymbol}</span></div>
+                      <div class="row"><span>${t('Discount Given:', 'ছাড় দিয়েছি:')}</span><span>${computedDailyDiscount.toFixed(1)} ${currencySymbol}</span></div>
+                      <div class="row"><span>${t('Due Collected Today:', 'আজ বাকি আদায়:')}</span><span>${computedDailyDueCollection.toFixed(1)} ${currencySymbol}</span></div>
+                    </div>
+                    <div class="line"></div>
+                    <div class="sm">
+                      <div class="row bold" style="font-size:12px;"><span>${t('💵 Total Cash in Hand:', '💵 মোট নগদ হাতে:')}</span><span>${cashInHand.toFixed(1)} ${currencySymbol}</span></div>
+                      <div class="row"><span>${t('Net Profit Today:', 'আজকের নিট লাভ:')}</span><span>${computedDailyProfitAmount.toFixed(1)} ${currencySymbol}</span></div>
+                    </div>
+                    ${posShopFooter(t('End of Report', 'প্রতিবেদনের সমাপ্তি'))}
+                  `;
+                  posPrint(t('Daily Closing Report', 'দৈনিক ক্লোজিং রিপোর্ট'), body);
+                }} className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-4 py-2 rounded-lg transition uppercase tracking-wider shadow print:hidden">🧾 {t("POS Print", "POS প্রিন্ট")}</button>
               </div>
 
               {/* Date Badge */}
@@ -8037,7 +8298,10 @@ export default function Home() {
 
             {/* Control bar — hidden when printing */}
             <div className="flex justify-between items-center px-4 py-2.5 border-b bg-slate-50 print:hidden">
-              <button onClick={triggerPrintReceipt} className="bg-teal-500 hover:bg-teal-600 text-white font-bold py-1.5 px-3.5 rounded-lg uppercase tracking-wider text-sm transition shadow">🖨️ {t("Print", "প্রিন্ট")}</button>
+              <div className="flex items-center gap-2">
+                <button onClick={triggerPrintReceipt} className="bg-teal-500 hover:bg-teal-600 text-white font-bold py-1.5 px-3.5 rounded-lg uppercase tracking-wider text-sm transition shadow">🖨️ {t("Print", "প্রিন্ট")}</button>
+                <button onClick={() => posPrintInvoice(lastInvoice)} className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3.5 rounded-lg uppercase tracking-wider text-sm transition shadow">🧾 {t("POS Print", "POS প্রিন্ট")}</button>
+              </div>
               <button onClick={() => setShowReceipt(false)} className="text-red-500 hover:text-red-600 font-bold text-sm uppercase">✕ {t("Close", "বন্ধ")}</button>
             </div>
 
