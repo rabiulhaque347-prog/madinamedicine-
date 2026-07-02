@@ -7071,14 +7071,9 @@ export default function Home() {
                               </td>
                               <td className="p-2.5 text-right font-mono font-black text-red-500 text-sm">{due.totalDue.toFixed(1)} {currencySymbol}</td>
                               <td className="p-2.5 text-center">
-                                <div className="flex gap-2 justify-center">
-                                  <button onClick={() => { setDuePaymentModal(due); setDuePayAmount(""); }} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1 rounded transition">
-                                    💰 {t("Collect Payment", "পরিশোধ নিন")}
-                                  </button>
-                                  {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (
-                                    <button onClick={() => deleteDueEntry(due.id)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 py-1 rounded transition" title={t("Correct this customer's due amount", "এই গ্রাহকের বাকির পরিমাণ ঠিক করুন")}>✏️</button>
-                                  )}
-                                </div>
+                                <button onClick={() => { setDuePaymentModal(due); setDuePayAmount(""); }} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1 rounded transition">
+                                  💰 {t("Collect Payment", "পরিশোধ নিন")}
+                                </button>
                               </td>
                             </tr>
                           ))}
