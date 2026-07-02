@@ -77,8 +77,26 @@ const isFirebaseConfigured = () =>
   FIREBASE_CONFIG.databaseURL !== "YOUR_DATABASE_URL" &&
   !!FIREBASE_CONFIG.databaseURL;
 
+// ── Local vs Live data separation ─────────────────────────
+// When this app is run on localhost (i.e. you're testing on your own
+// computer), it must NOT write into the same data your live website
+// uses — otherwise test sales show up as real sales and mess up your
+// accounts. So locally we use a separate root path ("madina_data_test")
+// in the SAME Firebase project. Your real/live website (any domain that
+// isn't localhost/127.0.0.1) keeps using "madina_data" as before —
+// nothing changes there.
+const DATA_ROOT = (() => {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
+      return 'madina_data_test';
+    }
+  }
+  return 'madina_data';
+})();
+
 const fbUrl = (key: string) =>
-  `${FIREBASE_CONFIG.databaseURL}/madina_data/${key}.json`;
+  `${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}/${key}.json`;
 
 // Fetch with timeout — works on slow mobile data connections
 const fetchWithTimeout = (url: string, options: RequestInit = {}, timeoutMs = 10000): Promise<Response> => {
@@ -122,7 +140,7 @@ const fbGetAll = async (): Promise<Record<string, string> | null> => {
   if (!isFirebaseConfigured()) return null;
   try {
     const res = await fetchWithTimeout(
-      `${FIREBASE_CONFIG.databaseURL}/madina_data.json`,
+      `${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}.json`,
       {},
       12000
     );
@@ -155,7 +173,7 @@ const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => v
   if (!isFirebaseConfigured() || typeof window === 'undefined' || typeof EventSource === 'undefined') {
     return () => {};
   }
-  const url = `${FIREBASE_CONFIG.databaseURL}/madina_data.json`;
+  const url = `${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}.json`;
   let es: EventSource | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
@@ -2014,7 +2032,16 @@ export default function Home() {
     if (cart.length === 0) return alert(t("Cart is empty!", "কার্ট খালি!"));
     const hasEmptyQty = cart.some(item => item.qty === "" || item.qty === 0);
     if (hasEmptyQty) return alert(t("⚠️ Please enter valid quantities!", "⚠️ সঠিক পরিমাণ দিন!"));
+    // FIX: reset Cash Given AND Due together when the checkout modal opens,
+    // so an untouched (empty) Cash Given field always means "customer paid
+    // nothing" and the Due field correctly shows the full grand total as
+    // due right away — instead of silently keeping a stale value from a
+    // previous checkout, or showing "0" until the cashier types something.
     setCalculatorInput("");
+    setCashReceived("");
+    const prevDue = selectedExistingDue ? selectedExistingDue.totalDue : 0;
+    const grandTotalNow = currentFinalBill + prevDue;
+    setInvoiceDue(grandTotalNow > 0 ? grandTotalNow.toFixed(1) : "0");
     setShowConfirmModal(true);
   };
 
@@ -2086,8 +2113,12 @@ export default function Home() {
     const prevDueAmt = freshExistingDue ? freshExistingDue.totalDue : 0;
     const grandTotal = currentFinalBill + prevDueAmt;
     const cashGivenNum = parseFloat(cashReceived) || 0;
-    // invoiceDue is auto-calculated from cashReceived (read-only field), always consistent
-    const dueAmt = parseFloat(invoiceDue) || 0;
+    // FIX: compute dueAmt directly from grandTotal/cashGivenNum instead of
+    // trusting the invoiceDue display state — this guarantees correctness
+    // even if the Cash Given field was never touched (left empty = ৳0 paid,
+    // full amount due) rather than depending on the onChange handler having
+    // fired to keep invoiceDue in sync.
+    const dueAmt = Math.max(0, grandTotal - cashGivenNum);
     // FIX: paidCash must always equal the actual cash given (capped at grand total).
     // The old "cashGivenNum > 0 ? ... : currentFinalBill - dueAmt" branch produced a
     // wrong (negative) paidCash whenever cash given was exactly 0 AND the customer had
@@ -2097,6 +2128,15 @@ export default function Home() {
     const paidCash = Math.min(cashGivenNum, grandTotal);
     // Full profit added immediately regardless of cash or due
     const netProfit = currentFinalBill - totalCost;
+    // FIX (dashboard due duplication): the invoice's own "due" field must only
+    // reflect THIS bill's unpaid portion, never the combined grand total (new
+    // bill + old due). dueAmt/invoiceDue includes the old due so the checkout
+    // math and due-list totals stay correct, but if we stored that combined
+    // number on the invoice itself, the old due would get counted a second
+    // time every time dashboard sums invoice.due (it was already counted the
+    // day it was first created). Cash pays off the new bill first, so the new
+    // bill's own due is whatever's left of currentFinalBill after paidCash.
+    const newBillDue = Math.max(0, currentFinalBill - paidCash);
 
     const today = new Date();
     const formattedTime = today.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -2114,9 +2154,9 @@ export default function Home() {
       finalBill: currentFinalBill,
       profit: netProfit,
       paymentMethod,
-      cashReceived: parseFloat(cashReceived) || currentFinalBill,
-      due: dueAmt,
-      changeAmount: (parseFloat(cashReceived) || currentFinalBill) - currentFinalBill,
+      cashReceived: cashReceived !== "" ? (parseFloat(cashReceived) || 0) : currentFinalBill,
+      due: newBillDue,
+      changeAmount: (cashReceived !== "" ? (parseFloat(cashReceived) || 0) : currentFinalBill) - currentFinalBill,
       footerMsg: receiptFooterMsg,
       isReturned: false,
       returnDetails: null
@@ -2193,13 +2233,9 @@ export default function Home() {
       const effectivePhone = customerPhone || "N/A";
 
 
-      // dueAmt = grand total (new bill + prev due) - cash paid
-      // We need only the new bill's unpaid portion for the new invoice entry.
-      // Prev due's unpaid portion is already reflected in updatedDueList above.
-      // Cash first covers new bill, then prev due.
-      // New bill due = max(0, currentFinalBill - paidCash)
-      const newBillDue = Math.max(0, currentFinalBill - paidCash);
-
+      // newBillDue (this new bill's own unpaid portion) is already computed
+      // above and used as newInvoice.due. Prev due's unpaid portion is
+      // already reflected in updatedDueList above.
       if (newBillDue > 0) {
         const existingDueIdx = updatedDueList.findIndex(d => d.customerName.toLowerCase() === effectiveName.toLowerCase() && d.phone === effectivePhone);
         if (existingDueIdx !== -1) {
@@ -2428,6 +2464,34 @@ export default function Home() {
     setDuePaymentModal(null);
     setDuePayAmount("");
     alert(t(`✅ Payment of ${payAmt.toFixed(1)} ${currencySymbol} recorded!`, `✅ ${payAmt.toFixed(1)} ${currencySymbol} পরিশোধ নথিভুক্ত হয়েছে!`));
+  };
+
+  const deleteDueEntry = async (dueId: number) => {
+    const dueList = await fetchLatestList('madina_v7_due_list', dueListRef.current);
+    const entry = dueList.find((d: any) => d.id === dueId);
+    if (!entry) return;
+
+    const input = prompt(
+      t(
+        `This customer's current total due is ${entry.totalDue.toFixed(1)} ${currencySymbol}. Enter how much of that to remove (e.g. only the stale/incorrect part). Leave the rest untouched.`,
+        `এই গ্রাহকের বর্তমান মোট বাকি ${entry.totalDue.toFixed(1)} ${currencySymbol}। এর মধ্যে কতটুকু বাদ দিতে চান তা লিখুন (শুধু ভুল/আটকে থাকা অংশটুকু)। বাকিটা অক্ষত থাকবে।`
+      ),
+      entry.totalDue.toFixed(1)
+    );
+    if (input === null) return;
+    const removeAmt = parseFloat(input);
+    if (isNaN(removeAmt) || removeAmt <= 0) { alert(t("Please enter a valid amount!", "সঠিক পরিমাণ দিন!")); return; }
+    if (removeAmt > entry.totalDue) { alert(t(`Cannot remove more than the current due (${entry.totalDue.toFixed(1)} ${currencySymbol})`, `বর্তমান বাকির (${entry.totalDue.toFixed(1)} ${currencySymbol}) চেয়ে বেশি বাদ দেওয়া যাবে না`)); return; }
+    if (!confirm(t(`Remove ${removeAmt.toFixed(1)} ${currencySymbol} from this customer's due? This does NOT affect sales/profit totals.`, `এই গ্রাহকের বাকি থেকে ${removeAmt.toFixed(1)} ${currencySymbol} বাদ দেবেন? এটি sales/profit-কে প্রভাবিত করবে না।`))) return;
+
+    const newTotalDue = Math.max(0, entry.totalDue - removeAmt);
+    const updatedDueList = newTotalDue <= 0
+      ? dueList.filter((d: any) => d.id !== dueId)
+      : dueList.map((d: any) => d.id === dueId ? { ...d, totalDue: newTotalDue } : d);
+
+    setDueList(updatedDueList);
+    cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
+    alert(t("✅ Due amount adjusted!", "✅ বাকির পরিমাণ ঠিক করা হয়েছে!"));
   };
 
   // ============================================================
@@ -2678,6 +2742,159 @@ export default function Home() {
 
       setIsLoggedIn(false);
       alert(t("✅ System reset successful!", "✅ সিস্টেম রিসেট সম্পন্ন!"));
+    }
+  };
+
+  // ============================================================
+  // ONE-TIME FIX: OLD INVOICE "due" FIELD CORRECTION
+  // ------------------------------------------------------------
+  // Older invoices (created before the due-duplication bugfix) could
+  // have their "due" field saved as the COMBINED total (this bill's
+  // own due + the customer's previous outstanding due), instead of
+  // just this bill's own due. That made dashboard daily/monthly/yearly
+  // due cards double-count the old due every time that customer bought
+  // again with an unpaid balance.
+  //
+  // The correct per-invoice due can always be re-derived directly from
+  // that invoice's own stored fields, independent of due-list history:
+  //   correctDue = max(0, finalBill - cashReceived)
+  // (cash always pays off THIS bill first before any old due, per the
+  // checkout logic — so if cashReceived >= finalBill, this bill's own
+  // due is 0 even if extra cash also paid off an old due.)
+  //
+  // This only touches the "due" field on non-returned invoices. It does
+  // NOT touch the Due List (customer running totals) or due-collection
+  // log — those were already correct. A Firebase backup is taken first,
+  // and nothing is written until the admin reviews & confirms the count.
+  // ============================================================
+  const [isFixingDue, setIsFixingDue] = useState(false);
+  const [isRestoringDueBackup, setIsRestoringDueBackup] = useState(false);
+
+  // Restore invoices from the automatic backup taken by fixOldDueData,
+  // in case a previous run of the fix produced wrong results.
+  const restoreDueFixBackup = async () => {
+    if (isRestoringDueBackup) return;
+    setIsRestoringDueBackup(true);
+    try {
+      const listRes = await fetch(`${FIREBASE_CONFIG.databaseURL}/madina_backups.json?shallow=true`);
+      const keysObj = await listRes.json();
+      const backupKeys = keysObj ? Object.keys(keysObj).filter(k => k.startsWith('pre_due_fix_backup_')) : [];
+      if (backupKeys.length === 0) {
+        alert(t("No due-fix backup found.", "কোনো due-fix ব্যাকআপ পাওয়া যায়নি।"));
+        return;
+      }
+      // Pick the most recent backup (highest timestamp suffix)
+      const latestKey = backupKeys.sort().reverse()[0];
+      if (!confirm(t(
+        `Restore invoices from backup "${latestKey}"? This will undo the last due-fix run.`,
+        `"${latestKey}" ব্যাকআপ থেকে invoice ফেরত আনবেন? এটা শেষবারের due-fix বাতিল করে দেবে।`
+      ))) return;
+
+      const dataRes = await fetch(`${FIREBASE_CONFIG.databaseURL}/madina_backups/${latestKey}.json`);
+      const raw = await dataRes.json(); // this is a JSON string (matches cloudSet's double-encoding)
+      const restoredInvoices = JSON.parse(raw);
+
+      setInvoices(restoredInvoices);
+      await cloudSet('madina_v7_invoices', JSON.stringify(restoredInvoices));
+      alert(t("✅ Restored! Please refresh the page.", "✅ ফেরত আনা হয়েছে! পেজ রিফ্রেশ করুন।"));
+    } catch (err) {
+      console.error(err);
+      alert(t("❌ Restore failed.", "❌ ফেরত আনতে ব্যর্থ।"));
+    } finally {
+      setIsRestoringDueBackup(false);
+    }
+  };
+
+  const fixOldDueData = async () => {
+    if (isFixingDue) return;
+    setIsFixingDue(true);
+    try {
+      const latestInvoices = await fetchLatestList('madina_v7_invoices', invoicesRef.current);
+
+      if (!latestInvoices || latestInvoices.length === 0) {
+        alert(t("No invoices found.", "কোনো ইনভয়েস পাওয়া যায়নি।"));
+        return;
+      }
+
+      // IMPORTANT: this does NOT use inv.cashReceived, because older
+      // invoices where the customer paid ৳0 cash had that field
+      // incorrectly saved as the full bill amount (a separate bug,
+      // now fixed for new invoices). Using cashReceived here would
+      // wrongly zero out real due amounts.
+      //
+      // Instead: for each customer, their due-creating invoices are
+      // sorted by date. The old (buggy) "due" field on each invoice
+      // actually mirrors that customer's running due-list total at
+      // the moment that invoice was created (old due + new due
+      // combined). So this invoice's own new due = that invoice's old
+      // due value MINUS the previous due-creating invoice's old due
+      // value for the same customer. The very first due invoice for a
+      // customer needs no adjustment (there was nothing before it to
+      // combine with).
+      const customerKey = (inv: any) => `${(inv.customer || '').trim().toLowerCase()}|${inv.phone || ''}`;
+      const groups: Record<string, number[]> = {};
+      latestInvoices.forEach((inv: any, idx: number) => {
+        if (inv.isReturned) return;
+        if (!((inv.due || 0) > 0)) return;
+        const key = customerKey(inv);
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(idx);
+      });
+
+      const correctedInvoices = [...latestInvoices];
+      let changedCount = 0;
+      let totalRemoved = 0;
+      const preview: any[] = [];
+
+      Object.values(groups).forEach((idxArr) => {
+        const sorted = [...idxArr].sort(
+          (a, b) => parseCustomDateString(latestInvoices[a].dateString).getTime() - parseCustomDateString(latestInvoices[b].dateString).getTime()
+        );
+        let prevOldDue = 0;
+        sorted.forEach((idx, pos) => {
+          const inv = latestInvoices[idx];
+          const oldDue = inv.due || 0;
+          const newDue = pos === 0 ? oldDue : Math.max(0, oldDue - prevOldDue);
+          if (Math.abs(newDue - oldDue) > 1) {
+            changedCount++;
+            totalRemoved += (oldDue - newDue);
+            preview.push({ invoiceId: inv.invoiceId, customer: inv.customer, oldDue, newDue });
+            correctedInvoices[idx] = { ...inv, due: newDue };
+          }
+          prevOldDue = oldDue; // running snapshot uses the OLD (pre-fix) values, matching how they were originally chained
+        });
+      });
+
+      if (changedCount === 0) {
+        alert(t("✅ No incorrect due data found. Everything is already correct!", "✅ কোনো ভুল due ডাটা পাওয়া যায়নি। সব আগে থেকেই ঠিক আছে!"));
+        return;
+      }
+
+      console.table(preview);
+      const confirmMsg = t(
+        `Found ${changedCount} invoice(s) with incorrect due amounts.\nTotal ৳${totalRemoved.toFixed(2)} of double-counted due will be removed from dashboard totals.\nThe Due List (customer balances) will NOT be changed — it was already correct.\nA backup of the current invoices will be saved to Firebase first.\n\nProceed with the fix?`,
+        `${changedCount} টা ইনভয়েসে ভুল due পরিমাণ পাওয়া গেছে।\nমোট ৳${totalRemoved.toFixed(2)} ডাবল-কাউন্ট বাদ যাবে dashboard থেকে।\nDue List (কাস্টমারের ব্যালেন্স) বদলাবে না — ওটা আগে থেকেই ঠিক আছে।\nআগে বর্তমান invoice ডাটার একটা ব্যাকআপ Firebase-এ সেভ হবে।\n\nফিক্স করতে এগিয়ে যাবেন?`
+      );
+      if (!confirm(confirmMsg)) return;
+
+      const backupKey = `pre_due_fix_backup_${Date.now()}`;
+      await fetch(`${FIREBASE_CONFIG.databaseURL}/madina_backups/${backupKey}.json`, {
+        method: 'PUT',
+        body: JSON.stringify(JSON.stringify(latestInvoices)),
+      });
+
+      setInvoices(correctedInvoices);
+      cloudSet('madina_v7_invoices', JSON.stringify(correctedInvoices));
+
+      alert(t(
+        `✅ Fixed ${changedCount} invoice(s)! Dashboard and invoice due amounts are now correct.\nBackup saved as: ${backupKey}`,
+        `✅ ${changedCount} টা ইনভয়েস ঠিক হয়ে গেছে! Dashboard আর invoice-এর due এখন সঠিক।\nব্যাকআপ সেভ হয়েছে: ${backupKey}`
+      ));
+    } catch (err) {
+      console.error(err);
+      alert(t("❌ Something went wrong. No data was changed.", "❌ কিছু একটা ভুল হয়েছে। কোনো ডাটা পরিবর্তন হয়নি।"));
+    } finally {
+      setIsFixingDue(false);
     }
   };
 
@@ -3105,20 +3322,69 @@ export default function Home() {
 
   const viewInvoiceLog = (invoice: any) => { setLastInvoice(invoice); setShowReceipt(true); };
 
-  const deleteInvoice = (invoiceId: string) => {
-    if (!confirm(t("Delete this invoice permanently?", "এই রশিদটি স্থায়ীভাবে মুছে ফেলবেন?"))) return;
+  const deleteInvoice = async (invoiceId: string) => {
+    if (!confirm(t("Delete this invoice permanently? Stock will be restored.", "এই রশিদটি স্থায়ীভাবে মুছে ফেলবেন? স্টক ফেরত যোগ হবে।"))) return;
     const inv = invoices.find(i => i.invoiceId === invoiceId);
     if (!inv) return;
     const updatedInvoices = invoices.filter(i => i.invoiceId !== invoiceId);
+
+    // If this invoice still had unpaid due, remove that due from the
+    // customer's due list entry too — otherwise the customer keeps
+    // showing as owing money for a sale that no longer exists.
+    let updatedDueList = dueList;
+    if ((inv.due || 0) > 0) {
+      const dueListIdx = dueList.findIndex(d =>
+        d.customerName.toLowerCase() === (inv.customer || "").toLowerCase() &&
+        d.phone === inv.phone
+      );
+      if (dueListIdx !== -1) {
+        const entry = dueList[dueListIdx];
+        const invRecord = entry.invoices.find((i: any) => i.invoiceId === invoiceId);
+        const invoiceDueAmount = invRecord ? invRecord.amount : inv.due;
+        const reduceBy = Math.min(invoiceDueAmount, entry.totalDue);
+
+        if (reduceBy > 0) {
+          const newTotalDue = Math.max(0, entry.totalDue - reduceBy);
+          const newInvoicesArr = entry.invoices.filter((i: any) => i.invoiceId !== invoiceId);
+
+          updatedDueList = newTotalDue <= 0
+            ? dueList.filter(d => d.id !== entry.id)
+            : dueList.map(d => d.id === entry.id ? { ...d, totalDue: newTotalDue, invoices: newInvoicesArr } : d);
+        }
+      }
+    }
+
     // Derive from remaining invoices + due collections for cross-device consistency
     const { sales: newSales, profit: newProfit } = computeSalesAndProfit(updatedInvoices, dueCollectionLog);
     setInvoices(updatedInvoices);
+    setDueList(updatedDueList);
     setTotalSales(newSales);
     setTotalProfit(newProfit);
     cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
+    cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
     cloudSet('madina_v7_sales', newSales.toString());
     cloudSet('madina_v7_profit', newProfit.toString());
-    alert(t("✅ Invoice deleted!", "✅ রশিদ মুছে ফেলা হয়েছে!"));
+
+    // Restore stock for this invoice's items.
+    if (Array.isArray(inv.items) && inv.items.length > 0) {
+      const restoreQtyById: Record<number, number> = {};
+      for (const item of inv.items) {
+        const soldQty = parseInt(item.qty) || 0;
+        if (soldQty > 0) {
+          restoreQtyById[item.id] = (restoreQtyById[item.id] || 0) + soldQty;
+        }
+      }
+      if (Object.keys(restoreQtyById).length > 0) {
+        // FIX (multi-device stock conflict): add restored quantities on top
+        // of the freshest stock fetched from Firebase, instead of overwriting
+        // it with this device's local array.
+        await updateMedicinesOnCloud(latestMeds =>
+          latestMeds.map(m => restoreQtyById[m.id] ? { ...m, stock: m.stock + restoreQtyById[m.id] } : m)
+        );
+      }
+    }
+
+    alert(t("✅ Invoice deleted and stock restored!", "✅ রশিদ মুছে ফেলা হয়েছে এবং স্টক ফেরত যোগ হয়েছে!"));
   };
 
   // ============================================================
@@ -6807,9 +7073,14 @@ export default function Home() {
                               </td>
                               <td className="p-2.5 text-right font-mono font-black text-red-500 text-sm">{due.totalDue.toFixed(1)} {currencySymbol}</td>
                               <td className="p-2.5 text-center">
-                                <button onClick={() => { setDuePaymentModal(due); setDuePayAmount(""); }} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1 rounded transition">
-                                  💰 {t("Collect Payment", "পরিশোধ নিন")}
-                                </button>
+                                <div className="flex gap-2 justify-center">
+                                  <button onClick={() => { setDuePaymentModal(due); setDuePayAmount(""); }} className="bg-teal-500 hover:bg-teal-600 text-white font-bold text-sm px-3 py-1 rounded transition">
+                                    💰 {t("Collect Payment", "পরিশোধ নিন")}
+                                  </button>
+                                  {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (
+                                    <button onClick={() => deleteDueEntry(due.id)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 py-1 rounded transition" title={t("Remove part of this due (e.g. a stale/incorrect amount)", "এই বাকির একটি অংশ বাদ দিন (যেমন ভুল/আটকে থাকা টাকা)")}>✏️</button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))}
