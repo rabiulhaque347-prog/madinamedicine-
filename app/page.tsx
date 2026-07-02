@@ -2473,25 +2473,23 @@ export default function Home() {
 
     const input = prompt(
       t(
-        `This customer's current total due is ${entry.totalDue.toFixed(1)} ${currencySymbol}. Enter how much of that to remove (e.g. only the stale/incorrect part). Leave the rest untouched.`,
-        `এই গ্রাহকের বর্তমান মোট বাকি ${entry.totalDue.toFixed(1)} ${currencySymbol}। এর মধ্যে কতটুকু বাদ দিতে চান তা লিখুন (শুধু ভুল/আটকে থাকা অংশটুকু)। বাকিটা অক্ষত থাকবে।`
+        `This customer's current total due shows ${entry.totalDue.toFixed(1)} ${currencySymbol}. Enter what the CORRECT total due should actually be (not an amount to subtract — the final correct number).`,
+        `এই গ্রাহকের বর্তমান মোট বাকি দেখাচ্ছে ${entry.totalDue.toFixed(1)} ${currencySymbol}। সঠিক মোট বাকি আসলে কত হওয়া উচিত সেটা লিখুন (বাদ দেওয়ার পরিমাণ না — একেবারে সঠিক শেষ সংখ্যাটা লিখুন)।`
       ),
       entry.totalDue.toFixed(1)
     );
     if (input === null) return;
-    const removeAmt = parseFloat(input);
-    if (isNaN(removeAmt) || removeAmt <= 0) { alert(t("Please enter a valid amount!", "সঠিক পরিমাণ দিন!")); return; }
-    if (removeAmt > entry.totalDue) { alert(t(`Cannot remove more than the current due (${entry.totalDue.toFixed(1)} ${currencySymbol})`, `বর্তমান বাকির (${entry.totalDue.toFixed(1)} ${currencySymbol}) চেয়ে বেশি বাদ দেওয়া যাবে না`)); return; }
-    if (!confirm(t(`Remove ${removeAmt.toFixed(1)} ${currencySymbol} from this customer's due? This does NOT affect sales/profit totals.`, `এই গ্রাহকের বাকি থেকে ${removeAmt.toFixed(1)} ${currencySymbol} বাদ দেবেন? এটি sales/profit-কে প্রভাবিত করবে না।`))) return;
+    const correctTotal = parseFloat(input);
+    if (isNaN(correctTotal) || correctTotal < 0) { alert(t("Please enter a valid amount!", "সঠিক পরিমাণ দিন!")); return; }
+    if (!confirm(t(`Set this customer's total due to ${correctTotal.toFixed(1)} ${currencySymbol}? This does NOT affect sales/profit totals.`, `এই গ্রাহকের মোট বাকি ${correctTotal.toFixed(1)} ${currencySymbol} সেট করবেন? এটি sales/profit-কে প্রভাবিত করবে না।`))) return;
 
-    const newTotalDue = Math.max(0, entry.totalDue - removeAmt);
-    const updatedDueList = newTotalDue <= 0
+    const updatedDueList = correctTotal <= 0
       ? dueList.filter((d: any) => d.id !== dueId)
-      : dueList.map((d: any) => d.id === dueId ? { ...d, totalDue: newTotalDue } : d);
+      : dueList.map((d: any) => d.id === dueId ? { ...d, totalDue: correctTotal } : d);
 
     setDueList(updatedDueList);
     cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
-    alert(t("✅ Due amount adjusted!", "✅ বাকির পরিমাণ ঠিক করা হয়েছে!"));
+    alert(t("✅ Due amount corrected!", "✅ বাকির পরিমাণ ঠিক করা হয়েছে!"));
   };
 
   // ============================================================
@@ -7078,7 +7076,7 @@ export default function Home() {
                                     💰 {t("Collect Payment", "পরিশোধ নিন")}
                                   </button>
                                   {(currentUserRole === "ADMIN" || currentUserRole === "CREATOR") && (
-                                    <button onClick={() => deleteDueEntry(due.id)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 py-1 rounded transition" title={t("Remove part of this due (e.g. a stale/incorrect amount)", "এই বাকির একটি অংশ বাদ দিন (যেমন ভুল/আটকে থাকা টাকা)")}>✏️</button>
+                                    <button onClick={() => deleteDueEntry(due.id)} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 py-1 rounded transition" title={t("Correct this customer's due amount", "এই গ্রাহকের বাকির পরিমাণ ঠিক করুন")}>✏️</button>
                                   )}
                                 </div>
                               </td>
