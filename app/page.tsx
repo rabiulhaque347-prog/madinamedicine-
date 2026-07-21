@@ -50,6 +50,7 @@ const CLOUD_SYNC_KEYS = [
   'madina_v7_medmeta',
   'madina_v7_sales',
   'madina_v7_profit',
+  'madina_v7_expenses',
   'madina_v7_admin_user',
   'madina_v7_admin_pass',
   'madina_v7_staff_user',
@@ -273,10 +274,33 @@ const cloudSet = async (key: string, value: string): Promise<boolean> => {
 // ============================================================
 // SOUND ENGINE — Web Audio API (no external deps)
 // ============================================================
+// ── Shared AudioContext (singleton) ──────────────────────────
+// Creating a new AudioContext on every single sound (every click,
+// every tab switch) is expensive and was the main cause of UI lag:
+// each click had to pay the cost of spinning up a whole new audio
+// engine before the tap even registered. We create ONE context once,
+// keep it alive, and just resume it if the browser auto-suspends it.
+let __sharedAudioCtx: AudioContext | null = null;
+const getSharedAudioContext = (): AudioContext | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    if (!__sharedAudioCtx || __sharedAudioCtx.state === 'closed') {
+      __sharedAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (__sharedAudioCtx.state === 'suspended') {
+      __sharedAudioCtx.resume();
+    }
+    return __sharedAudioCtx;
+  } catch {
+    return null;
+  }
+};
+
 const createSound = (type: 'success' | 'click' | 'error' | 'add' | 'login' | 'notify' | 'delete' | 'checkout' | 'tab' | 'warning' | 'print' | 'save') => {
   if (typeof window === 'undefined') return;
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
     const g = ctx.createGain();
     g.connect(ctx.destination);
 
@@ -320,7 +344,8 @@ const createSound = (type: 'success' | 'click' | 'error' | 'add' | 'login' | 'no
     } else if (type === 'save') {
       play(523, 0.08, 0.2, 'sine'); play(784, 0.15, 0.25, 'sine', 0.1);
     }
-    setTimeout(() => ctx.close(), 1500);
+    // Note: we intentionally do NOT close the context here anymore —
+    // it's shared/reused across all sounds (see getSharedAudioContext).
   } catch {}
 };
 
@@ -422,87 +447,6 @@ const computeSalesAndProfit = (invoicesList: any[], dueCollectionLogList: any[])
 const themeStyles: Record<string, React.CSSProperties> = {
   light: {},
   dark: {},
-  ocean: {
-    '--theme-bg': '#0a1628',
-    '--theme-bg2': '#0d2040',
-    '--theme-card': '#0f2952',
-    '--theme-border': '#1e3a6e',
-    '--theme-text': '#b8d4f8',
-    '--theme-accent': '#38bdf8',
-    '--theme-accent2': '#0284c7',
-  } as React.CSSProperties,
-  forest: {
-    '--theme-bg': '#0a1a0f',
-    '--theme-bg2': '#0d2318',
-    '--theme-card': '#0f2d1e',
-    '--theme-border': '#1e4d33',
-    '--theme-text': '#a7f3c0',
-    '--theme-accent': '#34d399',
-    '--theme-accent2': '#059669',
-  } as React.CSSProperties,
-  royal: {
-    '--theme-bg': '#160a28',
-    '--theme-bg2': '#1e0d40',
-    '--theme-card': '#270f52',
-    '--theme-border': '#3d1a8a',
-    '--theme-text': '#d4b8f8',
-    '--theme-accent': '#a78bfa',
-    '--theme-accent2': '#7c3aed',
-  } as React.CSSProperties,
-  sunset: {
-    '--theme-bg': '#1a0a05',
-    '--theme-bg2': '#2a1005',
-    '--theme-card': '#3a1508',
-    '--theme-border': '#7c2d12',
-    '--theme-text': '#fcd5b0',
-    '--theme-accent': '#fb923c',
-    '--theme-accent2': '#ea580c',
-  } as React.CSSProperties,
-  cherry: {
-    '--theme-bg': '#1a0510',
-    '--theme-bg2': '#270a18',
-    '--theme-card': '#380d22',
-    '--theme-border': '#7c1d45',
-    '--theme-text': '#fdb8d4',
-    '--theme-accent': '#f472b6',
-    '--theme-accent2': '#db2777',
-  } as React.CSSProperties,
-  midnight: {
-    '--theme-bg': '#050508',
-    '--theme-bg2': '#0a0a12',
-    '--theme-card': '#0f0f1e',
-    '--theme-border': '#1a1a3a',
-    '--theme-text': '#c8c8e8',
-    '--theme-accent': '#818cf8',
-    '--theme-accent2': '#4f46e5',
-  } as React.CSSProperties,
-  nordic: {
-    '--theme-bg': '#1a1f2e',
-    '--theme-bg2': '#1e2535',
-    '--theme-card': '#252d42',
-    '--theme-border': '#2e3a56',
-    '--theme-text': '#cdd6f4',
-    '--theme-accent': '#89dceb',
-    '--theme-accent2': '#74c7ec',
-  } as React.CSSProperties,
-  lava: {
-    '--theme-bg': '#110805',
-    '--theme-bg2': '#1c0e07',
-    '--theme-card': '#28130a',
-    '--theme-border': '#6b1e09',
-    '--theme-text': '#ffd5b0',
-    '--theme-accent': '#f97316',
-    '--theme-accent2': '#c2410c',
-  } as React.CSSProperties,
-  glacier: {
-    '--theme-bg': '#f0f6ff',
-    '--theme-bg2': '#e4eeff',
-    '--theme-card': '#ffffff',
-    '--theme-border': '#c7d9f5',
-    '--theme-text': '#1e3a5f',
-    '--theme-accent': '#2563eb',
-    '--theme-accent2': '#1d4ed8',
-  } as React.CSSProperties,
 }
 
 // ============================================================
@@ -564,6 +508,618 @@ const dedupeIds = (arr: any[]): { list: any[]; changed: boolean } => {
   });
   return { list, changed };
 };
+
+
+// ── Hoisted static animation CSS (moved out of component so it
+// isn't recreated as a new string on every single re-render) ──
+const CSS_SPIN = `
+          @keyframes spin-slow { to { transform: rotate(360deg); } }
+          @keyframes pulse-ring { 0%,100%{transform:scale(1);opacity:0.6} 50%{transform:scale(1.15);opacity:0.3} }
+          @keyframes fadein { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        `;
+const CSS_FLOAT = `
+          @keyframes float-up { 0%{transform:translateY(100vh) scale(0);opacity:0} 10%{opacity:0.6} 90%{opacity:0.2} 100%{transform:translateY(-20px) scale(1);opacity:0} }
+          @keyframes login-slide-in { from{opacity:0;transform:translateY(30px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+          @keyframes clock-tick { 0%{transform:scale(1)} 50%{transform:scale(1.03)} 100%{transform:scale(1)} }
+          @keyframes logo-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(20,184,166,0.4)} 50%{box-shadow:0 0 0 12px rgba(20,184,166,0)} }
+          @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+          @keyframes spin-slow { to { transform: rotate(360deg); } }
+          @keyframes fadein { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+          @keyframes shake { 0%,100%{transform:translateX(0)} 15%{transform:translateX(-8px)} 30%{transform:translateX(8px)} 45%{transform:translateX(-6px)} 60%{transform:translateX(6px)} 75%{transform:translateX(-3px)} 90%{transform:translateX(3px)} }
+          @keyframes sidebar-item { from{opacity:0;transform:translateX(-12px)} to{opacity:1;transform:translateX(0)} }
+          @keyframes tab-content { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+          @keyframes toast-in { from{opacity:0;transform:translateX(100%) scale(0.9)} to{opacity:1;transform:translateX(0) scale(1)} }
+          @keyframes badge-pop { 0%{transform:scale(1)} 50%{transform:scale(1.4)} 100%{transform:scale(1)} }
+          @keyframes counter-up { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+          @keyframes card-hover { from{transform:translateY(0)} to{transform:translateY(-3px)} }
+          @keyframes progress-fill { from{width:0%} to{width:var(--target-width,100%)} }
+          .animate-login-slide { animation: login-slide-in 0.5s cubic-bezier(0.22,1,0.36,1) forwards; }
+          .animate-clock { animation: clock-tick 1s ease-in-out infinite; }
+          .animate-logo-pulse { animation: logo-pulse 2s ease-in-out infinite; }
+          .animate-shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+          .animate-sidebar-item { animation: sidebar-item 0.3s ease forwards; }
+          .animate-tab-content { animation: tab-content 0.25s ease forwards; }
+          .animate-toast-in { animation: toast-in 0.35s cubic-bezier(0.22,1,0.36,1) forwards; }
+          .animate-badge-pop { animation: badge-pop 0.3s ease; }
+          .btn-press:active { transform: scale(0.96) !important; transition: transform 0.1s; }
+          @keyframes dashEmojiFloat { 0%,100%{transform:translateY(0) rotate(0deg)} 50%{transform:translateY(-8px) rotate(6deg)} }
+          @keyframes dashEmojiPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.2)} }
+          @keyframes dashEmojiRise { 0%,100%{transform:translateY(0) scale(1)} 40%{transform:translateY(-10px) scale(1.15)} 60%{transform:translateY(-10px) scale(1.15)} }
+          @keyframes dashEmojiWiggle { 0%,100%{transform:rotate(0deg)} 20%{transform:rotate(-12deg)} 40%{transform:rotate(12deg)} 60%{transform:rotate(-8deg)} 80%{transform:rotate(8deg)} }
+          @keyframes dashEmojiShake { 0%,100%{transform:translateX(0) rotate(0deg)} 25%{transform:translateX(-5px) rotate(-8deg)} 75%{transform:translateX(5px) rotate(8deg)} }
+          @keyframes dashEmojiSpin { 0%{transform:rotate(0deg) scale(1)} 50%{transform:rotate(180deg) scale(1.1)} 100%{transform:rotate(360deg) scale(1)} }
+          @keyframes dashEmojiPop { 0%,100%{transform:scale(1) translateY(0)} 30%{transform:scale(1.25) translateY(-5px)} 60%{transform:scale(0.9) translateY(2px)} }
+        `;
+const CSS_FLOAT_2 = `
+        @keyframes float-up { 0%{transform:translateY(100vh) scale(0);opacity:0} 10%{opacity:0.6} 90%{opacity:0.2} 100%{transform:translateY(-20px) scale(1);opacity:0} }
+        @keyframes login-slide-in { from{opacity:0;transform:translateY(30px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+        @keyframes clock-tick { 0%{transform:scale(1)} 50%{transform:scale(1.03)} 100%{transform:scale(1)} }
+        @keyframes logo-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(20,184,166,0.4)} 50%{box-shadow:0 0 0 12px rgba(20,184,166,0)} }
+        @keyframes spin-slow { to { transform: rotate(360deg); } }
+        @keyframes fadein { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes shake { 0%,100%{transform:translateX(0)} 15%{transform:translateX(-8px)} 30%{transform:translateX(8px)} 45%{transform:translateX(-6px)} 60%{transform:translateX(6px)} 75%{transform:translateX(-3px)} 90%{transform:translateX(3px)} }
+        @keyframes sidebar-item { from{opacity:0;transform:translateX(-12px)} to{opacity:1;transform:translateX(0)} }
+        @keyframes tab-content { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes toast-in { from{opacity:0;transform:translateX(110%) scale(0.9)} to{opacity:1;transform:translateX(0) scale(1)} }
+        @keyframes toast-out { from{opacity:1;transform:translateX(0)} to{opacity:0;transform:translateX(110%)} }
+        @keyframes badge-pop { 0%{transform:scale(1)} 50%{transform:scale(1.5)} 100%{transform:scale(1)} }
+        @keyframes progress-stripe { from{background-position:40px 0} to{background-position:0 0} }
+        @keyframes header-glow { 0%,100%{box-shadow:0 1px 0 rgba(20,184,166,0)} 50%{box-shadow:0 1px 8px rgba(20,184,166,0.15)} }
+        /* ── Scroll reveal (auto-applied to cards/sections) ── */
+        .sr-auto { opacity: 0; transform: translateY(28px); transition: opacity 0.65s cubic-bezier(0.22,1,0.36,1), transform 0.65s cubic-bezier(0.22,1,0.36,1); will-change: opacity, transform; }
+        .sr-auto.sr-visible { opacity: 1; transform: translateY(0); }
+        @media (prefers-reduced-motion: reduce) {
+          .sr-auto { opacity: 1 !important; transform: none !important; transition: none !important; }
+        }
+        .animate-login-slide { animation: login-slide-in 0.5s cubic-bezier(0.22,1,0.36,1) forwards; }
+        .animate-clock { animation: clock-tick 1s ease-in-out infinite; }
+        .animate-logo-pulse { animation: logo-pulse 2s ease-in-out infinite; }
+        .animate-shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+        .animate-sidebar-item { animation: sidebar-item 0.3s ease forwards; }
+        .animate-tab-content { animation: tab-content 0.25s ease forwards; }
+        .animate-toast-in { animation: toast-in 0.35s cubic-bezier(0.22,1,0.36,1) forwards; }
+        .animate-badge-pop { animation: badge-pop 0.3s ease; }
+        .btn-press { transition: transform 0.12s, box-shadow 0.12s; }
+        .btn-press:active { transform: scale(0.95) !important; }
+        .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+        @media (max-width: 768px) {
+          .ccard svg { display: none !important; }
+          .card-hover:hover { transform: none !important; box-shadow: none !important; }
+          [style*="willChange"], [style*="will-change"] { will-change: auto !important; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+        }
+        @keyframes emoji-bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+        @keyframes emoji-spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+        @keyframes emoji-pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.3)} }
+        @keyframes emoji-float { 0%,100%{transform:translateY(0) rotate(-5deg)} 50%{transform:translateY(-10px) rotate(5deg)} }
+        @keyframes emoji-rise { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-10px) scale(1.2)} }
+        @keyframes emoji-shake { 0%,100%{transform:rotate(0deg)} 25%{transform:rotate(-15deg)} 75%{transform:rotate(15deg)} }
+        @keyframes emoji-swing { 0%,100%{transform:rotate(-10deg)} 50%{transform:rotate(10deg)} }
+        @keyframes emoji-pop { 0%,100%{transform:scale(1)} 30%{transform:scale(1.35)} 60%{transform:scale(0.9)} }
+        .anim-bounce { animation: emoji-bounce 1.2s ease-in-out infinite; display:inline-block; }
+        .anim-spin   { animation: emoji-spin 3s linear infinite; display:inline-block; }
+        .anim-pulse  { animation: emoji-pulse 1.5s ease-in-out infinite; display:inline-block; }
+        .anim-float  { animation: emoji-float 2s ease-in-out infinite; display:inline-block; }
+        .anim-rise   { animation: emoji-rise 1.8s ease-in-out infinite; display:inline-block; }
+        .anim-shake  { animation: emoji-shake 0.8s ease-in-out infinite; display:inline-block; }
+        .anim-swing  { animation: emoji-swing 1.4s ease-in-out infinite; display:inline-block; }
+        .anim-pop    { animation: emoji-pop 1.6s ease-in-out infinite; display:inline-block; }
+        /* ── Unified professional card border system ── */
+        .ccard { border-width: 1px !important; border-style: solid !important; }
+        .cc-teal, .cc-indigo, .cc-amber, .cc-emerald, .cc-blue, .cc-red,
+        .cc-orange, .cc-violet, .cc-pink, .cc-rose, .cc-green, .cc-slate,
+        .cc-cyan, .cc-purple { border-color: #e2e8f0 !important; }
+        .dark .cc-teal, .dark .cc-indigo, .dark .cc-amber, .dark .cc-emerald,
+        .dark .cc-blue, .dark .cc-red, .dark .cc-orange, .dark .cc-violet,
+        .dark .cc-pink, .dark .cc-rose, .dark .cc-green, .dark .cc-slate,
+        .dark .cc-cyan, .dark .cc-purple { border-color: #334155 !important; }
+
+        /* ══════════════════════════════════════════════════════════
+           GLASSMORPHISM / TRANSPARENCY LAYER — site-wide
+           Applied purely via CSS on top of existing utility classes,
+           so no component markup needs to change and nothing breaks.
+           Falls back gracefully on browsers without backdrop-filter.
+           ══════════════════════════════════════════════════════════ */
+        @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+
+          /* Light-mode solid card surfaces → frosted glass */
+          .ccard.bg-white,
+          .bg-white.border-slate-200,
+          .ccard.bg-slate-50,
+          .ccard.bg-slate-100,
+          .ccard.bg-amber-50 {
+            background-color: rgba(255,255,255,0.66) !important;
+            backdrop-filter: blur(18px) saturate(180%);
+            -webkit-backdrop-filter: blur(18px) saturate(180%);
+            border-color: rgba(226,232,240,0.7) !important;
+          }
+
+          /* Dark-mode solid card surfaces → frosted glass */
+          .ccard.bg-slate-800,
+          .ccard.bg-slate-800\/60,
+          .ccard.bg-slate-800\/40,
+          .bg-slate-800.border-slate-700,
+          .ccard.bg-slate-900\/40,
+          .ccard.bg-rose-950\/50 {
+            background-color: rgba(30,41,59,0.55) !important;
+            backdrop-filter: blur(18px) saturate(180%);
+            -webkit-backdrop-filter: blur(18px) saturate(180%);
+            border-color: rgba(51,65,85,0.6) !important;
+          }
+
+          /* Sidebar navigation */
+          nav.sidebar-collapse.bg-white,
+          nav.sidebar-collapse {
+            backdrop-filter: blur(20px) saturate(160%);
+            -webkit-backdrop-filter: blur(20px) saturate(160%);
+          }
+          nav.sidebar-collapse.bg-white { background-color: rgba(255,255,255,0.72) !important; }
+          nav.sidebar-collapse.bg-slate-900\/50 { background-color: rgba(15,23,42,0.55) !important; }
+
+          /* Top header bar already uses bg-*/90 + blur — deepen it slightly */
+          .bg-white\/90.backdrop-blur-md { background-color: rgba(255,255,255,0.78) !important; }
+          .bg-slate-900\/90.backdrop-blur-md { background-color: rgba(15,23,42,0.7) !important; }
+
+          /* Modal sheets (mobile bottom sheets, receipts, etc.) */
+          .bg-white\/60.backdrop-blur-2xl { background-color: rgba(255,255,255,0.62) !important; }
+          .bg-slate-900\/50.backdrop-blur-2xl { background-color: rgba(15,23,42,0.5) !important; }
+        }
+
+        /* Subtle premium polish: soft shadow + gentle lift on glass cards */
+        .ccard {
+          box-shadow: 0 4px 24px -8px rgba(15,23,42,0.10), 0 1px 2px rgba(15,23,42,0.04);
+          transition: background-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
+        }
+        .dark .ccard, [class*="bg-slate-8"].ccard, [class*="bg-slate-9"].ccard {
+          box-shadow: 0 4px 28px -8px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.2);
+        }
+        @media (hover: hover) {
+          .ccard.card-hover:hover { box-shadow: 0 12px 32px -8px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,0.08); }
+        }
+        /* Input fields — colorful focus */
+        input:focus, select:focus, textarea:focus {
+          outline: none !important;
+          border-color: #14b8a6 !important;
+          box-shadow: 0 0 0 3px rgba(20,184,166,0.2) !important;
+        }
+        /* Table rows */
+        tbody tr:nth-child(even) { background-color: rgba(20,184,166,0.035); }
+        tbody tr:hover { background-color: rgba(20,184,166,0.07) !important; }
+
+        .sidebar-nav-btn { transition: all 0.18s ease; border: 2px solid transparent; border-radius: 11px; }
+        .sidebar-nav-btn:hover { padding-left: 16px !important; }
+
+        /* ── Collapsible sidebar: thin icon-rail by default, expands smoothly on hover ── */
+        .sidebar-collapse {
+          width: 4.5rem;
+          transition: width 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+          will-change: width;
+          overflow: hidden;
+        }
+        .sidebar-collapse:hover {
+          width: 17rem;
+        }
+        .sidebar-collapse .sidebar-nav-btn:hover { padding-left: 12px !important; }
+
+        /* Auto-width reveal (grid 0fr→1fr) — always fits the text, never clips */
+        .sc-wrap {
+          display: grid;
+          grid-template-columns: 0fr;
+          min-width: 0;
+          transition: grid-template-columns 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .sidebar-collapse:hover .sc-wrap {
+          grid-template-columns: 1fr;
+        }
+        .sc-wrap > * {
+          overflow: hidden;
+          min-width: 0;
+          white-space: nowrap;
+        }
+        .sc-fade {
+          opacity: 0;
+          transition: opacity 0.18s ease;
+        }
+        .sidebar-collapse:hover .sc-fade {
+          opacity: 1;
+          transition: opacity 0.32s ease 0.1s;
+        }
+
+        .sc-row { justify-content: center; }
+        .sidebar-collapse:hover .sc-row { justify-content: space-between; }
+        .sc-row-solo { justify-content: center; }
+        .sidebar-collapse:hover .sc-row-solo { justify-content: flex-start; }
+        .sidebar-collapse .sidebar-nav-btn { gap: 0; }
+        .sidebar-collapse:hover .sidebar-nav-btn { gap: 0.5rem; }
+        .sidebar-collapse .sc-icons { gap: 0; }
+        .sidebar-collapse:hover .sc-icons { gap: 0.5rem; }
+        .sc-icons { justify-content: center; }
+        .sidebar-collapse:hover .sc-icons { justify-content: flex-start; }
+
+        .sc-heading {
+          white-space: nowrap;
+          overflow: hidden;
+          opacity: 0;
+          max-height: 0;
+          margin-bottom: 0;
+          transition: opacity 0.18s ease, max-height 0.3s ease, margin 0.3s ease;
+        }
+        .sidebar-collapse:hover .sc-heading {
+          opacity: 1;
+          max-height: 2rem;
+          margin-bottom: 0.375rem;
+          transition: opacity 0.32s ease 0.1s, max-height 0.34s ease, margin 0.34s ease;
+        }
+
+        /* Bottom clock / user info — hard swap between a compact icon and full
+           content, so nothing ever wraps or overflows the narrow collapsed rail */
+        .sc-bottom { transition: padding 0.32s ease; }
+        .sc-collapsed-only { display: flex; }
+        .sidebar-collapse:hover .sc-collapsed-only { display: none; }
+        .sc-expanded-only { display: none; }
+        .sidebar-collapse:hover .sc-expanded-only { display: block; }
+        .snav-pos     { border-width: 2px !important; border-style: solid !important; border-color: #4f46e5 !important; }
+        .snav-dash    { border-width: 2px !important; border-style: solid !important; border-color: #6366f1 !important; }
+        .snav-stock   { border-width: 2px !important; border-style: solid !important; border-color: #f59e0b !important; }
+        .snav-stockin { border-width: 2px !important; border-style: solid !important; border-color: #10b981 !important; }
+        .snav-newprod { border-width: 2px !important; border-style: solid !important; border-color: #22c55e !important; }
+        .snav-ph      { border-width: 2px !important; border-style: solid !important; border-color: #8b5cf6 !important; }
+        .snav-cph     { border-width: 2px !important; border-style: solid !important; border-color: #a78bfa !important; }
+        .snav-inv     { border-width: 2px !important; border-style: solid !important; border-color: #3b82f6 !important; }
+        .snav-due     { border-width: 2px !important; border-style: solid !important; border-color: #ef4444 !important; }
+        .snav-duecol  { border-width: 2px !important; border-style: solid !important; border-color: #10b981 !important; }
+        .snav-report  { border-width: 2px !important; border-style: solid !important; border-color: #f97316 !important; }
+        .snav-ret     { border-width: 2px !important; border-style: solid !important; border-color: #ec4899 !important; }
+        .snav-set     { border-width: 2px !important; border-style: solid !important; border-color: #64748b !important; }
+        .snav-perm    { border-width: 2px !important; border-style: solid !important; border-color: #f43f5e !important; }
+        .snav-closing { border-width: 2px !important; border-style: solid !important; border-color: #a855f7 !important; }
+        .snav-daily   { border-width: 2px !important; border-style: solid !important; border-color: #0ea5e9 !important; }
+        .snav-monthly { border-width: 2px !important; border-style: solid !important; border-color: #7c3aed !important; }
+        .snav-exp     { border-width: 2px !important; border-style: solid !important; border-color: #f43f5e !important; }
+        .snav-pos.bg-indigo-500,.snav-dash.bg-indigo-500,.snav-stock.bg-indigo-500,
+        .snav-stockin.bg-indigo-500,.snav-newprod.bg-indigo-500,.snav-ph.bg-indigo-500,.snav-cph.bg-indigo-500,
+        .snav-inv.bg-indigo-500,.snav-due.bg-indigo-500,.snav-duecol.bg-indigo-500,.snav-report.bg-indigo-500,
+        .snav-ret.bg-indigo-500,.snav-set.bg-indigo-500,.snav-perm.bg-indigo-500,.snav-closing.bg-indigo-500,.snav-exp.bg-indigo-500
+        { border-color: rgba(255,255,255,0.45) !important; box-shadow: 0 0 10px rgba(20,184,166,0.35); }
+        @media print {
+          .receipt-print, .receipt-print * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+          .cph-print-report, .cph-print-report * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+          .cph-print-report { position: static !important; }
+          @page { size: auto; margin: 10mm; }
+          body, html { background: #fff !important; }
+
+          /* Make all printed receipt/report text clear & bold — easy to read on paper */
+          .receipt-print *, .cph-print-report * {
+            font-weight: 600 !important;
+            opacity: 1 !important;
+          }
+          .receipt-print .text-slate-200, .cph-print-report .text-slate-200,
+          .receipt-print .text-slate-300, .cph-print-report .text-slate-300,
+          .receipt-print .text-slate-400, .cph-print-report .text-slate-400,
+          .receipt-print .text-slate-500, .cph-print-report .text-slate-500,
+          .receipt-print .text-slate-600, .cph-print-report .text-slate-600 {
+            color: #1e293b !important;
+          }
+          .receipt-print .font-semibold, .cph-print-report .font-semibold,
+          .receipt-print .font-bold, .cph-print-report .font-bold,
+          .receipt-print .font-black, .cph-print-report .font-black,
+          .receipt-print th, .cph-print-report th {
+            font-weight: 800 !important;
+          }
+          .receipt-print .text-sm, .cph-print-report .text-sm {
+            font-size: 0.95rem !important;
+            line-height: 1.5 !important;
+          }
+          .receipt-print table, .cph-print-report table { font-size: 0.95rem !important; }
+        }
+      `;
+const CSS_BAGFLOAT = `
+                        @keyframes bagFloat{0%,100%{transform:translateY(0) rotate(-1.2deg) scale(1)}50%{transform:translateY(-4.8px) rotate(1.2deg) scale(1.024)}}
+                        @keyframes bagGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                        @keyframes coinSpin1{0%{transform:translateY(-10.8px) scaleX(1);opacity:0}15%{opacity:1}40%{transform:translateY(1.2px) scaleX(-1);opacity:1}70%{transform:translateY(6px) scaleX(1);opacity:1}85%,100%{transform:translateY(8.4px);opacity:0}}
+                        @keyframes coinSpin2{0%{transform:translateY(-8.4px) scaleX(1);opacity:0}20%{opacity:1}45%{transform:translateY(1.2px) scaleX(-1);opacity:1}75%{transform:translateY(4.8px) scaleX(1);opacity:1}90%,100%{opacity:0}}
+                        @keyframes coinSpin3{0%{transform:translateY(-12px) scaleX(1);opacity:0}10%{opacity:1}38%{transform:translateY(1.2px) scaleX(-1);opacity:1}65%{transform:translateY(7.2px) scaleX(1);opacity:1}80%,100%{opacity:0}}
+                        @keyframes shimmer{0%,100%{opacity:0.15}50%{opacity:0.55}}
+                        @keyframes sparkle1{0%,100%{transform:scale(0.4) rotate(0deg);opacity:0}40%,60%{transform:scale(1.12) rotate(180deg);opacity:1}}
+                        @keyframes sparkle2{0%,100%{transform:scale(0.4) rotate(0deg);opacity:0}30%,70%{transform:scale(1) rotate(54deg);opacity:0.9}}
+                        #mbag{animation:bagFloat 3.2s ease-in-out infinite,bagGlow 3.2s ease-in-out infinite;transform-origin:32px 38px;will-change:transform}
+                        #c1{animation:coinSpin1 3.2s 0.16s ease-in infinite;transform-origin:20px 18px;will-change:transform}
+                        #c2{animation:coinSpin2 3.2s 0.88s ease-in infinite;transform-origin:36px 14px;will-change:transform}
+                        #c3{animation:coinSpin3 3.2s 1.44s ease-in infinite;transform-origin:44px 22px;will-change:transform}
+                        #sh1{animation:shimmer 3.2s 0s ease-in-out infinite}
+                        #sh2{animation:shimmer 3.2s 0.64s ease-in-out infinite}
+                        #sp1{animation:sparkle1 3.2s 0.32s ease-in-out infinite;transform-origin:12px 12px;will-change:transform}
+                        #sp2{animation:sparkle2 3.2s 1.28s ease-in-out infinite;transform-origin:50px 10px;will-change:transform}
+                      `;
+const CSS_CALFLOAT = `
+                        @keyframes calFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-3.6px) scale(1.03)}}
+                        @keyframes calGlow{0%,100%{opacity:0.85}50%{opacity:1}}
+                        @keyframes dateFlip{0%,30%{opacity:1;transform:scaleY(1)}40%{opacity:0;transform:scaleY(0)}50%{opacity:1;transform:scaleY(1)}100%{opacity:1}}
+                        @keyframes ringRotate{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+                        @keyframes dotPulse{0%,100%{opacity:0.3;transform:scale(1)}50%{opacity:1;transform:scale(1.24)}}
+                        @keyframes pageFlip{0%,60%{transform:scaleY(1)}70%{transform:scaleY(0)}80%{transform:scaleY(1)}100%{transform:scaleY(1)}}
+                        #cal{animation:calFloat 3.52s ease-in-out infinite,calGlow 3.52s ease-in-out infinite;transform-origin:32px 36px;will-change:transform}
+                        #dt{animation:dateFlip 4.8s 0.8s ease-in-out infinite;transform-origin:32px 42px;will-change:transform}
+                        #ring{animation:ringRotate 12.8s linear infinite;transform-origin:32px 32px;will-change:transform}
+                        #d1{animation:dotPulse 1.92s 0s ease-in-out infinite;will-change:transform}
+                        #d2{animation:dotPulse 1.92s 0.48s ease-in-out infinite;will-change:transform}
+                        #d3{animation:dotPulse 1.92s 0.96s ease-in-out infinite;will-change:transform}
+                        #page{animation:pageFlip 4.8s 1.6s ease-in-out infinite;transform-origin:32px 30px;will-change:transform}
+                      `;
+const CSS_B1GROW = `
+                          @keyframes b1grow{0%,100%{transform:scaleY(0.6)}50%{transform:scaleY(1.09)}}
+                          @keyframes b2grow{0%,100%{transform:scaleY(0.7)}50%{transform:scaleY(1.12)}}
+                          @keyframes b3grow{0%,100%{transform:scaleY(0.8)}50%{transform:scaleY(1.15)}}
+                          @keyframes arrDash{0%,100%{transform:translate(0,0) scale(1)}40%{transform:translate(6px,-7px) scale(1.06)}60%{transform:translate(6px,-7px) scale(1.06)}}
+                          @keyframes baseGlow{0%,100%{opacity:0.4}50%{opacity:0.9}}
+                          @keyframes shimBars{0%{opacity:0.1}50%{opacity:0.5}100%{opacity:0.1}}
+                          @keyframes particle{0%{transform:translate(0,0);opacity:0.8}100%{transform:translate(var(--px),var(--py));opacity:0}}
+                          #b1{animation:b1grow 2.88s 0s ease-in-out infinite;transform-origin:14px 48px;will-change:transform}
+                          #b2{animation:b2grow 2.88s 0.32s ease-in-out infinite;transform-origin:27px 48px;will-change:transform}
+                          #b3{animation:b3grow 2.88s 0.64s ease-in-out infinite;transform-origin:40px 48px;will-change:transform}
+                          #arr{animation:arrDash 2.56s ease-in-out infinite;will-change:transform}
+                          #base{animation:baseGlow 2.88s ease-in-out infinite}
+                          #p1{--px:-8px;--py:-12px;animation:particle 1.92s 0.48s ease-out infinite;transform-origin:44px 14px;will-change:transform}
+                          #p2{--px:8px;--py:-10px;animation:particle 1.92s 1.12s ease-out infinite;transform-origin:44px 14px;will-change:transform}
+                          #p3{--px:2px;--py:-14px;animation:particle 1.92s 1.76s ease-out infinite;transform-origin:44px 14px;will-change:transform}
+                        `;
+const CSS_RKTLAUNCH = `
+                          @keyframes rktLaunch{0%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-7.8px) rotate(-1.8deg)}65%{transform:translateY(-7.8px) rotate(1.8deg)}}
+                          @keyframes fireFlick{0%,100%{transform:scaleY(1) scaleX(1)}25%{transform:scaleY(1.36) scaleX(0.7)}50%{transform:scaleY(0.8) scaleX(1.15)}75%{transform:scaleY(1.3) scaleX(0.75)}}
+                          @keyframes smoke1Up{0%{transform:translateY(0) scale(0.88);opacity:0.5}100%{transform:translateY(-13.2px) scale(1.48);opacity:0}}
+                          @keyframes smoke2Up{0%{transform:translateY(0) scale(0.82);opacity:0.4}100%{transform:translateY(-10.8px) scale(1.3);opacity:0}}
+                          @keyframes orbitDot{0%{transform:rotate(0deg) translateX(20px) rotate(0deg);opacity:0.6}100%{transform:rotate(360deg) translateX(20px) rotate(-360deg);opacity:0.6}}
+                          @keyframes orbitDot2{0%{transform:rotate(72deg) translateX(18px) rotate(-72deg);opacity:0.4}100%{transform:rotate(480deg) translateX(18px) rotate(-480deg);opacity:0.4}}
+                          @keyframes rktGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          #rkt{animation:rktLaunch 3.2s ease-in-out infinite,rktGlow 3.2s ease-in-out infinite;transform-origin:32px 40px;will-change:transform}
+                          #fire{animation:fireFlick 0.288s linear infinite;transform-origin:32px 48px;will-change:transform}
+                          #sm1{animation:smoke1Up 1.28s 0s ease-out infinite;will-change:transform}
+                          #sm2{animation:smoke2Up 1.28s 0.448s ease-out infinite;will-change:transform}
+                          #od1{animation:orbitDot 6.4s linear infinite;transform-origin:32px 28px;will-change:transform}
+                          #od2{animation:orbitDot2 6.4s linear infinite;transform-origin:32px 28px;will-change:transform}
+                        `;
+const CSS_CARTROLL = `
+                          @keyframes cartRoll{0%,100%{transform:translateX(0)}25%{transform:translateX(3px)}75%{transform:translateX(-2px)}}
+                          @keyframes cartGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes wheelSpin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+                          @keyframes it1Jump{0%,70%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-6px) rotate(-4.8deg)}}
+                          @keyframes it2Jump{0%,70%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-8.4px) rotate(3deg)}}
+                          @keyframes it3Jump{0%,70%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-5.4px) rotate(-3deg)}}
+                          @keyframes plusPop{0%,100%{transform:scale(0.4);opacity:0}50%{transform:scale(1.18);opacity:1}}
+                          #cart{animation:cartRoll 2.24s ease-in-out infinite,cartGlow 2.88s ease-in-out infinite;will-change:transform}
+                          #w1{animation:wheelSpin 1.6s linear infinite;transform-origin:22px 47px;will-change:transform}
+                          #w2{animation:wheelSpin 1.6s linear infinite;transform-origin:44px 47px;will-change:transform}
+                          #it1{animation:it1Jump 2.56s 0s ease-in-out infinite;transform-origin:22px 24px;will-change:transform}
+                          #it2{animation:it2Jump 2.56s 0.32s ease-in-out infinite;transform-origin:32px 20px;will-change:transform}
+                          #it3{animation:it3Jump 2.56s 0.64s ease-in-out infinite;transform-origin:42px 24px;will-change:transform}
+                          #plus{animation:plusPop 2.56s 1.28s ease-in-out infinite;transform-origin:54px 12px;will-change:transform}
+                        `;
+const CSS_BAGSWING = `
+                          @keyframes bagSwing{0%,100%{transform:rotate(-4.8deg) translateY(0)}25%{transform:rotate(4.8deg) translateY(-1.8px)}50%{transform:rotate(-3.6deg) translateY(-0.6px)}75%{transform:rotate(3.6deg) translateY(-1.2px)}}
+                          @keyframes tagBounce{0%,100%{transform:translateY(0) rotate(-6deg)}50%{transform:translateY(-4.2px) rotate(6deg)}}
+                          @keyframes bagGlow{0%,100%{opacity:0.85}50%{opacity:1}}
+                          @keyframes checkPop{0%,60%,100%{transform:scale(0.4);opacity:0}75%{transform:scale(1.18);opacity:1}90%{transform:scale(1);opacity:1}}
+                          @keyframes shimBag{0%,100%{opacity:0.1}50%{opacity:0.4}}
+                          #bag{animation:bagSwing 3.2s ease-in-out infinite,bagGlow 3.2s ease-in-out infinite;transform-origin:32px 22px;will-change:transform}
+                          #tag{animation:tagBounce 3.2s 0.48s ease-in-out infinite;transform-origin:43px 14px;will-change:transform}
+                          #chk{animation:checkPop 4.8s 0.8s ease-in-out infinite;transform-origin:32px 38px;will-change:transform}
+                          #shbag{animation:shimBag 3.2s ease-in-out infinite}
+                        `;
+const CSS_HGSPIN = `
+                        @keyframes hgSpin{0%,40%{transform:rotate(0deg)}60%,100%{transform:rotate(180deg)}}
+                        @keyframes sandFill{0%{transform:scaleY(0);opacity:0}10%{opacity:1}80%{transform:scaleY(1);opacity:1}95%,100%{opacity:0}}
+                        @keyframes sandDrop{0%,30%{transform:translateY(0);opacity:1}85%,100%{transform:translateY(10.8px);opacity:0}}
+                        @keyframes ripple1{0%{transform:scale(0.7);opacity:0.6}100%{transform:scale(1.48);opacity:0}}
+                        @keyframes ripple2{0%{transform:scale(0.7);opacity:0.4}100%{transform:scale(1.72);opacity:0}}
+                        @keyframes glassGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                        #hg{animation:hgSpin 6.4s 0.8s cubic-bezier(0.4,0,0.2,1) infinite,glassGlow 3.2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                        #sf{animation:sandFill 3.2s 0.8s ease-in infinite;transform-origin:32px 20px}
+                        #sd{animation:sandDrop 3.2s 0.8s ease-in infinite}
+                        #rip1{animation:ripple1 3.2s 0s ease-out infinite}
+                        #rip2{animation:ripple2 3.2s 0.96s ease-out infinite}
+                      `;
+const CSS_CLIPSHAKE = `
+                        @keyframes clipShake{0%,100%{transform:rotate(0deg)}15%{transform:rotate(-4.2deg)}30%{transform:rotate(4.2deg)}45%{transform:rotate(-2.4deg)}60%{transform:rotate(2.4deg)}75%,100%{transform:rotate(0deg)}}
+                        @keyframes clipGlow{0%,100%{opacity:0.85}50%{opacity:1}}
+                        @keyframes alertPulse{0%,100%{transform:scale(1);opacity:0.8}50%{transform:scale(1.24);opacity:1}}
+                        @keyframes alertRing{0%{transform:scale(1);opacity:0.5}100%{transform:scale(1.54);opacity:0}}
+                        @keyframes lineWrite1{0%{stroke-dashoffset:22}60%,100%{stroke-dashoffset:0}}
+                        @keyframes lineWrite2{0%,20%{stroke-dashoffset:18}80%,100%{stroke-dashoffset:0}}
+                        @keyframes lineWrite3{0%,40%{stroke-dashoffset:14}100%{stroke-dashoffset:0}}
+                        @keyframes penMove{0%{transform:translate(0,0)}33%{transform:translate(4px,8px)}66%{transform:translate(0px,16px)}100%{transform:translate(0,0)}}
+                        #clip{animation:clipShake 4.48s ease-in-out infinite,clipGlow 3.2s ease-in-out infinite;transform-origin:32px 36px;will-change:transform}
+                        #al{animation:alertPulse 1.6s ease-in-out infinite}
+                        #alring{animation:alertRing 1.6s ease-out infinite}
+                        #l1{animation:lineWrite1 4.48s ease-in-out infinite;stroke-dasharray:22}
+                        #l2{animation:lineWrite2 4.48s ease-in-out infinite;stroke-dasharray:18}
+                        #l3{animation:lineWrite3 4.48s ease-in-out infinite;stroke-dasharray:14}
+                        #pen{animation:penMove 4.48s ease-in-out infinite}
+                      `;
+const CSS_PHVIB = `
+                          @keyframes phVib{0%,80%,100%{transform:rotate(0deg)}10%{transform:rotate(-7.2deg)}20%{transform:rotate(7.2deg)}30%{transform:rotate(-4.8deg)}40%{transform:rotate(4.8deg)}50%{transform:rotate(-3deg)}60%{transform:rotate(3deg)}}
+                          @keyframes phGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes ping1{0%{transform:scale(0.88);opacity:0.8}100%{transform:scale(2.2);opacity:0}}
+                          @keyframes ping2{0%{transform:scale(0.88);opacity:0.6}100%{transform:scale(2.5);opacity:0}}
+                          @keyframes coinPop{0%,70%,100%{transform:translateY(0) scale(0.4);opacity:0}78%{transform:translateY(-7.2px) scale(1.18);opacity:1}90%{transform:translateY(-9.6px) scale(1);opacity:0.8}98%{opacity:0}}
+                          @keyframes screenFlash{0%,85%,100%{opacity:0.55}88%{opacity:0.9}}
+                          #ph{animation:phVib 4s ease-in-out infinite,phGlow 3.2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                          #p1{animation:ping1 2.56s 0s ease-out infinite;transform-origin:46px 15px;will-change:transform}
+                          #p2{animation:ping2 2.56s 0.72s ease-out infinite;transform-origin:46px 15px;will-change:transform}
+                          #cn{animation:coinPop 4s ease-in-out infinite;transform-origin:32px 20px;will-change:transform}
+                          #scr{animation:screenFlash 4s ease-in-out infinite}
+                        `;
+const CSS_CARDPOP = `
+                          @keyframes cardPop{0%,100%{transform:translateY(0) rotate(-2.4deg) scale(1)}50%{transform:translateY(-6px) rotate(2.4deg) scale(1.036)}}
+                          @keyframes cardGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes chipShine{0%,100%{opacity:0.35;transform:scale(1)}50%{opacity:0.85;transform:scale(1.03)}}
+                          @keyframes waveFlow{0%{transform:translateX(-14px);opacity:0}40%{opacity:0.7}100%{transform:translateX(14px);opacity:0}}
+                          @keyframes tapRipple{0%{transform:scale(0.7);opacity:0.7}100%{transform:scale(1.72);opacity:0}}
+                          @keyframes tapRipple2{0%{transform:scale(0.7);opacity:0.5}100%{transform:scale(2.08);opacity:0}}
+                          #crd{animation:cardPop 3.2s ease-in-out infinite,cardGlow 3.2s ease-in-out infinite;will-change:transform}
+                          #chip{animation:chipShine 3.2s ease-in-out infinite;will-change:transform}
+                          #wave{animation:waveFlow 3.2s 0.8s ease-in-out infinite;will-change:transform}
+                          #tr1{animation:tapRipple 2.4s 1.6s ease-out infinite;transform-origin:50px 12px;will-change:transform}
+                          #tr2{animation:tapRipple2 2.4s 2.08s ease-out infinite;transform-origin:50px 12px;will-change:transform}
+                        `;
+const CSS_CIRCLEPULSE = `
+                        @keyframes circlePulse{0%,100%{transform:scale(1);opacity:0.5}50%{transform:scale(1.072);opacity:0.88}}
+                        @keyframes circleGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                        @keyframes checkDraw{0%{stroke-dashoffset:70;opacity:0.2}50%,100%{stroke-dashoffset:0;opacity:1}}
+                        @keyframes sp1Pop{0%,55%,100%{transform:scale(0.4) rotate(0deg);opacity:0}68%{transform:scale(1.24) rotate(27deg);opacity:1}85%{transform:scale(1) rotate(18deg);opacity:0.8}95%{opacity:0}}
+                        @keyframes sp2Pop{0%,60%,100%{transform:scale(0.4);opacity:0}72%{transform:scale(1.18);opacity:1}88%{transform:scale(1);opacity:0.8}96%{opacity:0}}
+                        @keyframes sp3Pop{0%,65%,100%{transform:scale(0.4);opacity:0}76%{transform:scale(1.3);opacity:1}90%{transform:scale(1);opacity:0.8}97%{opacity:0}}
+                        @keyframes burstLine{0%,50%{stroke-dashoffset:20;opacity:0}70%{stroke-dashoffset:0;opacity:1}90%,100%{opacity:0}}
+                        #chkc{animation:circlePulse 2.56s ease-in-out infinite,circleGlow 2.56s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                        #chkm{stroke-dasharray:70;animation:checkDraw 2.56s ease-in-out infinite}
+                        #sp1{animation:sp1Pop 2.56s 1.12s ease-out infinite;transform-origin:12px 14px;will-change:transform}
+                        #sp2{animation:sp2Pop 2.56s 1.44s ease-out infinite;transform-origin:50px 16px;will-change:transform}
+                        #sp3{animation:sp3Pop 2.56s 1.76s ease-out infinite;transform-origin:32px 6px}
+                        #bl1{stroke-dasharray:20;animation:burstLine 2.56s 1.2s ease-out infinite;transform-origin:10px 22px}
+                        #bl2{stroke-dasharray:20;animation:burstLine 2.56s 1.44s ease-out infinite;transform-origin:54px 22px}
+                      `;
+const CSS_WLTOPEN = `
+                        @keyframes wltOpen{0%,100%{transform:scaleY(1) rotate(-1.2deg)}50%{transform:scaleY(1.042) rotate(1.2deg)}}
+                        @keyframes wltGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                        @keyframes cf1Fly{0%{transform:translate(0,0) scale(0.4);opacity:0}18%{transform:translate(-6px,-14px) scale(1.12);opacity:1}65%{transform:translate(-12px,-28px) scale(0.88);opacity:0.6}100%{transform:translate(-16px,-38px) scale(0.4);opacity:0}}
+                        @keyframes cf2Fly{0%{transform:translate(0,0) scale(0.4);opacity:0}22%{transform:translate(5px,-12px) scale(1.06);opacity:1}70%{transform:translate(12px,-24px) scale(0.88);opacity:0.5}100%{transform:translate(16px,-34px) scale(0.4);opacity:0}}
+                        @keyframes cf3Fly{0%{transform:translate(0,0) scale(0.4);opacity:0}30%{transform:translate(0px,-16px) scale(1.18);opacity:1}75%{transform:translate(4px,-30px) scale(0.82);opacity:0.4}100%{transform:translate(6px,-40px) scale(0.4);opacity:0}}
+                        @keyframes coinShine{0%,100%{opacity:0.6}50%{opacity:1}}
+                        #wlt{animation:wltOpen 3.52s ease-in-out infinite,wltGlow 3.2s ease-in-out infinite;will-change:transform}
+                        #cf1{animation:cf1Fly 3.52s 0.48s ease-out infinite;transform-origin:32px 24px;will-change:transform}
+                        #cf2{animation:cf2Fly 3.52s 1.12s ease-out infinite;transform-origin:32px 24px;will-change:transform}
+                        #cf3{animation:cf3Fly 3.52s 1.76s ease-out infinite;transform-origin:32px 24px}
+                        #cs{animation:coinShine 3.2s ease-in-out infinite}
+                      `;
+const CSS_STARSPIN = `
+                          @keyframes starSpin{0%{transform:rotate(0deg) scale(1)}40%{transform:rotate(180deg) scale(1.108)}100%{transform:rotate(360deg) scale(1)}}
+                          @keyframes starGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes twinkle1{0%,100%{opacity:0.2;transform:scale(0.76) rotate(0deg)}50%{opacity:1;transform:scale(1.18) rotate(9deg)}}
+                          @keyframes twinkle2{0%,100%{opacity:0.3;transform:scale(0.82)}50%{opacity:0.9;transform:scale(1.12)}}
+                          @keyframes twinkle3{0%,100%{opacity:0.15;transform:scale(0.7) rotate(0deg)}50%{opacity:0.8;transform:scale(1.06) rotate(-6deg)}}
+                          @keyframes orbitDot{0%{transform:rotate(0deg) translateX(28px) rotate(0deg)}100%{transform:rotate(360deg) translateX(28px) rotate(-360deg)}}
+                          #star{animation:starSpin 6.4s linear infinite,starGlow 3.2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                          #t1{animation:twinkle1 2.4s 0s ease-in-out infinite;transform-origin:8px 12px;will-change:transform}
+                          #t2{animation:twinkle2 2.4s 0.72s ease-in-out infinite;transform-origin:52px 16px;will-change:transform}
+                          #t3{animation:twinkle3 2.4s 1.44s ease-in-out infinite;transform-origin:8px 52px;will-change:transform}
+                          #t4{animation:twinkle1 2.4s 2.08s ease-in-out infinite;transform-origin:52px 50px;will-change:transform}
+                          #od{animation:orbitDot 8s linear infinite;transform-origin:32px 32px}
+                        `;
+const CSS_BOXBOUNCE = `
+                          @keyframes boxBounce{0%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-7.2px) rotate(-3deg)}60%{transform:translateY(-7.2px) rotate(-2.4deg)}}
+                          @keyframes boxGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes lidOpen{0%,100%{transform:scaleY(1)}45%,65%{transform:scaleY(0.15)}}
+                          @keyframes itemRise{0%,30%,100%{transform:translateY(0);opacity:0}42%{transform:translateY(-10.8px);opacity:1}68%{transform:translateY(-13.2px);opacity:0.7}80%,90%{opacity:0}}
+                          @keyframes shimBox{0%,100%{opacity:0.1}50%{opacity:0.4}}
+                          @keyframes dustPuff{0%{transform:scale(0.7);opacity:0.6}100%{transform:scale(1.6);opacity:0}}
+                          #box{animation:boxBounce 3.52s ease-in-out infinite,boxGlow 3.2s ease-in-out infinite;will-change:transform}
+                          #lid{animation:lidOpen 3.52s ease-in-out infinite;transform-origin:32px 20px;will-change:transform}
+                          #item{animation:itemRise 3.52s ease-in-out infinite;will-change:transform}
+                          #shb{animation:shimBox 3.2s ease-in-out infinite}
+                          #dp1{animation:dustPuff 3.52s 0.64s ease-out infinite;transform-origin:20px 48px;will-change:transform}
+                          #dp2{animation:dustPuff 3.52s 0.96s ease-out infinite;transform-origin:44px 48px;will-change:transform}
+                        `;
+const CSS_TROPSHAKE = `
+                          @keyframes tropShake{0%,100%{transform:rotate(0deg) scale(1)}15%{transform:rotate(-4.2deg) scale(1.03)}30%{transform:rotate(4.2deg) scale(1.03)}45%{transform:rotate(-2.4deg)}60%{transform:rotate(2.4deg)}75%,100%{transform:rotate(0deg) scale(1)}}
+                          @keyframes tropGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes glowRing{0%,100%{r:22;opacity:0.07}50%{r:26;opacity:0.22}}
+                          @keyframes star1Fly{0%{transform:translate(0,0) scale(0.4) rotate(0deg);opacity:0}25%{opacity:1;transform:scale(1.18)}100%{transform:translate(-14px,-16px) scale(0.4) rotate(180deg);opacity:0}}
+                          @keyframes star2Fly{0%{transform:translate(0,0) scale(0.4) rotate(0deg);opacity:0}30%{opacity:1;transform:scale(1.12)}100%{transform:translate(16px,-18px) scale(0.4) rotate(-180deg);opacity:0}}
+                          @keyframes star3Fly{0%{transform:translate(0,0) scale(0.4) rotate(0deg);opacity:0}20%{opacity:1;transform:scale(1.24)}100%{transform:translate(2px,-22px) scale(0.4) rotate(72deg);opacity:0}}
+                          @keyframes confetti1{0%{transform:translate(0,0) rotate(0deg);opacity:0}20%{opacity:1}100%{transform:translate(-18px,-8px) rotate(180deg);opacity:0}}
+                          @keyframes confetti2{0%{transform:translate(0,0) rotate(0deg);opacity:0}25%{opacity:1}100%{transform:translate(18px,-6px) rotate(-180deg);opacity:0}}
+                          #trop{animation:tropShake 4.8s ease-in-out infinite,tropGlow 3.2s ease-in-out infinite;transform-origin:32px 34px;will-change:transform}
+                          #glow{animation:glowRing 4s ease-in-out infinite;will-change:transform}
+                          #s1{animation:star1Fly 3.2s 0s ease-out infinite;transform-origin:16px 12px;will-change:transform}
+                          #s2{animation:star2Fly 3.2s 0.88s ease-out infinite;transform-origin:48px 14px;will-change:transform}
+                          #s3{animation:star3Fly 3.2s 1.76s ease-out infinite;transform-origin:32px 8px;will-change:transform}
+                          #cf1{animation:confetti1 3.2s 0.48s ease-out infinite;transform-origin:10px 20px;will-change:transform}
+                          #cf2{animation:confetti2 3.2s 1.28s ease-out infinite;transform-origin:54px 18px;will-change:transform}
+                        `;
+const CSS_WARNSHAKE = `
+                          @keyframes warnShake{0%,100%{transform:rotate(0deg) scale(1)}8%{transform:rotate(-6deg) scale(1.048)}16%{transform:rotate(6deg) scale(1.048)}24%{transform:rotate(-4.2deg)}32%{transform:rotate(4.2deg)}40%,100%{transform:rotate(0deg) scale(1)}}
+                          @keyframes warnGlow{0%,100%{opacity:0.88}50%{opacity:1}}
+                          @keyframes bangBlink{0%,100%{opacity:1;transform:scaleY(1)}50%{opacity:0.15;transform:scaleY(0.5)}}
+                          @keyframes sw1Grow{0%{transform:scale(0.64);opacity:0.7}100%{transform:scale(1.48);opacity:0}}
+                          @keyframes sw2Grow{0%{transform:scale(0.64);opacity:0.5}100%{transform:scale(1.72);opacity:0}}
+                          @keyframes sw3Grow{0%{transform:scale(0.64);opacity:0.3}100%{transform:scale(1.96);opacity:0}}
+                          @keyframes lightFlash{0%,90%,100%{opacity:0}45%,55%{opacity:0.4}}
+                          #wrn{animation:warnShake 3.52s ease-in-out infinite,warnGlow 3.52s ease-in-out infinite;transform-origin:32px 34px;will-change:transform}
+                          #bang{animation:bangBlink 0.88s ease-in-out infinite;will-change:transform}
+                          #sw1{animation:sw1Grow 2.24s 0s ease-out infinite;transform-origin:32px 32px;will-change:transform}
+                          #sw2{animation:sw2Grow 2.24s 0.56s ease-out infinite;transform-origin:32px 32px;will-change:transform}
+                          #sw3{animation:sw3Grow 2.24s 1.12s ease-out infinite;transform-origin:32px 32px;will-change:transform}
+                          #flash{animation:lightFlash 3.52s ease-in-out infinite;will-change:transform}
+                        `;
+const CSS_TAGWIGGLE = `
+                        @keyframes tagWiggle{0%,100%{transform:rotate(-3.6deg) scale(1)}50%{transform:rotate(3.6deg) scale(1.048)}}
+                        @keyframes pctPop{0%,100%{transform:scale(1);opacity:0.9}50%{transform:scale(1.09);opacity:1}}
+                        @keyframes sparkD1{0%,100%{transform:scale(0.4);opacity:0}40%,60%{transform:scale(1.18);opacity:1}}
+                        #dtag{animation:tagWiggle 3.2s ease-in-out infinite;transform-origin:32px 34px;will-change:transform}
+                        #dpct{animation:pctPop 2.56s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                        #dsp1{animation:sparkD1 2.88s 0.32s ease-in-out infinite;transform-origin:10px 12px;will-change:transform}
+                        #dsp2{animation:sparkD1 2.88s 1.28s ease-in-out infinite;transform-origin:52px 14px;will-change:transform}
+                      `;
+const CSS_CALTAGFLOAT = `
+                        @keyframes calTagFloat{0%,100%{transform:translateY(0) rotate(-1.8deg)}50%{transform:translateY(-4.2px) rotate(1.8deg)}}
+                        @keyframes mPctSpin{0%,100%{transform:rotate(0deg) scale(1)}50%{transform:rotate(6deg) scale(1.06)}}
+                        #mcal{animation:calTagFloat 3.52s ease-in-out infinite;transform-origin:32px 36px;will-change:transform}
+                        #mpct{animation:mPctSpin 3.2s ease-in-out infinite;transform-origin:40px 40px;will-change:transform}
+                      `;
+const CSS_YRRIBBON = `
+                        @keyframes yrRibbon{0%,100%{transform:rotate(-2.4deg) scale(1)}50%{transform:rotate(2.4deg) scale(1.036)}}
+                        @keyframes yrBadge{0%,100%{opacity:0.85;transform:scale(1)}50%{opacity:1;transform:scale(1.048)}}
+                        @keyframes yrShine{0%{opacity:0.1}50%{opacity:0.5}100%{opacity:0.1}}
+                        #yrib{animation:yrRibbon 3.2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
+                        #ybdg{animation:yrBadge 3.2s 0.64s ease-in-out infinite;transform-origin:42px 20px;will-change:transform}
+                        #ysh{animation:yrShine 3.2s ease-in-out infinite}
+                      `;
+
+// ── Isolated live-clock components ───────────────────────────
+// The clock used to tick via setState in the main Home component,
+// which meant the ENTIRE app (every tab, every animation, every
+// list) re-rendered from scratch once every single second — forever,
+// even with nothing on screen changing besides the seconds digit.
+// That was the single biggest source of constant background lag.
+// Moving the ticking state into these tiny standalone components
+// means only these few characters of text re-render each second;
+// the rest of the app is completely undisturbed.
+const LiveTimeText = React.memo(function LiveTimeText() {
+  const [val, setVal] = useState(() => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+  useEffect(() => {
+    const id = setInterval(() => {
+      setVal(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{val}</>;
+});
+
+const LiveDateText = React.memo(function LiveDateText() {
+  const [val, setVal] = useState(() => new Date().toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }));
+  useEffect(() => {
+    const id = setInterval(() => {
+      setVal(new Date().toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{val}</>;
+});
+
+const DAY_NAMES_EN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const DAY_NAMES_BN = ['রবিবার','সোমবার','মঙ্গলবার','বুধবার','বৃহস্পতিবার','শুক্রবার','শনিবার'];
+const LiveDayText = React.memo(function LiveDayText({ language }: { language: string }) {
+  const compute = () => language === 'bn' ? DAY_NAMES_BN[new Date().getDay()] : DAY_NAMES_EN[new Date().getDay()];
+  const [val, setVal] = useState(compute);
+  useEffect(() => {
+    setVal(compute());
+    const id = setInterval(() => setVal(compute()), 1000);
+    return () => clearInterval(id);
+  }, [language]);
+  return <>{val}</>;
+});
 
 export default function Home() {
 
@@ -784,6 +1340,27 @@ export default function Home() {
     closing_discount: true,
     closing_due_collection: true,
     closing_final_summary: true,
+    // Daily / Monthly Report permissions
+    daily_report: true,
+    daily_report_sell: true,
+    daily_report_profit: true,
+    daily_report_due: true,
+    daily_report_due_collection: true,
+    daily_report_purchase: true,
+    daily_report_returns: true,
+    monthly_report: true,
+    monthly_report_sell: true,
+    monthly_report_profit: true,
+    monthly_report_due: true,
+    monthly_report_due_collection: true,
+    monthly_report_purchase: true,
+    monthly_report_returns: true,
+    expense_tracker: true,
+    expense_add: true,
+    expense_edit: true,
+    expense_delete: true,
+    expense_view_history: true,
+    expense_view_profit: true,
   });
 
   const [adminVisibleModules, setAdminVisibleModules] = useState<{ [key: string]: boolean }>({
@@ -803,6 +1380,12 @@ export default function Home() {
     closing_report: true, closing_total_sales: true, closing_cash_received: true, closing_profit: true,
     closing_due: true, closing_bkash: true, closing_discount: true, closing_due_collection: true,
     closing_final_summary: true,
+    daily_report: true, daily_report_sell: true, daily_report_profit: true, daily_report_due: true,
+    daily_report_due_collection: true, daily_report_purchase: true, daily_report_returns: true,
+    monthly_report: true, monthly_report_sell: true, monthly_report_profit: true, monthly_report_due: true,
+    monthly_report_due_collection: true, monthly_report_purchase: true, monthly_report_returns: true,
+    expense_tracker: true, expense_add: true, expense_edit: true, expense_delete: true,
+    expense_view_history: true, expense_view_profit: true,
   });
 
   // ============================================================
@@ -821,9 +1404,8 @@ export default function Home() {
   // SOUND & UI ENHANCEMENT STATES
   // ============================================================
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [liveTime, setLiveTime] = useState("");
-  const [liveDate, setLiveDate] = useState("");
-  const [liveDay, setLiveDay] = useState("");
+  // liveTime/liveDate/liveDay state removed — now handled by isolated
+  // LiveTimeText/LiveDateText/LiveDayText components (see module scope above)
   const [loginShake, setLoginShake] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -831,9 +1413,14 @@ export default function Home() {
   const [toastQueue, setToastQueue] = useState<{id:number,msg:string,type:'success'|'error'|'info'}[]>([]);
   const toastIdRef = useRef(0);
 
+  // Only play sound for a small set of IMPORTANT actions (login, errors,
+  // checkout/success, warnings). Frequent decorative sounds — tab switch,
+  // generic click, add-to-cart, print, save — are skipped entirely, since
+  // firing on every single click/navigation was a real source of lag.
+  const IMPORTANT_SOUNDS = useMemo(() => new Set(['login', 'error', 'checkout', 'success', 'warning']), []);
   const playSound = useCallback((type: 'success'|'click'|'error'|'add'|'login'|'notify'|'delete'|'checkout'|'tab'|'warning'|'print'|'save') => {
-    if (soundEnabled) createSound(type);
-  }, [soundEnabled]);
+    if (soundEnabled && IMPORTANT_SOUNDS.has(type)) createSound(type);
+  }, [soundEnabled, IMPORTANT_SOUNDS]);
 
   const addToast = useCallback((msg: string, type: 'success'|'error'|'info' = 'success') => {
     const id = ++toastIdRef.current;
@@ -851,6 +1438,14 @@ export default function Home() {
   // ============================================================
   const [medicines, setMedicines] = useState<any[]>([]);
   const medicinesRef = useRef<any[]>([]);
+  // Tracks the last-applied RAW string for each cloud key. Every local
+  // write (checkout, edit, etc.) round-trips back through the SSE listener
+  // moments later as an echo of the exact same value — without this check,
+  // that echo re-parses the JSON and calls setState with a brand-new array
+  // reference every time, forcing a full re-render of the whole app on top
+  // of the optimistic render that already happened for the same action.
+  // String-comparing the raw payload before parsing catches that for free.
+  const lastAppliedRawRef = useRef<Record<string, string>>({});
   useEffect(() => { medicinesRef.current = medicines; }, [medicines]);
   const [totalSales, setTotalSales] = useState(0);
   const [totalProfit, setTotalProfit] = useState(0);
@@ -958,6 +1553,18 @@ export default function Home() {
   useEffect(() => { dueListRef.current = dueList; }, [dueList]);
   const [duePaymentModal, setDuePaymentModal] = useState<any>(null);
   const [duePayAmount, setDuePayAmount] = useState("");
+
+  // ============================================================
+  // EXPENSE TRACKER — form & filter state
+  // ============================================================
+  const EXPENSE_PRESET_CATEGORIES = ["Rent", "Electricity", "Staff Salary", "Transport", "Maintenance", "Other"];
+  const [expenseCategory, setExpenseCategory] = useState("Rent");
+  const [expenseCustomCategory, setExpenseCustomCategory] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseNote, setExpenseNote] = useState("");
+  const [expensePaymentMethod, setExpensePaymentMethod] = useState("Cash");
+  const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
+  const [expenseFilter, setExpenseFilter] = useState<"all" | "today" | "month">("all");
   const [dueCollectionLog, setDueCollectionLog] = useState<any[]>([]);
 
   // ── Daily / Monthly Report states ───────────────────────────
@@ -1016,6 +1623,12 @@ export default function Home() {
   const [discountType, setDiscountType] = useState<"TK" | "PERCENT">("TK");
   const [discountValue, setDiscountValue] = useState("0");
   const [searchTerm, setSearchTerm] = useState("");
+  // Inventory table pagination — rendering hundreds of rows in one go on
+  // every tab click was a real cost (DOM node creation + reconciliation),
+  // separate from the content-visibility paint optimization already in
+  // place. Paging caps that to a fixed row count regardless of stock size.
+  const [invPage, setInvPage] = useState(1);
+  const INV_PAGE_SIZE = 50;
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchInvoiceQuery, setSearchInvoiceQuery] = useState("");
 
@@ -1033,8 +1646,11 @@ export default function Home() {
   // STOCK IN / PURCHASE
   // ============================================================
   const [purchaseList, setPurchaseList] = useState<any[]>([]);
+  const [expenseList, setExpenseList] = useState<any[]>([]);
   const purchaseListRef = useRef<any[]>([]);
   useEffect(() => { purchaseListRef.current = purchaseList; }, [purchaseList]);
+  const expenseListRef = useRef<any[]>([]);
+  useEffect(() => { expenseListRef.current = expenseList; }, [expenseList]);
   const [pCompanyName, setPCompanyName] = useState("");
   const [purchaseCart, setPurchaseCart] = useState<any[]>([]);
   const [pMedicineName, setPMedicineName] = useState("");
@@ -1181,7 +1797,7 @@ export default function Home() {
     const savedTheme = localStorage.getItem('madina_v7_theme');
     const savedSound = localStorage.getItem('madina_v7_sound');
     const savedLang = localStorage.getItem('madina_v7_language');
-    if (savedTheme) setThemeMode(savedTheme);
+    if (savedTheme) setThemeMode(savedTheme === 'dark' ? 'dark' : 'light');
     else if (savedDark) setThemeMode(JSON.parse(savedDark) ? 'dark' : 'light');
     if (savedSound !== null) setSoundEnabled(JSON.parse(savedSound));
     if (savedLang) setLanguage(savedLang as any);
@@ -1221,6 +1837,16 @@ export default function Home() {
         const { list: dedupedDueList, changed: dueListChanged } = dedupeIds(parsedDueList);
         setDueList(dedupedDueList);
         if (dueListChanged) cloudSet('madina_v7_due_list', JSON.stringify(dedupedDueList));
+      }
+
+      const savedExpenses = g('madina_v7_expenses');
+      if (savedExpenses) {
+        try {
+          const parsedExpenses = JSON.parse(savedExpenses);
+          const { list: dedupedExpenses, changed: expensesChanged } = dedupeIds(parsedExpenses);
+          setExpenseList(dedupedExpenses);
+          if (expensesChanged) cloudSet('madina_v7_expenses', JSON.stringify(dedupedExpenses));
+        } catch { /* skip malformed */ }
       }
 
       const savedDueCLog = g('madina_v7_due_collection_log');
@@ -1372,19 +1998,21 @@ export default function Home() {
     if (!isMounted) return;
 
     const unsubscribe = fbListenAll((cloudData) => {
-      setSyncStatus('syncing');
+      let didApplyAnything = false;
 
       const apply = (key: string, setter: (v: any) => void, parse: (s: string) => any = JSON.parse) => {
         const value = cloudData[key];
-        if (value !== undefined) {
-          try { setter(parse(value)); } catch { /* skip malformed */ }
+        if (value !== undefined && value !== lastAppliedRawRef.current[key]) {
+          try { setter(parse(value)); lastAppliedRawRef.current[key] = value; didApplyAnything = true; } catch { /* skip malformed */ }
         }
       };
 
       // Special handling for medicines: if there's an active cart, re-apply cart deductions
       // so that Firebase updates from other devices don't undo pending stock changes
       const medsValue = cloudData['madina_v7_meds'];
-      if (medsValue !== undefined) {
+      if (medsValue !== undefined && medsValue !== lastAppliedRawRef.current['madina_v7_meds']) {
+        lastAppliedRawRef.current['madina_v7_meds'] = medsValue;
+        didApplyAnything = true;
         try {
           const rawFreshMeds: any[] = JSON.parse(medsValue);
           const { list: freshMeds, changed: medsChanged } = dedupeIds(rawFreshMeds);
@@ -1414,7 +2042,9 @@ export default function Home() {
       let freshDueLogForSales: any[] | null = null;
 
       const invoicesValue = cloudData['madina_v7_invoices'];
-      if (invoicesValue !== undefined) {
+      if (invoicesValue !== undefined && invoicesValue !== lastAppliedRawRef.current['madina_v7_invoices']) {
+        lastAppliedRawRef.current['madina_v7_invoices'] = invoicesValue;
+        didApplyAnything = true;
         try {
           const freshInvoices: any[] = JSON.parse(invoicesValue);
           setInvoices(freshInvoices);
@@ -1423,7 +2053,9 @@ export default function Home() {
       }
 
       const dueLogValue = cloudData['madina_v7_due_collection_log'];
-      if (dueLogValue !== undefined) {
+      if (dueLogValue !== undefined && dueLogValue !== lastAppliedRawRef.current['madina_v7_due_collection_log']) {
+        lastAppliedRawRef.current['madina_v7_due_collection_log'] = dueLogValue;
+        didApplyAnything = true;
         try {
           const freshDueLog: any[] = JSON.parse(dueLogValue);
           setDueCollectionLog(freshDueLog);
@@ -1435,8 +2067,8 @@ export default function Home() {
         const invoicesForCalc = freshInvoicesForSales ?? invoicesRef.current;
         const dueLogForCalc = freshDueLogForSales ?? dueCollectionLogRef.current;
         const { sales: derivedSales, profit: derivedProfit } = computeSalesAndProfit(invoicesForCalc, dueLogForCalc);
-        setTotalSales(derivedSales);
-        setTotalProfit(derivedProfit);
+        setTotalSales(prev => prev === derivedSales ? prev : derivedSales);
+        setTotalProfit(prev => prev === derivedProfit ? prev : derivedProfit);
       } else {
         apply('madina_v7_sales', setTotalSales, parseFloat);
         apply('madina_v7_profit', setTotalProfit, parseFloat);
@@ -1450,6 +2082,11 @@ export default function Home() {
         const { list, changed } = dedupeIds(v);
         setDueList(list);
         if (changed) cloudSet('madina_v7_due_list', JSON.stringify(list));
+      });
+      apply('madina_v7_expenses', (v: any) => {
+        const { list, changed } = dedupeIds(v);
+        setExpenseList(list);
+        if (changed) cloudSet('madina_v7_expenses', JSON.stringify(list));
       });
       apply('madina_v7_companies', setBdMedicineCompanies);
       apply('madina_v7_mednames', setBdMedicineNamesList);
@@ -1492,30 +2129,19 @@ export default function Home() {
       // wiped out mid-sentence by, e.g., a sale happening on another device.
       apply('madina_v7_creator_notice', (v: string) => { setCreatorNotice(v); }, (s: string) => s);
 
-      setSyncStatus('synced');
-      setTimeout(() => setSyncStatus('idle'), 3000);
+      if (didApplyAnything) {
+        setSyncStatus('synced');
+        setTimeout(() => setSyncStatus('idle'), 3000);
+      }
     });
 
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMounted]);
 
-  // ============================================================
-  // LIVE CLOCK
-  // ============================================================
-  useEffect(() => {
-    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    const daysBn = ['রবিবার','সোমবার','মঙ্গলবার','বুধবার','বৃহস্পতিবার','শুক্রবার','শনিবার'];
-    const tick = () => {
-      const now = new Date();
-      setLiveTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      setLiveDate(now.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }));
-      setLiveDay(language === 'bn' ? daysBn[now.getDay()] : days[now.getDay()]);
-    };
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, [language]);
+  // Live clock now lives in isolated LiveTimeText/LiveDateText/LiveDayText
+  // components (see above module scope) so the whole app doesn't
+  // re-render every second — see notes there.
 
   // ============================================================
   // OUTSIDE CLICK HANDLER FOR SUGGESTIONS
@@ -2742,6 +3368,91 @@ export default function Home() {
     alert(t(`✅ Payment of ${payAmt.toFixed(1)} ${currencySymbol} recorded!`, `✅ ${payAmt.toFixed(1)} ${currencySymbol} পরিশোধ নথিভুক্ত হয়েছে!`));
   };
 
+  // ============================================================
+  // EXPENSE TRACKER — add / edit / delete
+  // ============================================================
+  const resetExpenseForm = () => {
+    setEditingExpenseId(null);
+    setExpenseCategory("Rent");
+    setExpenseCustomCategory("");
+    setExpenseAmount("");
+    setExpenseNote("");
+    setExpensePaymentMethod("Cash");
+  };
+
+  const handleSaveExpense = async () => {
+    const requiredPerm = editingExpenseId !== null ? "expense_edit" : "expense_add";
+    if (currentUserRole === "STAFF" && !staffVisibleModules[requiredPerm]) {
+      playSound('error');
+      alert(t("You don't have permission to do this.", "এই কাজের অনুমতি আপনার নেই।"));
+      return;
+    }
+    const amt = parseFloat(expenseAmount) || 0;
+    if (amt <= 0) { playSound('error'); alert(t("Please enter a valid amount!", "সঠিক পরিমাণ দিন!")); return; }
+    const finalCategory = expenseCategory === "Other" && expenseCustomCategory.trim()
+      ? expenseCustomCategory.trim()
+      : expenseCategory;
+    if (!finalCategory) { playSound('error'); alert(t("Please select or enter a category!", "ক্যাটাগরি নির্বাচন করুন!")); return; }
+
+    const currentList = await fetchLatestList('madina_v7_expenses', expenseListRef.current);
+
+    if (editingExpenseId !== null) {
+      const updated = currentList.map((e: any) =>
+        e.id === editingExpenseId ? { ...e, category: finalCategory, amount: amt, note: expenseNote, paymentMethod: expensePaymentMethod } : e
+      );
+      setExpenseList(updated);
+      await cloudSet('madina_v7_expenses', JSON.stringify(updated));
+      playSound('save');
+      alert(t("✅ Expense updated!", "✅ খরচ আপডেট হয়েছে!"));
+    } else {
+      const today = new Date();
+      const newEntry = {
+        id: genId(),
+        category: finalCategory,
+        amount: amt,
+        note: expenseNote,
+        paymentMethod: expensePaymentMethod,
+        dateString: today.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' }),
+        date: today.toISOString(),
+      };
+      const updated = [newEntry, ...currentList];
+      setExpenseList(updated);
+      await cloudSet('madina_v7_expenses', JSON.stringify(updated));
+      playSound('add');
+    }
+    resetExpenseForm();
+  };
+
+  const startEditExpense = (entry: any) => {
+    if (currentUserRole === "STAFF" && !staffVisibleModules["expense_edit"]) {
+      playSound('error');
+      alert(t("You don't have permission to edit expenses.", "খরচ সম্পাদনার অনুমতি আপনার নেই।"));
+      return;
+    }
+    setEditingExpenseId(entry.id);
+    const isPreset = EXPENSE_PRESET_CATEGORIES.includes(entry.category);
+    setExpenseCategory(isPreset ? entry.category : "Other");
+    setExpenseCustomCategory(isPreset ? "" : entry.category);
+    setExpenseAmount(String(entry.amount));
+    setExpenseNote(entry.note || "");
+    setExpensePaymentMethod(entry.paymentMethod || "Cash");
+  };
+
+  const deleteExpenseEntry = async (expenseId: number) => {
+    if (currentUserRole === "STAFF" && !staffVisibleModules["expense_delete"]) {
+      playSound('error');
+      alert(t("You don't have permission to delete expenses.", "খরচ মোছার অনুমতি আপনার নেই।"));
+      return;
+    }
+    if (!confirm(t("Delete this expense entry?", "এই খরচের এন্ট্রি মুছে ফেলবেন?"))) return;
+    const currentList = await fetchLatestList('madina_v7_expenses', expenseListRef.current);
+    const updated = currentList.filter((e: any) => e.id !== expenseId);
+    setExpenseList(updated);
+    await cloudSet('madina_v7_expenses', JSON.stringify(updated));
+    playSound('delete');
+    if (editingExpenseId === expenseId) resetExpenseForm();
+  };
+
   const deleteDueEntry = async (dueId: number) => {
     const dueList = await fetchLatestList('madina_v7_due_list', dueListRef.current);
     const entry = dueList.find((d: any) => d.id === dueId);
@@ -3407,6 +4118,24 @@ export default function Home() {
     return inv.invoiceId.toLowerCase().includes(query) || inv.customer.toLowerCase().includes(query) || inv.phone.toLowerCase().includes(query);
   }), [invoices, searchInvoiceQuery]);
 
+  // Reset to page 1 whenever the underlying filter changes — otherwise
+  // you can land on an empty page 4 after a search narrows the results.
+  useEffect(() => { setInvPage(1); }, [searchTerm, selectedCategory]);
+  const invTotalPages = Math.max(1, Math.ceil(filteredMedicines.length / INV_PAGE_SIZE));
+  const pagedMedicines = useMemo(
+    () => filteredMedicines.slice((invPage - 1) * INV_PAGE_SIZE, invPage * INV_PAGE_SIZE),
+    [filteredMedicines, invPage]
+  );
+
+  const [invoicePage, setInvoicePage] = useState(1);
+  const INVOICE_PAGE_SIZE = 50;
+  useEffect(() => { setInvoicePage(1); }, [searchInvoiceQuery]);
+  const invoiceTotalPages = Math.max(1, Math.ceil(filteredInvoices.length / INVOICE_PAGE_SIZE));
+  const pagedInvoices = useMemo(
+    () => filteredInvoices.slice((invoicePage - 1) * INVOICE_PAGE_SIZE, invoicePage * INVOICE_PAGE_SIZE),
+    [filteredInvoices, invoicePage]
+  );
+
   const activeThreshold = useMemo(() => parseInt(lowStockThreshold) || 10, [lowStockThreshold]);
   const lowStockMedicines = useMemo(() => medicines.filter(m => m.stock <= (m.lowStockAlert || activeThreshold)), [medicines, activeThreshold]);
   const expiredMedicines = useMemo(() => medicines.filter(m => new Date(m.expire) < new Date()), [medicines]);
@@ -3712,6 +4441,18 @@ export default function Home() {
       }
     });
 
+    let computedDailyExpense = 0;
+    let computedMonthlyExpense = 0;
+    expenseList.forEach(eLog => {
+      const eDate = new Date(eLog.date || eLog.dateString);
+      if (eDate.getFullYear() === currentEngineYearNum && eDate.getMonth() === currentEngineMonthNum) {
+        computedMonthlyExpense += (eLog.amount || 0);
+        if (eDate.getDate() === currentEngineDayNum) {
+          computedDailyExpense += (eLog.amount || 0);
+        }
+      }
+    });
+
     return {
       computedDailyPurchaseAmount, computedMonthlyPurchaseAmount, computedYearlyPurchaseAmount,
       computedDailySalesAmount, computedMonthlySalesAmount, computedYearlySalesAmount,
@@ -3720,8 +4461,9 @@ export default function Home() {
       computedDailyBkash, computedMonthlyBkash,
       computedDailyDueCollection, computedMonthlyDueCollection,
       computedDailyDiscount, computedMonthlyDiscount, computedYearlyDiscount,
+      computedDailyExpense, computedMonthlyExpense,
     };
-  }, [todayKey, invoices, purchaseList, dueCollectionLog]);
+  }, [todayKey, invoices, purchaseList, dueCollectionLog, expenseList]);
 
   const {
     computedDailyPurchaseAmount, computedMonthlyPurchaseAmount, computedYearlyPurchaseAmount,
@@ -3731,6 +4473,7 @@ export default function Home() {
     computedDailyBkash, computedMonthlyBkash,
     computedDailyDueCollection, computedMonthlyDueCollection,
     computedDailyDiscount, computedMonthlyDiscount, computedYearlyDiscount,
+    computedDailyExpense, computedMonthlyExpense,
   } = analyticsData;
 
   // ============================================================
@@ -3739,11 +4482,7 @@ export default function Home() {
   if (!isMounted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col items-center justify-center gap-4">
-        <style>{`
-          @keyframes spin-slow { to { transform: rotate(360deg); } }
-          @keyframes pulse-ring { 0%,100%{transform:scale(1);opacity:0.6} 50%{transform:scale(1.15);opacity:0.3} }
-          @keyframes fadein { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-        `}</style>
+        <style>{CSS_SPIN}</style>
         <div className="relative">
           <div style={{animation:'spin-slow 2s linear infinite'}} className="w-16 h-16 rounded-full border-4 border-indigo-500/20 border-t-indigo-400"></div>
           <div className="absolute inset-0 flex items-center justify-center">
@@ -3776,39 +4515,7 @@ export default function Home() {
     return (
       <div className={`min-h-screen flex items-center justify-center p-4 relative overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-gradient-to-br from-indigo-50 via-emerald-50 to-slate-100'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg'] } : {}}>
         {/* Animated background CSS */}
-        <style>{`
-          @keyframes float-up { 0%{transform:translateY(100vh) scale(0);opacity:0} 10%{opacity:0.6} 90%{opacity:0.2} 100%{transform:translateY(-20px) scale(1);opacity:0} }
-          @keyframes login-slide-in { from{opacity:0;transform:translateY(30px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
-          @keyframes clock-tick { 0%{transform:scale(1)} 50%{transform:scale(1.03)} 100%{transform:scale(1)} }
-          @keyframes logo-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(20,184,166,0.4)} 50%{box-shadow:0 0 0 12px rgba(20,184,166,0)} }
-          @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-          @keyframes spin-slow { to { transform: rotate(360deg); } }
-          @keyframes fadein { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-          @keyframes shake { 0%,100%{transform:translateX(0)} 15%{transform:translateX(-8px)} 30%{transform:translateX(8px)} 45%{transform:translateX(-6px)} 60%{transform:translateX(6px)} 75%{transform:translateX(-3px)} 90%{transform:translateX(3px)} }
-          @keyframes sidebar-item { from{opacity:0;transform:translateX(-12px)} to{opacity:1;transform:translateX(0)} }
-          @keyframes tab-content { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-          @keyframes toast-in { from{opacity:0;transform:translateX(100%) scale(0.9)} to{opacity:1;transform:translateX(0) scale(1)} }
-          @keyframes badge-pop { 0%{transform:scale(1)} 50%{transform:scale(1.4)} 100%{transform:scale(1)} }
-          @keyframes counter-up { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
-          @keyframes card-hover { from{transform:translateY(0)} to{transform:translateY(-3px)} }
-          @keyframes progress-fill { from{width:0%} to{width:var(--target-width,100%)} }
-          .animate-login-slide { animation: login-slide-in 0.5s cubic-bezier(0.22,1,0.36,1) forwards; }
-          .animate-clock { animation: clock-tick 1s ease-in-out infinite; }
-          .animate-logo-pulse { animation: logo-pulse 2s ease-in-out infinite; }
-          .animate-shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
-          .animate-sidebar-item { animation: sidebar-item 0.3s ease forwards; }
-          .animate-tab-content { animation: tab-content 0.25s ease forwards; }
-          .animate-toast-in { animation: toast-in 0.35s cubic-bezier(0.22,1,0.36,1) forwards; }
-          .animate-badge-pop { animation: badge-pop 0.3s ease; }
-          .btn-press:active { transform: scale(0.96) !important; transition: transform 0.1s; }
-          @keyframes dashEmojiFloat { 0%,100%{transform:translateY(0) rotate(0deg)} 50%{transform:translateY(-8px) rotate(6deg)} }
-          @keyframes dashEmojiPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.2)} }
-          @keyframes dashEmojiRise { 0%,100%{transform:translateY(0) scale(1)} 40%{transform:translateY(-10px) scale(1.15)} 60%{transform:translateY(-10px) scale(1.15)} }
-          @keyframes dashEmojiWiggle { 0%,100%{transform:rotate(0deg)} 20%{transform:rotate(-12deg)} 40%{transform:rotate(12deg)} 60%{transform:rotate(-8deg)} 80%{transform:rotate(8deg)} }
-          @keyframes dashEmojiShake { 0%,100%{transform:translateX(0) rotate(0deg)} 25%{transform:translateX(-5px) rotate(-8deg)} 75%{transform:translateX(5px) rotate(8deg)} }
-          @keyframes dashEmojiSpin { 0%{transform:rotate(0deg) scale(1)} 50%{transform:rotate(180deg) scale(1.1)} 100%{transform:rotate(360deg) scale(1)} }
-          @keyframes dashEmojiPop { 0%,100%{transform:scale(1) translateY(0)} 30%{transform:scale(1.25) translateY(-5px)} 60%{transform:scale(0.9) translateY(2px)} }
-        `}</style>
+        <style>{CSS_FLOAT}</style>
 
         {/* Floating particles background */}
         {[...Array(12)].map((_, i) => (
@@ -3832,8 +4539,8 @@ export default function Home() {
           {/* Live Clock above card */}
           <div className="text-center mb-4">
             <div className={`inline-flex flex-col items-center px-5 py-2.5 rounded-2xl border backdrop-blur-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700/50' : 'bg-white/70 border-slate-200/80'}`}>
-              <span className="animate-clock font-mono font-black text-2xl text-indigo-500 tracking-widest">{liveTime}</span>
-              <span className={`text-sm font-semibold tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{liveDate} · {liveDay}</span>
+              <span className="animate-clock font-mono font-black text-2xl text-indigo-500 tracking-widest"><LiveTimeText /></span>
+              <span className={`text-sm font-semibold tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}><LiveDateText /> · <LiveDayText language={language} /></span>
             </div>
           </div>
 
@@ -4036,138 +4743,7 @@ export default function Home() {
     >
 
       {/* GLOBAL ANIMATION STYLES */}
-      <style>{`
-        @keyframes float-up { 0%{transform:translateY(100vh) scale(0);opacity:0} 10%{opacity:0.6} 90%{opacity:0.2} 100%{transform:translateY(-20px) scale(1);opacity:0} }
-        @keyframes login-slide-in { from{opacity:0;transform:translateY(30px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
-        @keyframes clock-tick { 0%{transform:scale(1)} 50%{transform:scale(1.03)} 100%{transform:scale(1)} }
-        @keyframes logo-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(20,184,166,0.4)} 50%{box-shadow:0 0 0 12px rgba(20,184,166,0)} }
-        @keyframes spin-slow { to { transform: rotate(360deg); } }
-        @keyframes fadein { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes shake { 0%,100%{transform:translateX(0)} 15%{transform:translateX(-8px)} 30%{transform:translateX(8px)} 45%{transform:translateX(-6px)} 60%{transform:translateX(6px)} 75%{transform:translateX(-3px)} 90%{transform:translateX(3px)} }
-        @keyframes sidebar-item { from{opacity:0;transform:translateX(-12px)} to{opacity:1;transform:translateX(0)} }
-        @keyframes tab-content { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes toast-in { from{opacity:0;transform:translateX(110%) scale(0.9)} to{opacity:1;transform:translateX(0) scale(1)} }
-        @keyframes toast-out { from{opacity:1;transform:translateX(0)} to{opacity:0;transform:translateX(110%)} }
-        @keyframes badge-pop { 0%{transform:scale(1)} 50%{transform:scale(1.5)} 100%{transform:scale(1)} }
-        @keyframes progress-stripe { from{background-position:40px 0} to{background-position:0 0} }
-        @keyframes header-glow { 0%,100%{box-shadow:0 1px 0 rgba(20,184,166,0)} 50%{box-shadow:0 1px 8px rgba(20,184,166,0.15)} }
-        /* ── Scroll reveal (auto-applied to cards/sections) ── */
-        .sr-auto { opacity: 0; transform: translateY(28px); transition: opacity 0.65s cubic-bezier(0.22,1,0.36,1), transform 0.65s cubic-bezier(0.22,1,0.36,1); will-change: opacity, transform; }
-        .sr-auto.sr-visible { opacity: 1; transform: translateY(0); }
-        @media (prefers-reduced-motion: reduce) {
-          .sr-auto { opacity: 1 !important; transform: none !important; transition: none !important; }
-        }
-        .animate-login-slide { animation: login-slide-in 0.5s cubic-bezier(0.22,1,0.36,1) forwards; }
-        .animate-clock { animation: clock-tick 1s ease-in-out infinite; }
-        .animate-logo-pulse { animation: logo-pulse 2s ease-in-out infinite; }
-        .animate-shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
-        .animate-sidebar-item { animation: sidebar-item 0.3s ease forwards; }
-        .animate-tab-content { animation: tab-content 0.25s ease forwards; }
-        .animate-toast-in { animation: toast-in 0.35s cubic-bezier(0.22,1,0.36,1) forwards; }
-        .animate-badge-pop { animation: badge-pop 0.3s ease; }
-        .btn-press { transition: transform 0.12s, box-shadow 0.12s; }
-        .btn-press:active { transform: scale(0.95) !important; }
-        .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
-        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
-        @media (max-width: 768px) {
-          .ccard svg { display: none !important; }
-          .card-hover:hover { transform: none !important; box-shadow: none !important; }
-          [style*="willChange"], [style*="will-change"] { will-change: auto !important; }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
-        }
-        @keyframes emoji-bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-        @keyframes emoji-spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
-        @keyframes emoji-pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.3)} }
-        @keyframes emoji-float { 0%,100%{transform:translateY(0) rotate(-5deg)} 50%{transform:translateY(-10px) rotate(5deg)} }
-        @keyframes emoji-rise { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-10px) scale(1.2)} }
-        @keyframes emoji-shake { 0%,100%{transform:rotate(0deg)} 25%{transform:rotate(-15deg)} 75%{transform:rotate(15deg)} }
-        @keyframes emoji-swing { 0%,100%{transform:rotate(-10deg)} 50%{transform:rotate(10deg)} }
-        @keyframes emoji-pop { 0%,100%{transform:scale(1)} 30%{transform:scale(1.35)} 60%{transform:scale(0.9)} }
-        .anim-bounce { animation: emoji-bounce 1.2s ease-in-out infinite; display:inline-block; }
-        .anim-spin   { animation: emoji-spin 3s linear infinite; display:inline-block; }
-        .anim-pulse  { animation: emoji-pulse 1.5s ease-in-out infinite; display:inline-block; }
-        .anim-float  { animation: emoji-float 2s ease-in-out infinite; display:inline-block; }
-        .anim-rise   { animation: emoji-rise 1.8s ease-in-out infinite; display:inline-block; }
-        .anim-shake  { animation: emoji-shake 0.8s ease-in-out infinite; display:inline-block; }
-        .anim-swing  { animation: emoji-swing 1.4s ease-in-out infinite; display:inline-block; }
-        .anim-pop    { animation: emoji-pop 1.6s ease-in-out infinite; display:inline-block; }
-        /* ── Unified professional card border system ── */
-        .ccard { border-width: 1px !important; border-style: solid !important; }
-        .cc-teal, .cc-indigo, .cc-amber, .cc-emerald, .cc-blue, .cc-red,
-        .cc-orange, .cc-violet, .cc-pink, .cc-rose, .cc-green, .cc-slate,
-        .cc-cyan, .cc-purple { border-color: #e2e8f0 !important; }
-        .dark .cc-teal, .dark .cc-indigo, .dark .cc-amber, .dark .cc-emerald,
-        .dark .cc-blue, .dark .cc-red, .dark .cc-orange, .dark .cc-violet,
-        .dark .cc-pink, .dark .cc-rose, .dark .cc-green, .dark .cc-slate,
-        .dark .cc-cyan, .dark .cc-purple { border-color: #334155 !important; }
-        /* Input fields — colorful focus */
-        input:focus, select:focus, textarea:focus {
-          outline: none !important;
-          border-color: #14b8a6 !important;
-          box-shadow: 0 0 0 3px rgba(20,184,166,0.2) !important;
-        }
-        /* Table rows */
-        tbody tr:nth-child(even) { background-color: rgba(20,184,166,0.035); }
-        tbody tr:hover { background-color: rgba(20,184,166,0.07) !important; }
-
-        .sidebar-nav-btn { transition: all 0.18s ease; border: 2px solid transparent; border-radius: 11px; }
-        .sidebar-nav-btn:hover { padding-left: 16px !important; }
-        .snav-pos     { border-width: 2px !important; border-style: solid !important; border-color: #4f46e5 !important; }
-        .snav-dash    { border-width: 2px !important; border-style: solid !important; border-color: #6366f1 !important; }
-        .snav-stock   { border-width: 2px !important; border-style: solid !important; border-color: #f59e0b !important; }
-        .snav-stockin { border-width: 2px !important; border-style: solid !important; border-color: #10b981 !important; }
-        .snav-newprod { border-width: 2px !important; border-style: solid !important; border-color: #22c55e !important; }
-        .snav-ph      { border-width: 2px !important; border-style: solid !important; border-color: #8b5cf6 !important; }
-        .snav-cph     { border-width: 2px !important; border-style: solid !important; border-color: #a78bfa !important; }
-        .snav-inv     { border-width: 2px !important; border-style: solid !important; border-color: #3b82f6 !important; }
-        .snav-due     { border-width: 2px !important; border-style: solid !important; border-color: #ef4444 !important; }
-        .snav-duecol  { border-width: 2px !important; border-style: solid !important; border-color: #10b981 !important; }
-        .snav-report  { border-width: 2px !important; border-style: solid !important; border-color: #f97316 !important; }
-        .snav-ret     { border-width: 2px !important; border-style: solid !important; border-color: #ec4899 !important; }
-        .snav-set     { border-width: 2px !important; border-style: solid !important; border-color: #64748b !important; }
-        .snav-perm    { border-width: 2px !important; border-style: solid !important; border-color: #f43f5e !important; }
-        .snav-closing { border-width: 2px !important; border-style: solid !important; border-color: #a855f7 !important; }
-        .snav-daily   { border-width: 2px !important; border-style: solid !important; border-color: #0ea5e9 !important; }
-        .snav-monthly { border-width: 2px !important; border-style: solid !important; border-color: #7c3aed !important; }
-        .snav-pos.bg-indigo-500,.snav-dash.bg-indigo-500,.snav-stock.bg-indigo-500,
-        .snav-stockin.bg-indigo-500,.snav-newprod.bg-indigo-500,.snav-ph.bg-indigo-500,.snav-cph.bg-indigo-500,
-        .snav-inv.bg-indigo-500,.snav-due.bg-indigo-500,.snav-duecol.bg-indigo-500,.snav-report.bg-indigo-500,
-        .snav-ret.bg-indigo-500,.snav-set.bg-indigo-500,.snav-perm.bg-indigo-500,.snav-closing.bg-indigo-500
-        { border-color: rgba(255,255,255,0.45) !important; box-shadow: 0 0 10px rgba(20,184,166,0.35); }
-        @media print {
-          .receipt-print, .receipt-print * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-          .cph-print-report, .cph-print-report * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-          .cph-print-report { position: static !important; }
-          @page { size: auto; margin: 10mm; }
-          body, html { background: #fff !important; }
-
-          /* Make all printed receipt/report text clear & bold — easy to read on paper */
-          .receipt-print *, .cph-print-report * {
-            font-weight: 600 !important;
-            opacity: 1 !important;
-          }
-          .receipt-print .text-slate-200, .cph-print-report .text-slate-200,
-          .receipt-print .text-slate-300, .cph-print-report .text-slate-300,
-          .receipt-print .text-slate-400, .cph-print-report .text-slate-400,
-          .receipt-print .text-slate-500, .cph-print-report .text-slate-500,
-          .receipt-print .text-slate-600, .cph-print-report .text-slate-600 {
-            color: #1e293b !important;
-          }
-          .receipt-print .font-semibold, .cph-print-report .font-semibold,
-          .receipt-print .font-bold, .cph-print-report .font-bold,
-          .receipt-print .font-black, .cph-print-report .font-black,
-          .receipt-print th, .cph-print-report th {
-            font-weight: 800 !important;
-          }
-          .receipt-print .text-sm, .cph-print-report .text-sm {
-            font-size: 0.95rem !important;
-            line-height: 1.5 !important;
-          }
-          .receipt-print table, .cph-print-report table { font-size: 0.95rem !important; }
-        }
-      `}</style>
+      <style>{CSS_FLOAT_2}</style>
 
       {/* ANIMATED TOAST NOTIFICATIONS */}
       <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
@@ -4282,8 +4858,8 @@ export default function Home() {
 
           <div className={`text-right hidden sm:block text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             <span className="font-bold">{currentUserRole}</span>
-            <span className="block font-mono text-indigo-500 animate-clock font-black text-sm">{liveTime}</span>
-            <span className="block font-mono text-sm opacity-70">{liveDate}</span>
+            <span className="block font-mono text-indigo-500 animate-clock font-black text-sm"><LiveTimeText /></span>
+            <span className="block font-mono text-sm opacity-70"><LiveDateText /></span>
           </div>
 
           <button onClick={handleLogout} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-sm px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl transition uppercase"><span className="hidden sm:inline">{t("Logout", "লগআউট")}</span><span className="sm:hidden">✕</span></button>
@@ -4301,134 +4877,148 @@ export default function Home() {
       <div className="flex-1 flex print:block">
 
         {/* SIDEBAR — hidden on mobile, visible on md+ */}
-        <nav className={`hidden md:flex w-52 border-r p-3 flex-col gap-1.5 shrink-0 transition print:hidden ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderRightColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
-          <span className="text-sm font-black text-slate-400 uppercase tracking-widest px-2 mb-1.5 block">{t("Menu", "মেনু")}</span>
+        <nav className={`sidebar-collapse hidden md:flex border-r p-3 flex-col gap-1.5 shrink-0 print:hidden ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderRightColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
+          <span className="sc-heading text-sm font-black text-slate-400 uppercase tracking-widest px-2 mb-1.5 block whitespace-nowrap">{t("Menu", "মেনু")}</span>
 
           {checkShouldRenderTabOption("pos") && (
-            <button onClick={() => { playSound('tab'); navigateTab("pos"); }} className={`sidebar-nav-btn snav-pos w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "pos" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="flex items-center gap-2"><span>🛒</span><span>{t("Sell", "বিক্রয়")}</span></div>
-              <span className={`text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "pos" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{cart.length}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("pos"); }} className={`sc-row sidebar-nav-btn snav-pos w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "pos" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <div className="sc-icons flex items-center gap-2"><span>🛒</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Sell", "বিক্রয়")}</span></span></div>
+              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "pos" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{cart.length}</span></span>
             </button>
           )}
 
           {checkShouldRenderTabOption("analytics") && (
-            <button onClick={() => { playSound('tab'); navigateTab("analytics"); }} className={`sidebar-nav-btn snav-dash w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "analytics" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>📊</span><span>{t("Dashboard", "ড্যাশবোর্ড")}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("analytics"); }} className={`sc-row-solo sidebar-nav-btn snav-dash w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "analytics" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span>📊</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Dashboard", "ড্যাশবোর্ড")}</span></span>
             </button>
           )}
 
           {checkShouldRenderTabOption("inventory") && (
-            <button onClick={() => { playSound('tab'); navigateTab("inventory"); }} className={`sidebar-nav-btn snav-stock w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "inventory" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="flex items-center gap-2"><span>📦</span><span>{t("Stock", "স্টক")}</span></div>
-              <span className={`text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "inventory" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{medicines.length}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("inventory"); }} className={`sc-row sidebar-nav-btn snav-stock w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "inventory" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <div className="sc-icons flex items-center gap-2"><span>📦</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Stock", "স্টক")}</span></span></div>
+              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "inventory" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{medicines.length}</span></span>
             </button>
           )}
 
           {checkShouldRenderTabOption("procurement") && (
-            <button onClick={() => { playSound('tab'); navigateTab("procurement"); }} className={`sidebar-nav-btn snav-stockin w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "procurement" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="flex items-center gap-2"><span>📥</span><span>{t("Stock In", "মাল কিনুন")}</span></div>
-              <span className={`text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "procurement" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{purchaseList.length}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("procurement"); }} className={`sc-row sidebar-nav-btn snav-stockin w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "procurement" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <div className="sc-icons flex items-center gap-2"><span>📥</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Stock In", "মাল কিনুন")}</span></span></div>
+              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "procurement" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{purchaseList.length}</span></span>
             </button>
           )}
 
           {checkShouldRenderTabOption("procurement") && (
-            <button onClick={() => { playSound('tab'); navigateTab("new_product"); }} className={`sidebar-nav-btn snav-newprod w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "new_product" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>➕</span><span>{t("New Product", "নতুন পণ্য")}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("new_product"); }} className={`sc-row-solo sidebar-nav-btn snav-newprod w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "new_product" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span>➕</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("New Product", "নতুন পণ্য")}</span></span>
             </button>
           )}
 
           {checkShouldRenderTabOption("purchase_history") && (
-            <button onClick={() => { playSound('tab'); navigateTab("purchase_history"); }} className={`sidebar-nav-btn snav-ph w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "purchase_history" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="flex items-center gap-2"><span>🧾</span><span>{t("Purchase History", "ক্রয় ইতিহাস")}</span></div>
-              <span className={`text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "purchase_history" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{purchaseList.length}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("purchase_history"); }} className={`sc-row sidebar-nav-btn snav-ph w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "purchase_history" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <div className="sc-icons flex items-center gap-2"><span>🧾</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Purchase History", "ক্রয় ইতিহাস")}</span></span></div>
+              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "purchase_history" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{purchaseList.length}</span></span>
             </button>
           )}
 
           {checkShouldRenderTabOption("company_purchase_history_view") && (
-            <button onClick={() => { playSound('tab'); navigateTab("company_purchase_history"); }} className={`sidebar-nav-btn snav-cph w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "company_purchase_history" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="flex items-center gap-2"><span>🏭</span><span>{t("Company Purchase History", "কোম্পানি ক্রয় ইতিহাস")}</span></div>
-              {companyPurchaseSummary.length > 0 && <span className="text-xs px-1.5 py-0.5 rounded font-mono bg-violet-500 text-white">{companyPurchaseSummary.length}</span>}
+            <button onClick={() => { playSound('tab'); navigateTab("company_purchase_history"); }} className={`sc-row sidebar-nav-btn snav-cph w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "company_purchase_history" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <div className="sc-icons flex items-center gap-2"><span>🏭</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Company Purchase History", "কোম্পানি ক্রয় ইতিহাস")}</span></span></div>
+              {companyPurchaseSummary.length > 0 && <span className="sc-wrap"><span className="sc-fade whitespace-nowrap text-xs px-1.5 py-0.5 rounded font-mono bg-violet-500 text-white">{companyPurchaseSummary.length}</span></span>}
             </button>
           )}
 
           {checkShouldRenderTabOption("invoices") && (
-            <button onClick={() => { playSound('tab'); navigateTab("invoices"); }} className={`sidebar-nav-btn snav-inv w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "invoices" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="flex items-center gap-2"><span>🧾</span><span>{t("Invoices", "রশিদ")}</span></div>
-              <span className={`text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "invoices" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{invoices.length}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("invoices"); }} className={`sc-row sidebar-nav-btn snav-inv w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "invoices" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <div className="sc-icons flex items-center gap-2"><span>🧾</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Invoices", "রশিদ")}</span></span></div>
+              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "invoices" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{invoices.length}</span></span>
             </button>
           )}
 
           {checkShouldRenderTabOption("due_list_view") && (
-            <button onClick={() => { playSound('tab'); navigateTab("due_list"); }} className={`sidebar-nav-btn snav-due w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "due_list" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="flex items-center gap-2"><span>💳</span><span>{t("Due List", "বাকি তালিকা")}</span></div>
-              {dueList.length > 0 && <span className="text-xs px-1.5 py-0.5 rounded font-mono bg-red-500 text-white">{dueList.length}</span>}
+            <button onClick={() => { playSound('tab'); navigateTab("due_list"); }} className={`sc-row sidebar-nav-btn snav-due w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "due_list" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <div className="sc-icons flex items-center gap-2"><span>💳</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Due List", "বাকি তালিকা")}</span></span></div>
+              {dueList.length > 0 && <span className="sc-wrap"><span className="sc-fade whitespace-nowrap text-xs px-1.5 py-0.5 rounded font-mono bg-red-500 text-white">{dueList.length}</span></span>}
             </button>
           )}
 
           {checkShouldRenderTabOption("due_collection_view") && (
-            <button onClick={() => { playSound('tab'); navigateTab("due_collection"); }} className={`sidebar-nav-btn snav-duecol w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "due_collection" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="flex items-center gap-2"><span>📒</span><span>{t("Due Collection List", "বাকি আদায় তালিকা")}</span></div>
-              {dueCollectionLog.length > 0 && <span className="text-xs px-1.5 py-0.5 rounded font-mono bg-emerald-500 text-white">{dueCollectionLog.length}</span>}
+            <button onClick={() => { playSound('tab'); navigateTab("due_collection"); }} className={`sc-row sidebar-nav-btn snav-duecol w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "due_collection" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <div className="sc-icons flex items-center gap-2"><span>📒</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Due Collection List", "বাকি আদায় তালিকা")}</span></span></div>
+              {dueCollectionLog.length > 0 && <span className="sc-wrap"><span className="sc-fade whitespace-nowrap text-xs px-1.5 py-0.5 rounded font-mono bg-emerald-500 text-white">{dueCollectionLog.length}</span></span>}
             </button>
           )}
 
           {checkShouldRenderTabOption("report_view") && (
-            <button onClick={() => { playSound('tab'); navigateTab("report"); }} className={`sidebar-nav-btn snav-report w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>📋</span><span>{t("Report", "রিপোর্ট")}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("report"); }} className={`sc-row-solo sidebar-nav-btn snav-report w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span>📋</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Report", "রিপোর্ট")}</span></span>
             </button>
           )}
 
           {checkShouldRenderTabOption("closing_report") && (
-            <button onClick={() => { playSound('tab'); navigateTab("closing_report"); }} className={`sidebar-nav-btn snav-closing w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "closing_report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>🌙</span><span>{t("Closing Report", "ক্লোজিং রিপোর্ট")}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("closing_report"); }} className={`sc-row-solo sidebar-nav-btn snav-closing w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "closing_report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span>🌙</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Closing Report", "ক্লোজিং রিপোর্ট")}</span></span>
             </button>
           )}
 
-          <button onClick={() => { playSound('tab'); navigateTab("daily_report"); }} className={`sidebar-nav-btn snav-daily w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "daily_report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-            <span>🗓️</span><span>{t("Daily Report", "দৈনিক রিপোর্ট")}</span>
-          </button>
+          {checkShouldRenderTabOption("daily_report") && (
+            <button onClick={() => { playSound('tab'); navigateTab("daily_report"); }} className={`sc-row-solo sidebar-nav-btn snav-daily w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "daily_report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span>🗓️</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Daily Report", "দৈনিক রিপোর্ট")}</span></span>
+            </button>
+          )}
 
-          <button onClick={() => { playSound('tab'); navigateTab("monthly_report"); }} className={`sidebar-nav-btn snav-monthly w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "monthly_report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-            <span>📅</span><span>{t("Monthly Report", "মাসিক রিপোর্ট")}</span>
-          </button>
+          {checkShouldRenderTabOption("monthly_report") && (
+            <button onClick={() => { playSound('tab'); navigateTab("monthly_report"); }} className={`sc-row-solo sidebar-nav-btn snav-monthly w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "monthly_report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span>📅</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Monthly Report", "মাসিক রিপোর্ট")}</span></span>
+            </button>
+          )}
 
           {checkShouldRenderTabOption("returns") && (
-            <button onClick={() => { playSound('tab'); navigateTab("returns"); }} className={`sidebar-nav-btn snav-ret w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "returns" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>🔄</span><span>{t("Returns", "ফেরত")}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("returns"); }} className={`sc-row-solo sidebar-nav-btn snav-ret w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "returns" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span>🔄</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Returns", "ফেরত")}</span></span>
+            </button>
+          )}
+
+          {checkShouldRenderTabOption("expense_tracker") && (
+            <button onClick={() => { playSound('tab'); navigateTab("expense_tracker"); }} className={`sc-row sidebar-nav-btn snav-exp w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "expense_tracker" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span className="sc-icons flex items-center gap-2"><span>💸</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Expense Tracker", "খরচ ট্র্যাকার")}</span></span></span>
+              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "expense_tracker" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{expenseList.length}</span></span>
             </button>
           )}
 
           {checkShouldRenderTabOption("settings") && (
-            <button onClick={() => { playSound('tab'); navigateTab("settings"); }} className={`sidebar-nav-btn snav-set w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "settings" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>⚙️</span><span>{t("Settings", "সেটিংস")}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("settings"); }} className={`sc-row-solo sidebar-nav-btn snav-set w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "settings" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span>⚙️</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Settings", "সেটিংস")}</span></span>
             </button>
           )}
 
           {currentUserRole === "ADMIN" && (
-            <button onClick={() => { playSound('tab'); navigateTab("modules_menu"); }} className={`sidebar-nav-btn snav-perm w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "modules_menu" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>🛡️</span><span>{t("Permissions", "অনুমতি")}</span>
+            <button onClick={() => { playSound('tab'); navigateTab("modules_menu"); }} className={`sc-row-solo sidebar-nav-btn snav-perm w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "modules_menu" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+              <span>🛡️</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Permissions", "অনুমতি")}</span></span>
             </button>
           )}
 
 
 
           {/* Bottom Info */}
-          <div className="mt-auto pt-4 border-t border-dashed border-slate-700/50">
+          <div className="sc-bottom mt-auto pt-4 border-t border-dashed border-slate-700/50">
             {/* Sidebar Clock */}
             <div className={`p-2 rounded-xl text-center mb-2 ${isDarkMode ? 'bg-slate-800/60' : 'bg-indigo-50'}`}>
-              <div className="animate-clock font-mono font-black text-indigo-500 text-sm tracking-widest">{liveTime}</div>
-              <div className={`text-sm font-semibold mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{liveDate}</div>
-              <div className={`text-sm font-semibold ${isDarkMode ? 'text-slate-400' : 'text-indigo-600'}`}>{liveDay}</div>
+              <div className="sc-collapsed-only items-center justify-center text-lg">🕐</div>
+              <div className="sc-expanded-only">
+                <div className="animate-clock font-mono font-black text-indigo-500 text-sm tracking-widest whitespace-nowrap overflow-hidden"><LiveTimeText /></div>
+                <div className={`text-sm font-semibold mt-0.5 whitespace-nowrap overflow-hidden ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}><LiveDateText /></div>
+                <div className={`text-sm font-semibold whitespace-nowrap overflow-hidden ${isDarkMode ? 'text-slate-400' : 'text-indigo-600'}`}><LiveDayText language={language} /></div>
+              </div>
             </div>
             <div className={`p-2 rounded-xl text-sm ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-100'}`}>
-              <div className="flex items-center gap-1.5 font-bold mb-1">
-                <span className={`w-2 h-2 rounded-full ${currentUserRole === 'ADMIN' ? 'bg-indigo-400' : 'bg-indigo-400'}`}></span>
-                <span className="uppercase tracking-wider text-sm text-slate-400">{t("Logged in as", "লগইন")}</span>
+              <div className="flex items-center gap-1.5 font-bold mb-1 justify-center">
+                <span className={`shrink-0 w-2 h-2 rounded-full ${currentUserRole === 'ADMIN' ? 'bg-indigo-400' : 'bg-indigo-400'}`}></span>
+                <span className="sc-expanded-only uppercase tracking-wider text-sm text-slate-400 whitespace-nowrap overflow-hidden">{t("Logged in as", "লগইন")}</span>
               </div>
-              <p className="font-mono font-black text-sm truncate">{currentUserRole === "ADMIN" ? t("Administrator", "অ্যাডমিন") : t("Staff", "স্টাফ")}</p>
+              <p className="sc-expanded-only font-mono font-black text-sm truncate text-center">{currentUserRole === "ADMIN" ? t("Administrator", "অ্যাডমিন") : t("Staff", "স্টাফ")}</p>
             </div>
             {checkShouldRenderTabOption("backup_restore") && (
-              <button onClick={resetDatabase} className="w-full mt-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold py-1 px-2 rounded text-sm transition uppercase tracking-wider">
+              <button onClick={resetDatabase} className="sc-expanded-only w-full mt-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold py-1 px-2 rounded text-sm transition uppercase tracking-wider whitespace-nowrap overflow-hidden">
                 🚨 {t("Reset System", "রিসেট")}
               </button>
             )}
@@ -4506,6 +5096,11 @@ export default function Home() {
                 {checkShouldRenderTabOption("returns") && (
                   <button onClick={() => { playSound('tab'); navigateTab("returns"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "returns" ? 'bg-indigo-500 text-white border-indigo-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
                     <span className="text-xl">🔄</span><span>{t("Returns", "ফেরত")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("expense_tracker") && (
+                  <button onClick={() => { playSound('tab'); navigateTab("expense_tracker"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "expense_tracker" ? 'bg-indigo-500 text-white border-indigo-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">💸</span><span>{t("Expenses", "খরচ")}</span>
                   </button>
                 )}
                 {checkShouldRenderTabOption("settings") && (
@@ -4614,7 +5209,11 @@ export default function Home() {
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[55vh] sm:max-h-[55vh] md:max-h-[60vh] overflow-y-auto">
-                  {filteredMedicines.map(med => {
+                  {/* Unfiltered view mounted every button at once — real cost
+                      opening the Sell tab once stock grows past a few hundred
+                      items. Cap the unsearched view; typing narrows it via
+                      filteredMedicines same as before, uncapped. */}
+                  {(searchTerm.trim() || selectedCategory !== "All" ? filteredMedicines : filteredMedicines.slice(0, 60)).map(med => {
                     const isExpired = new Date(med.expire) < new Date();
                     const isLowStock = med.stock <= (med.lowStockAlert || activeThreshold);
                     return (
@@ -4622,6 +5221,7 @@ export default function Home() {
                         key={med.id}
                         onClick={() => addToCart(med)}
                         disabled={med.stock === 0 || isExpired}
+                        style={{ contentVisibility: 'auto', containIntrinsicSize: '0 90px' } as any}
                         className={`p-2.5 rounded-xl border ccard cc-teal text-left transition hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-slate-800/60 border-slate-700 hover:border-indigo-500/50' : 'bg-white border-slate-200 hover:border-indigo-300 shadow-sm'}`}
                       >
                         <div className="font-black text-sm truncate mb-1">{med.name}</div>
@@ -4636,6 +5236,11 @@ export default function Home() {
                     );
                   })}
                   {filteredMedicines.length === 0 && <div className="col-span-3 text-center py-8 text-slate-400 italic text-sm">{t("No medicine found.", "কোনো ওষুধ পাওয়া যায়নি।")}</div>}
+                  {!searchTerm.trim() && selectedCategory === "All" && filteredMedicines.length > 60 && (
+                    <div className="col-span-2 md:col-span-3 text-center py-2 text-slate-400 text-sm italic">
+                      {t(`Showing 60 of ${filteredMedicines.length} — search or pick a category to find more.`, `৬০ / ${filteredMedicines.length} দেখানো হচ্ছে — বাকি খুঁজতে সার্চ করুন বা ক্যাটাগরি বাছাই করুন।`)}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -4883,24 +5488,7 @@ export default function Home() {
                   <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#d1fae5'} : {color:'#6b7280'}}>{t("Cash collected today", "আজ সংগ্রহ")}</div>
                   <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                     <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{`
-                        @keyframes bagFloat{0%,100%{transform:translateY(0) rotate(-2deg) scale(1)}50%{transform:translateY(-8px) rotate(2deg) scale(1.04)}}
-                        @keyframes bagGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                        @keyframes coinSpin1{0%{transform:translateY(-18px) scaleX(1);opacity:0}15%{opacity:1}40%{transform:translateY(2px) scaleX(-1);opacity:1}70%{transform:translateY(10px) scaleX(1);opacity:1}85%,100%{transform:translateY(14px);opacity:0}}
-                        @keyframes coinSpin2{0%{transform:translateY(-14px) scaleX(1);opacity:0}20%{opacity:1}45%{transform:translateY(2px) scaleX(-1);opacity:1}75%{transform:translateY(8px) scaleX(1);opacity:1}90%,100%{opacity:0}}
-                        @keyframes coinSpin3{0%{transform:translateY(-20px) scaleX(1);opacity:0}10%{opacity:1}38%{transform:translateY(2px) scaleX(-1);opacity:1}65%{transform:translateY(12px) scaleX(1);opacity:1}80%,100%{opacity:0}}
-                        @keyframes shimmer{0%,100%{opacity:0.15}50%{opacity:0.55}}
-                        @keyframes sparkle1{0%,100%{transform:scale(0) rotate(0deg);opacity:0}40%,60%{transform:scale(1.2) rotate(180deg);opacity:1}}
-                        @keyframes sparkle2{0%,100%{transform:scale(0) rotate(0deg);opacity:0}30%,70%{transform:scale(1) rotate(90deg);opacity:0.9}}
-                        #mbag{animation:bagFloat 2s ease-in-out infinite,bagGlow 2s ease-in-out infinite;transform-origin:32px 38px;will-change:transform}
-                        #c1{animation:coinSpin1 2s 0.1s ease-in infinite;transform-origin:20px 18px;will-change:transform}
-                        #c2{animation:coinSpin2 2s 0.55s ease-in infinite;transform-origin:36px 14px;will-change:transform}
-                        #c3{animation:coinSpin3 2s 0.9s ease-in infinite;transform-origin:44px 22px;will-change:transform}
-                        #sh1{animation:shimmer 2s 0s ease-in-out infinite}
-                        #sh2{animation:shimmer 2s 0.4s ease-in-out infinite}
-                        #sp1{animation:sparkle1 2s 0.2s ease-in-out infinite;transform-origin:12px 12px;will-change:transform}
-                        #sp2{animation:sparkle2 2s 0.8s ease-in-out infinite;transform-origin:50px 10px;will-change:transform}
-                      `}</style>
+                      <style>{CSS_BAGFLOAT}</style>
                       <g id="mbag">
                         <ellipse cx="32" cy="42" rx="18" ry="14" fill="white" fillOpacity="0.92"/>
                         <ellipse id="sh1" cx="26" cy="38" rx="6" ry="9" fill="white" fillOpacity="0.15" transform="rotate(-15 26 38)"/>
@@ -4928,21 +5516,7 @@ export default function Home() {
                   <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#dbeafe'} : {color:'#6b7280'}}>{t("This month", "এই মাসে")}</div>
                   <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                     <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{`
-                        @keyframes calFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-6px) scale(1.05)}}
-                        @keyframes calGlow{0%,100%{opacity:0.85}50%{opacity:1}}
-                        @keyframes dateFlip{0%,30%{opacity:1;transform:scaleY(1)}40%{opacity:0;transform:scaleY(0)}50%{opacity:1;transform:scaleY(1)}100%{opacity:1}}
-                        @keyframes ringRotate{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-                        @keyframes dotPulse{0%,100%{opacity:0.3;transform:scale(1)}50%{opacity:1;transform:scale(1.4)}}
-                        @keyframes pageFlip{0%,60%{transform:scaleY(1)}70%{transform:scaleY(0)}80%{transform:scaleY(1)}100%{transform:scaleY(1)}}
-                        #cal{animation:calFloat 2.2s ease-in-out infinite,calGlow 2.2s ease-in-out infinite;transform-origin:32px 36px;will-change:transform}
-                        #dt{animation:dateFlip 3s 0.5s ease-in-out infinite;transform-origin:32px 42px;will-change:transform}
-                        #ring{animation:ringRotate 8s linear infinite;transform-origin:32px 32px;will-change:transform}
-                        #d1{animation:dotPulse 1.2s 0s ease-in-out infinite;will-change:transform}
-                        #d2{animation:dotPulse 1.2s 0.3s ease-in-out infinite;will-change:transform}
-                        #d3{animation:dotPulse 1.2s 0.6s ease-in-out infinite;will-change:transform}
-                        #page{animation:pageFlip 3s 1s ease-in-out infinite;transform-origin:32px 30px;will-change:transform}
-                      `}</style>
+                      <style>{CSS_CALFLOAT}</style>
                       <g id="ring">
                         <circle cx="32" cy="32" r="28" stroke="white" strokeWidth="0.5" strokeOpacity="0.2" strokeDasharray="4 6" fill="none"/>
                         <circle cx="32" cy="4" r="2.5" fill="white" fillOpacity="0.5"/>
@@ -4975,23 +5549,7 @@ export default function Home() {
                     <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ccfbf1'} : {color:'#6b7280'}}>{t("Net profit today", "আজ নেট লাভ")}</div>
                     <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                       <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{`
-                          @keyframes b1grow{0%,100%{transform:scaleY(0.6)}50%{transform:scaleY(1.15)}}
-                          @keyframes b2grow{0%,100%{transform:scaleY(0.7)}50%{transform:scaleY(1.2)}}
-                          @keyframes b3grow{0%,100%{transform:scaleY(0.8)}50%{transform:scaleY(1.25)}}
-                          @keyframes arrDash{0%,100%{transform:translate(0,0) scale(1)}40%{transform:translate(6px,-7px) scale(1.1)}60%{transform:translate(6px,-7px) scale(1.1)}}
-                          @keyframes baseGlow{0%,100%{opacity:0.4}50%{opacity:0.9}}
-                          @keyframes shimBars{0%{opacity:0.1}50%{opacity:0.5}100%{opacity:0.1}}
-                          @keyframes particle{0%{transform:translate(0,0);opacity:0.8}100%{transform:translate(var(--px),var(--py));opacity:0}}
-                          #b1{animation:b1grow 1.8s 0s ease-in-out infinite;transform-origin:14px 48px;will-change:transform}
-                          #b2{animation:b2grow 1.8s 0.2s ease-in-out infinite;transform-origin:27px 48px;will-change:transform}
-                          #b3{animation:b3grow 1.8s 0.4s ease-in-out infinite;transform-origin:40px 48px;will-change:transform}
-                          #arr{animation:arrDash 1.6s ease-in-out infinite;will-change:transform}
-                          #base{animation:baseGlow 1.8s ease-in-out infinite}
-                          #p1{--px:-8px;--py:-12px;animation:particle 1.2s 0.3s ease-out infinite;transform-origin:44px 14px;will-change:transform}
-                          #p2{--px:8px;--py:-10px;animation:particle 1.2s 0.7s ease-out infinite;transform-origin:44px 14px;will-change:transform}
-                          #p3{--px:2px;--py:-14px;animation:particle 1.2s 1.1s ease-out infinite;transform-origin:44px 14px;will-change:transform}
-                        `}</style>
+                        <style>{CSS_B1GROW}</style>
                         <rect id="base" x="6" y="50" width="52" height="2.5" rx="1.2" fill="white"/>
                         <rect id="b1" x="8" y="34" width="12" height="16" rx="2.5" fill="white" fillOpacity="0.55"/>
                         <rect id="b2" x="26" y="26" width="12" height="24" rx="2.5" fill="white" fillOpacity="0.7"/>
@@ -5018,21 +5576,7 @@ export default function Home() {
                     <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ede9fe'} : {color:'#6b7280'}}>{t("Net profit this month", "মাসে নেট লাভ")}</div>
                     <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                       <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{`
-                          @keyframes rktLaunch{0%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-13px) rotate(-3deg)}65%{transform:translateY(-13px) rotate(3deg)}}
-                          @keyframes fireFlick{0%,100%{transform:scaleY(1) scaleX(1)}25%{transform:scaleY(1.6) scaleX(0.7)}50%{transform:scaleY(0.8) scaleX(1.25)}75%{transform:scaleY(1.5) scaleX(0.75)}}
-                          @keyframes smoke1Up{0%{transform:translateY(0) scale(0.8);opacity:0.5}100%{transform:translateY(-22px) scale(1.8);opacity:0}}
-                          @keyframes smoke2Up{0%{transform:translateY(0) scale(0.7);opacity:0.4}100%{transform:translateY(-18px) scale(1.5);opacity:0}}
-                          @keyframes orbitDot{0%{transform:rotate(0deg) translateX(20px) rotate(0deg);opacity:0.6}100%{transform:rotate(360deg) translateX(20px) rotate(-360deg);opacity:0.6}}
-                          @keyframes orbitDot2{0%{transform:rotate(120deg) translateX(18px) rotate(-120deg);opacity:0.4}100%{transform:rotate(480deg) translateX(18px) rotate(-480deg);opacity:0.4}}
-                          @keyframes rktGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                          #rkt{animation:rktLaunch 2s ease-in-out infinite,rktGlow 2s ease-in-out infinite;transform-origin:32px 40px;will-change:transform}
-                          #fire{animation:fireFlick 0.18s linear infinite;transform-origin:32px 48px;will-change:transform}
-                          #sm1{animation:smoke1Up 0.8s 0s ease-out infinite;will-change:transform}
-                          #sm2{animation:smoke2Up 0.8s 0.28s ease-out infinite;will-change:transform}
-                          #od1{animation:orbitDot 4s linear infinite;transform-origin:32px 28px;will-change:transform}
-                          #od2{animation:orbitDot2 4s linear infinite;transform-origin:32px 28px;will-change:transform}
-                        `}</style>
+                        <style>{CSS_RKTLAUNCH}</style>
                         <circle id="od1" cx="32" cy="28" r="2.5" fill="white" fillOpacity="0.4"/>
                         <circle id="od2" cx="32" cy="28" r="2" fill="#fbbf24" fillOpacity="0.5"/>
                         <g id="rkt">
@@ -5063,22 +5607,7 @@ export default function Home() {
                     <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ffedd5'} : {color:'#6b7280'}}>{t("Purchased today", "আজ কেনা")}</div>
                     <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                       <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{`
-                          @keyframes cartRoll{0%,100%{transform:translateX(0)}25%{transform:translateX(3px)}75%{transform:translateX(-2px)}}
-                          @keyframes cartGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                          @keyframes wheelSpin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-                          @keyframes it1Jump{0%,70%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-10px) rotate(-8deg)}}
-                          @keyframes it2Jump{0%,70%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-14px) rotate(5deg)}}
-                          @keyframes it3Jump{0%,70%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-9px) rotate(-5deg)}}
-                          @keyframes plusPop{0%,100%{transform:scale(0);opacity:0}50%{transform:scale(1.3);opacity:1}}
-                          #cart{animation:cartRoll 1.4s ease-in-out infinite,cartGlow 1.8s ease-in-out infinite;will-change:transform}
-                          #w1{animation:wheelSpin 1s linear infinite;transform-origin:22px 47px;will-change:transform}
-                          #w2{animation:wheelSpin 1s linear infinite;transform-origin:44px 47px;will-change:transform}
-                          #it1{animation:it1Jump 1.6s 0s ease-in-out infinite;transform-origin:22px 24px;will-change:transform}
-                          #it2{animation:it2Jump 1.6s 0.2s ease-in-out infinite;transform-origin:32px 20px;will-change:transform}
-                          #it3{animation:it3Jump 1.6s 0.4s ease-in-out infinite;transform-origin:42px 24px;will-change:transform}
-                          #plus{animation:plusPop 1.6s 0.8s ease-in-out infinite;transform-origin:54px 12px;will-change:transform}
-                        `}</style>
+                        <style>{CSS_CARTROLL}</style>
                         <g id="cart">
                           <path d="M6 10 L14 10 L22 40 L52 40 L58 20 L14 20" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
                           <circle id="w1" cx="22" cy="47" r="4.5" stroke="white" strokeWidth="2.2" fill="none"/>
@@ -5106,17 +5635,7 @@ export default function Home() {
                     <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#cffafe'} : {color:'#6b7280'}}>{t("Purchased this month", "মাসে কেনা")}</div>
                     <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                       <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{`
-                          @keyframes bagSwing{0%,100%{transform:rotate(-8deg) translateY(0)}25%{transform:rotate(8deg) translateY(-3px)}50%{transform:rotate(-6deg) translateY(-1px)}75%{transform:rotate(6deg) translateY(-2px)}}
-                          @keyframes tagBounce{0%,100%{transform:translateY(0) rotate(-10deg)}50%{transform:translateY(-7px) rotate(10deg)}}
-                          @keyframes bagGlow{0%,100%{opacity:0.85}50%{opacity:1}}
-                          @keyframes checkPop{0%,60%,100%{transform:scale(0);opacity:0}75%{transform:scale(1.3);opacity:1}90%{transform:scale(1);opacity:1}}
-                          @keyframes shimBag{0%,100%{opacity:0.1}50%{opacity:0.4}}
-                          #bag{animation:bagSwing 2s ease-in-out infinite,bagGlow 2s ease-in-out infinite;transform-origin:32px 22px;will-change:transform}
-                          #tag{animation:tagBounce 2s 0.3s ease-in-out infinite;transform-origin:43px 14px;will-change:transform}
-                          #chk{animation:checkPop 3s 0.5s ease-in-out infinite;transform-origin:32px 38px;will-change:transform}
-                          #shbag{animation:shimBag 2s ease-in-out infinite}
-                        `}</style>
+                        <style>{CSS_BAGSWING}</style>
                         <g id="bag">
                           <rect x="12" y="22" width="40" height="34" rx="5" fill="white" fillOpacity="0.88"/>
                           <ellipse id="shbag" cx="20" cy="36" rx="6" ry="12" fill="white" fillOpacity="0.15" transform="rotate(-10 20 36)"/>
@@ -5147,19 +5666,7 @@ export default function Home() {
                   <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fee2e2'} : {color:'#6b7280'}}>{t("Due given today", "আজ বাকি দেওয়া")}</div>
                   <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                     <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{`
-                        @keyframes hgSpin{0%,40%{transform:rotate(0deg)}60%,100%{transform:rotate(180deg)}}
-                        @keyframes sandFill{0%{transform:scaleY(0);opacity:0}10%{opacity:1}80%{transform:scaleY(1);opacity:1}95%,100%{opacity:0}}
-                        @keyframes sandDrop{0%,30%{transform:translateY(0);opacity:1}85%,100%{transform:translateY(18px);opacity:0}}
-                        @keyframes ripple1{0%{transform:scale(0.5);opacity:0.6}100%{transform:scale(1.8);opacity:0}}
-                        @keyframes ripple2{0%{transform:scale(0.5);opacity:0.4}100%{transform:scale(2.2);opacity:0}}
-                        @keyframes glassGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                        #hg{animation:hgSpin 4s 0.5s cubic-bezier(0.4,0,0.2,1) infinite,glassGlow 2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
-                        #sf{animation:sandFill 2s 0.5s ease-in infinite;transform-origin:32px 20px}
-                        #sd{animation:sandDrop 2s 0.5s ease-in infinite}
-                        #rip1{animation:ripple1 2s 0s ease-out infinite}
-                        #rip2{animation:ripple2 2s 0.6s ease-out infinite}
-                      `}</style>
+                      <style>{CSS_HGSPIN}</style>
                       <circle id="rip1" cx="32" cy="32" r="20" fill="none" stroke="#f43f5e" strokeWidth="1.5" strokeOpacity="0.3"/>
                       <circle id="rip2" cx="32" cy="32" r="22" fill="none" stroke="white" strokeWidth="1" strokeOpacity="0.2"/>
                       <g id="hg">
@@ -5184,23 +5691,7 @@ export default function Home() {
                   <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf2f8'} : {color:'#6b7280'}}>{t("Total due this month", "মাসে মোট বাকি")}</div>
                   <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                     <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{`
-                        @keyframes clipShake{0%,100%{transform:rotate(0deg)}15%{transform:rotate(-7deg)}30%{transform:rotate(7deg)}45%{transform:rotate(-4deg)}60%{transform:rotate(4deg)}75%,100%{transform:rotate(0deg)}}
-                        @keyframes clipGlow{0%,100%{opacity:0.85}50%{opacity:1}}
-                        @keyframes alertPulse{0%,100%{transform:scale(1);opacity:0.8}50%{transform:scale(1.4);opacity:1}}
-                        @keyframes alertRing{0%{transform:scale(1);opacity:0.5}100%{transform:scale(1.9);opacity:0}}
-                        @keyframes lineWrite1{0%{stroke-dashoffset:22}60%,100%{stroke-dashoffset:0}}
-                        @keyframes lineWrite2{0%,20%{stroke-dashoffset:18}80%,100%{stroke-dashoffset:0}}
-                        @keyframes lineWrite3{0%,40%{stroke-dashoffset:14}100%{stroke-dashoffset:0}}
-                        @keyframes penMove{0%{transform:translate(0,0)}33%{transform:translate(4px,8px)}66%{transform:translate(0px,16px)}100%{transform:translate(0,0)}}
-                        #clip{animation:clipShake 2.8s ease-in-out infinite,clipGlow 2s ease-in-out infinite;transform-origin:32px 36px;will-change:transform}
-                        #al{animation:alertPulse 1s ease-in-out infinite}
-                        #alring{animation:alertRing 1s ease-out infinite}
-                        #l1{animation:lineWrite1 2.8s ease-in-out infinite;stroke-dasharray:22}
-                        #l2{animation:lineWrite2 2.8s ease-in-out infinite;stroke-dasharray:18}
-                        #l3{animation:lineWrite3 2.8s ease-in-out infinite;stroke-dasharray:14}
-                        #pen{animation:penMove 2.8s ease-in-out infinite}
-                      `}</style>
+                      <style>{CSS_CLIPSHAKE}</style>
                       <circle id="alring" cx="48" cy="14" r="9" fill="none" stroke="#f43f5e" strokeWidth="2" strokeOpacity="0.5"/>
                       <g id="clip">
                         <rect x="10" y="12" width="40" height="46" rx="4" fill="white" fillOpacity="0.88"/>
@@ -5228,19 +5719,7 @@ export default function Home() {
                     <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf4ff'} : {color:'#6b7280'}}>{t("Mobile payment today", "আজ মোবাইল পেমেন্ট")}</div>
                     <div className="absolute right-2 bottom-1" style={{width:'60px',height:'60px',opacity:0.55,willChange:'transform'}}>
                       <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{`
-                          @keyframes phVib{0%,80%,100%{transform:rotate(0deg)}10%{transform:rotate(-12deg)}20%{transform:rotate(12deg)}30%{transform:rotate(-8deg)}40%{transform:rotate(8deg)}50%{transform:rotate(-5deg)}60%{transform:rotate(5deg)}}
-                          @keyframes phGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                          @keyframes ping1{0%{transform:scale(0.8);opacity:0.8}100%{transform:scale(3);opacity:0}}
-                          @keyframes ping2{0%{transform:scale(0.8);opacity:0.6}100%{transform:scale(3.5);opacity:0}}
-                          @keyframes coinPop{0%,70%,100%{transform:translateY(0) scale(0);opacity:0}78%{transform:translateY(-12px) scale(1.3);opacity:1}90%{transform:translateY(-16px) scale(1);opacity:0.8}98%{opacity:0}}
-                          @keyframes screenFlash{0%,85%,100%{opacity:0.55}88%{opacity:0.9}}
-                          #ph{animation:phVib 2.5s ease-in-out infinite,phGlow 2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
-                          #p1{animation:ping1 1.6s 0s ease-out infinite;transform-origin:46px 15px;will-change:transform}
-                          #p2{animation:ping2 1.6s 0.45s ease-out infinite;transform-origin:46px 15px;will-change:transform}
-                          #cn{animation:coinPop 2.5s ease-in-out infinite;transform-origin:32px 20px;will-change:transform}
-                          #scr{animation:screenFlash 2.5s ease-in-out infinite}
-                        `}</style>
+                        <style>{CSS_PHVIB}</style>
                         <circle id="p1" cx="46" cy="15" r="6" fill="#fbbf24" fillOpacity="0.65"/>
                         <circle id="p2" cx="46" cy="15" r="6" fill="#fbbf24" fillOpacity="0.4"/>
                         <circle cx="46" cy="15" r="7" fill="#fbbf24"/>
@@ -5270,19 +5749,7 @@ export default function Home() {
                     <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fffbeb'} : {color:'#6b7280'}}>{t("Mobile payment month", "মাসে মোবাইল পেমেন্ট")}</div>
                     <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                       <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{`
-                          @keyframes cardPop{0%,100%{transform:translateY(0) rotate(-4deg) scale(1)}50%{transform:translateY(-10px) rotate(4deg) scale(1.06)}}
-                          @keyframes cardGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                          @keyframes chipShine{0%,100%{opacity:0.35;transform:scale(1)}50%{opacity:0.85;transform:scale(1.05)}}
-                          @keyframes waveFlow{0%{transform:translateX(-14px);opacity:0}40%{opacity:0.7}100%{transform:translateX(14px);opacity:0}}
-                          @keyframes tapRipple{0%{transform:scale(0.5);opacity:0.7}100%{transform:scale(2.2);opacity:0}}
-                          @keyframes tapRipple2{0%{transform:scale(0.5);opacity:0.5}100%{transform:scale(2.8);opacity:0}}
-                          #crd{animation:cardPop 2s ease-in-out infinite,cardGlow 2s ease-in-out infinite;will-change:transform}
-                          #chip{animation:chipShine 2s ease-in-out infinite;will-change:transform}
-                          #wave{animation:waveFlow 2s 0.5s ease-in-out infinite;will-change:transform}
-                          #tr1{animation:tapRipple 1.5s 1s ease-out infinite;transform-origin:50px 12px;will-change:transform}
-                          #tr2{animation:tapRipple2 1.5s 1.3s ease-out infinite;transform-origin:50px 12px;will-change:transform}
-                        `}</style>
+                        <style>{CSS_CARDPOP}</style>
                         <circle id="tr1" cx="50" cy="12" r="7" fill="#fbbf24" fillOpacity="0.5"/>
                         <circle id="tr2" cx="50" cy="12" r="7" fill="#fbbf24" fillOpacity="0.3"/>
                         <g id="crd">
@@ -5311,22 +5778,7 @@ export default function Home() {
                   <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#d1fae5'} : {color:'#6b7280'}}>{t("Collected today", "আজ আদায় হয়েছে")}</div>
                   <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                     <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{`
-                        @keyframes circlePulse{0%,100%{transform:scale(1);opacity:0.5}50%{transform:scale(1.12);opacity:0.88}}
-                        @keyframes circleGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                        @keyframes checkDraw{0%{stroke-dashoffset:70;opacity:0.2}50%,100%{stroke-dashoffset:0;opacity:1}}
-                        @keyframes sp1Pop{0%,55%,100%{transform:scale(0) rotate(0deg);opacity:0}68%{transform:scale(1.4) rotate(45deg);opacity:1}85%{transform:scale(1) rotate(30deg);opacity:0.8}95%{opacity:0}}
-                        @keyframes sp2Pop{0%,60%,100%{transform:scale(0);opacity:0}72%{transform:scale(1.3);opacity:1}88%{transform:scale(1);opacity:0.8}96%{opacity:0}}
-                        @keyframes sp3Pop{0%,65%,100%{transform:scale(0);opacity:0}76%{transform:scale(1.5);opacity:1}90%{transform:scale(1);opacity:0.8}97%{opacity:0}}
-                        @keyframes burstLine{0%,50%{stroke-dashoffset:20;opacity:0}70%{stroke-dashoffset:0;opacity:1}90%,100%{opacity:0}}
-                        #chkc{animation:circlePulse 1.6s ease-in-out infinite,circleGlow 1.6s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
-                        #chkm{stroke-dasharray:70;animation:checkDraw 1.6s ease-in-out infinite}
-                        #sp1{animation:sp1Pop 1.6s 0.7s ease-out infinite;transform-origin:12px 14px;will-change:transform}
-                        #sp2{animation:sp2Pop 1.6s 0.9s ease-out infinite;transform-origin:50px 16px;will-change:transform}
-                        #sp3{animation:sp3Pop 1.6s 1.1s ease-out infinite;transform-origin:32px 6px}
-                        #bl1{stroke-dasharray:20;animation:burstLine 1.6s 0.75s ease-out infinite;transform-origin:10px 22px}
-                        #bl2{stroke-dasharray:20;animation:burstLine 1.6s 0.9s ease-out infinite;transform-origin:54px 22px}
-                      `}</style>
+                      <style>{CSS_CIRCLEPULSE}</style>
                       <circle id="chkc" cx="32" cy="32" r="22" fill="white" fillOpacity="0.12" stroke="white" strokeWidth="3" strokeOpacity="0.65"/>
                       <polyline id="chkm" points="18,32 27,41 46,22" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
                       <g id="sp1"><text x="8" y="18" fontSize="13">✦</text></g>
@@ -5347,19 +5799,7 @@ export default function Home() {
                   <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#dbeafe'} : {color:'#6b7280'}}>{t("Collected this month", "এই মাসে আদায়")}</div>
                   <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                     <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{`
-                        @keyframes wltOpen{0%,100%{transform:scaleY(1) rotate(-2deg)}50%{transform:scaleY(1.07) rotate(2deg)}}
-                        @keyframes wltGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                        @keyframes cf1Fly{0%{transform:translate(0,0) scale(0);opacity:0}18%{transform:translate(-6px,-14px) scale(1.2);opacity:1}65%{transform:translate(-12px,-28px) scale(0.8);opacity:0.6}100%{transform:translate(-16px,-38px) scale(0);opacity:0}}
-                        @keyframes cf2Fly{0%{transform:translate(0,0) scale(0);opacity:0}22%{transform:translate(5px,-12px) scale(1.1);opacity:1}70%{transform:translate(12px,-24px) scale(0.8);opacity:0.5}100%{transform:translate(16px,-34px) scale(0);opacity:0}}
-                        @keyframes cf3Fly{0%{transform:translate(0,0) scale(0);opacity:0}30%{transform:translate(0px,-16px) scale(1.3);opacity:1}75%{transform:translate(4px,-30px) scale(0.7);opacity:0.4}100%{transform:translate(6px,-40px) scale(0);opacity:0}}
-                        @keyframes coinShine{0%,100%{opacity:0.6}50%{opacity:1}}
-                        #wlt{animation:wltOpen 2.2s ease-in-out infinite,wltGlow 2s ease-in-out infinite;will-change:transform}
-                        #cf1{animation:cf1Fly 2.2s 0.3s ease-out infinite;transform-origin:32px 24px;will-change:transform}
-                        #cf2{animation:cf2Fly 2.2s 0.7s ease-out infinite;transform-origin:32px 24px;will-change:transform}
-                        #cf3{animation:cf3Fly 2.2s 1.1s ease-out infinite;transform-origin:32px 24px}
-                        #cs{animation:coinShine 2s ease-in-out infinite}
-                      `}</style>
+                      <style>{CSS_WLTOPEN}</style>
                       <g id="wlt">
                         <rect x="6" y="18" width="52" height="34" rx="6" fill="white" fillOpacity="0.88"/>
                         <path d="M6 28 L58 28" stroke="white" strokeWidth="2" strokeOpacity="0.35"/>
@@ -5388,20 +5828,7 @@ export default function Home() {
                     <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ede9fe'} : {color:'#6b7280'}}>{t("This year's total sales", "এই বছরের মোট বিক্রয়")}</div>
                     <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                       <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{`
-                          @keyframes starSpin{0%{transform:rotate(0deg) scale(1)}40%{transform:rotate(180deg) scale(1.18)}100%{transform:rotate(360deg) scale(1)}}
-                          @keyframes starGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                          @keyframes twinkle1{0%,100%{opacity:0.2;transform:scale(0.6) rotate(0deg)}50%{opacity:1;transform:scale(1.3) rotate(15deg)}}
-                          @keyframes twinkle2{0%,100%{opacity:0.3;transform:scale(0.7)}50%{opacity:0.9;transform:scale(1.2)}}
-                          @keyframes twinkle3{0%,100%{opacity:0.15;transform:scale(0.5) rotate(0deg)}50%{opacity:0.8;transform:scale(1.1) rotate(-10deg)}}
-                          @keyframes orbitDot{0%{transform:rotate(0deg) translateX(28px) rotate(0deg)}100%{transform:rotate(360deg) translateX(28px) rotate(-360deg)}}
-                          #star{animation:starSpin 4s linear infinite,starGlow 2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
-                          #t1{animation:twinkle1 1.5s 0s ease-in-out infinite;transform-origin:8px 12px;will-change:transform}
-                          #t2{animation:twinkle2 1.5s 0.45s ease-in-out infinite;transform-origin:52px 16px;will-change:transform}
-                          #t3{animation:twinkle3 1.5s 0.9s ease-in-out infinite;transform-origin:8px 52px;will-change:transform}
-                          #t4{animation:twinkle1 1.5s 1.3s ease-in-out infinite;transform-origin:52px 50px;will-change:transform}
-                          #od{animation:orbitDot 5s linear infinite;transform-origin:32px 32px}
-                        `}</style>
+                        <style>{CSS_STARSPIN}</style>
                         <circle id="od" cx="32" cy="32" r="3" fill="white" fillOpacity="0.35"/>
                         <g id="star">
                           <path d="M32 7 L36.5 22 L52 22 L40 31.5 L44.5 47 L32 38 L19.5 47 L24 31.5 L12 22 L27.5 22 Z" fill="white" fillOpacity="0.92"/>
@@ -5425,20 +5852,7 @@ export default function Home() {
                     <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ffedd5'} : {color:'#6b7280'}}>{t("This year's total purchase", "এই বছরের মোট ক্রয়")}</div>
                     <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                       <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{`
-                          @keyframes boxBounce{0%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-12px) rotate(-5deg)}60%{transform:translateY(-12px) rotate(-4deg)}}
-                          @keyframes boxGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                          @keyframes lidOpen{0%,100%{transform:scaleY(1)}45%,65%{transform:scaleY(0.15)}}
-                          @keyframes itemRise{0%,30%,100%{transform:translateY(0);opacity:0}42%{transform:translateY(-18px);opacity:1}68%{transform:translateY(-22px);opacity:0.7}80%,90%{opacity:0}}
-                          @keyframes shimBox{0%,100%{opacity:0.1}50%{opacity:0.4}}
-                          @keyframes dustPuff{0%{transform:scale(0.5);opacity:0.6}100%{transform:scale(2);opacity:0}}
-                          #box{animation:boxBounce 2.2s ease-in-out infinite,boxGlow 2s ease-in-out infinite;will-change:transform}
-                          #lid{animation:lidOpen 2.2s ease-in-out infinite;transform-origin:32px 20px;will-change:transform}
-                          #item{animation:itemRise 2.2s ease-in-out infinite;will-change:transform}
-                          #shb{animation:shimBox 2s ease-in-out infinite}
-                          #dp1{animation:dustPuff 2.2s 0.4s ease-out infinite;transform-origin:20px 48px;will-change:transform}
-                          #dp2{animation:dustPuff 2.2s 0.6s ease-out infinite;transform-origin:44px 48px;will-change:transform}
-                        `}</style>
+                        <style>{CSS_BOXBOUNCE}</style>
                         <g id="box">
                           <path id="lid" d="M10 24 L32 16 L54 24 L32 32 Z" fill="white" fillOpacity="0.88"/>
                           <path d="M10 24 L10 50 L32 58 L54 50 L54 24 L32 32 Z" fill="white" fillOpacity="0.72"/>
@@ -5463,23 +5877,7 @@ export default function Home() {
                     <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#d1fae5'} : {color:'#6b7280'}}>{t("This year's net profit", "এই বছরের নেট লাভ")}</div>
                     <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                       <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{`
-                          @keyframes tropShake{0%,100%{transform:rotate(0deg) scale(1)}15%{transform:rotate(-7deg) scale(1.05)}30%{transform:rotate(7deg) scale(1.05)}45%{transform:rotate(-4deg)}60%{transform:rotate(4deg)}75%,100%{transform:rotate(0deg) scale(1)}}
-                          @keyframes tropGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                          @keyframes glowRing{0%,100%{r:22;opacity:0.07}50%{r:26;opacity:0.22}}
-                          @keyframes star1Fly{0%{transform:translate(0,0) scale(0) rotate(0deg);opacity:0}25%{opacity:1;transform:scale(1.3)}100%{transform:translate(-14px,-16px) scale(0) rotate(180deg);opacity:0}}
-                          @keyframes star2Fly{0%{transform:translate(0,0) scale(0) rotate(0deg);opacity:0}30%{opacity:1;transform:scale(1.2)}100%{transform:translate(16px,-18px) scale(0) rotate(-180deg);opacity:0}}
-                          @keyframes star3Fly{0%{transform:translate(0,0) scale(0) rotate(0deg);opacity:0}20%{opacity:1;transform:scale(1.4)}100%{transform:translate(2px,-22px) scale(0) rotate(120deg);opacity:0}}
-                          @keyframes confetti1{0%{transform:translate(0,0) rotate(0deg);opacity:0}20%{opacity:1}100%{transform:translate(-18px,-8px) rotate(180deg);opacity:0}}
-                          @keyframes confetti2{0%{transform:translate(0,0) rotate(0deg);opacity:0}25%{opacity:1}100%{transform:translate(18px,-6px) rotate(-180deg);opacity:0}}
-                          #trop{animation:tropShake 3s ease-in-out infinite,tropGlow 2s ease-in-out infinite;transform-origin:32px 34px;will-change:transform}
-                          #glow{animation:glowRing 2.5s ease-in-out infinite;will-change:transform}
-                          #s1{animation:star1Fly 2s 0s ease-out infinite;transform-origin:16px 12px;will-change:transform}
-                          #s2{animation:star2Fly 2s 0.55s ease-out infinite;transform-origin:48px 14px;will-change:transform}
-                          #s3{animation:star3Fly 2s 1.1s ease-out infinite;transform-origin:32px 8px;will-change:transform}
-                          #cf1{animation:confetti1 2s 0.3s ease-out infinite;transform-origin:10px 20px;will-change:transform}
-                          #cf2{animation:confetti2 2s 0.8s ease-out infinite;transform-origin:54px 18px;will-change:transform}
-                        `}</style>
+                        <style>{CSS_TROPSHAKE}</style>
                         <circle id="glow" cx="32" cy="28" r="22" fill="#fbbf24" fillOpacity="0.07"/>
                         <g id="trop">
                           <path d="M18 8 L46 8 L46 30 Q46 44 32 46 Q18 44 18 30 Z" fill="white" fillOpacity="0.92"/>
@@ -5508,21 +5906,7 @@ export default function Home() {
                     <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ffe4e6'} : {color:'#6b7280'}}>{t("Total due this year", "এই বছরের মোট বাকি")}</div>
                     <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                       <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{`
-                          @keyframes warnShake{0%,100%{transform:rotate(0deg) scale(1)}8%{transform:rotate(-10deg) scale(1.08)}16%{transform:rotate(10deg) scale(1.08)}24%{transform:rotate(-7deg)}32%{transform:rotate(7deg)}40%,100%{transform:rotate(0deg) scale(1)}}
-                          @keyframes warnGlow{0%,100%{opacity:0.88}50%{opacity:1}}
-                          @keyframes bangBlink{0%,100%{opacity:1;transform:scaleY(1)}50%{opacity:0.15;transform:scaleY(0.5)}}
-                          @keyframes sw1Grow{0%{transform:scale(0.4);opacity:0.7}100%{transform:scale(1.8);opacity:0}}
-                          @keyframes sw2Grow{0%{transform:scale(0.4);opacity:0.5}100%{transform:scale(2.2);opacity:0}}
-                          @keyframes sw3Grow{0%{transform:scale(0.4);opacity:0.3}100%{transform:scale(2.6);opacity:0}}
-                          @keyframes lightFlash{0%,90%,100%{opacity:0}45%,55%{opacity:0.4}}
-                          #wrn{animation:warnShake 2.2s ease-in-out infinite,warnGlow 2.2s ease-in-out infinite;transform-origin:32px 34px;will-change:transform}
-                          #bang{animation:bangBlink 0.55s ease-in-out infinite;will-change:transform}
-                          #sw1{animation:sw1Grow 1.4s 0s ease-out infinite;transform-origin:32px 32px;will-change:transform}
-                          #sw2{animation:sw2Grow 1.4s 0.35s ease-out infinite;transform-origin:32px 32px;will-change:transform}
-                          #sw3{animation:sw3Grow 1.4s 0.7s ease-out infinite;transform-origin:32px 32px;will-change:transform}
-                          #flash{animation:lightFlash 2.2s ease-in-out infinite;will-change:transform}
-                        `}</style>
+                        <style>{CSS_WARNSHAKE}</style>
                         <circle id="sw1" cx="32" cy="32" r="24" fill="#f43f5e" fillOpacity="0.12" stroke="#f43f5e" strokeWidth="1.5" strokeOpacity="0.25"/>
                         <circle id="sw2" cx="32" cy="32" r="24" fill="none" stroke="#f43f5e" strokeWidth="1" strokeOpacity="0.18"/>
                         <circle id="sw3" cx="32" cy="32" r="24" fill="none" stroke="white" strokeWidth="0.8" strokeOpacity="0.12"/>
@@ -5549,15 +5933,7 @@ export default function Home() {
                   <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf4ff'} : {color:'#6b7280'}}>{t("Discount given today", "আজ ছাড় দেওয়া হয়েছে")}</div>
                   <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                     <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{`
-                        @keyframes tagWiggle{0%,100%{transform:rotate(-6deg) scale(1)}50%{transform:rotate(6deg) scale(1.08)}}
-                        @keyframes pctPop{0%,100%{transform:scale(1);opacity:0.9}50%{transform:scale(1.15);opacity:1}}
-                        @keyframes sparkD1{0%,100%{transform:scale(0);opacity:0}40%,60%{transform:scale(1.3);opacity:1}}
-                        #dtag{animation:tagWiggle 2s ease-in-out infinite;transform-origin:32px 34px;will-change:transform}
-                        #dpct{animation:pctPop 1.6s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
-                        #dsp1{animation:sparkD1 1.8s 0.2s ease-in-out infinite;transform-origin:10px 12px;will-change:transform}
-                        #dsp2{animation:sparkD1 1.8s 0.8s ease-in-out infinite;transform-origin:52px 14px;will-change:transform}
-                      `}</style>
+                      <style>{CSS_TAGWIGGLE}</style>
                       <g id="dtag">
                         <path d="M10 14 L10 30 L32 52 L54 30 L54 14 Q54 8 48 8 L16 8 Q10 8 10 14Z" fill="white" fillOpacity="0.88"/>
                         <circle cx="22" cy="20" r="4" fill="#86198f" fillOpacity="0.6"/>
@@ -5579,12 +5955,7 @@ export default function Home() {
                   <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf2f8'} : {color:'#6b7280'}}>{t("Discount given this month", "এই মাসে ছাড় দেওয়া হয়েছে")}</div>
                   <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                     <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{`
-                        @keyframes calTagFloat{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-7px) rotate(3deg)}}
-                        @keyframes mPctSpin{0%,100%{transform:rotate(0deg) scale(1)}50%{transform:rotate(10deg) scale(1.1)}}
-                        #mcal{animation:calTagFloat 2.2s ease-in-out infinite;transform-origin:32px 36px;will-change:transform}
-                        #mpct{animation:mPctSpin 2s ease-in-out infinite;transform-origin:40px 40px;will-change:transform}
-                      `}</style>
+                      <style>{CSS_CALTAGFLOAT}</style>
                       <g id="mcal">
                         <rect x="8" y="14" width="40" height="38" rx="5" fill="white" fillOpacity="0.88"/>
                         <rect x="8" y="14" width="40" height="12" rx="5" fill="white" fillOpacity="0.4"/>
@@ -5611,14 +5982,7 @@ export default function Home() {
                   <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fee2e2'} : {color:'#6b7280'}}>{t("Total discount this year", "এই বছরের মোট ছাড়")}</div>
                   <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
                     <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{`
-                        @keyframes yrRibbon{0%,100%{transform:rotate(-4deg) scale(1)}50%{transform:rotate(4deg) scale(1.06)}}
-                        @keyframes yrBadge{0%,100%{opacity:0.85;transform:scale(1)}50%{opacity:1;transform:scale(1.08)}}
-                        @keyframes yrShine{0%{opacity:0.1}50%{opacity:0.5}100%{opacity:0.1}}
-                        #yrib{animation:yrRibbon 2s ease-in-out infinite;transform-origin:32px 32px;will-change:transform}
-                        #ybdg{animation:yrBadge 2s 0.4s ease-in-out infinite;transform-origin:42px 20px;will-change:transform}
-                        #ysh{animation:yrShine 2s ease-in-out infinite}
-                      `}</style>
+                      <style>{CSS_YRRIBBON}</style>
                       <g id="yrib">
                         <path d="M32 6 C18 6 8 16 8 30 C8 44 18 56 32 56 C46 56 56 44 56 30 C56 16 46 6 32 6Z" fill="white" fillOpacity="0.15"/>
                         <path d="M32 10 C20 10 12 19 12 30 C12 41 20 52 32 52 C44 52 52 41 52 30 C52 19 44 10 32 10Z" fill="white" fillOpacity="0.82"/>
@@ -5855,14 +6219,15 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/10">
-                      {filteredMedicines.map((med, index) => {
+                      {pagedMedicines.map((med, pageIndex) => {
+                        const index = (invPage - 1) * INV_PAGE_SIZE + pageIndex;
                         const isEditing = editingId === med.id;
                         const medLowAlert = med.lowStockAlert || activeThreshold;
                         const lowStockFlag = med.stock <= medLowAlert;
                         const expiredFlag = new Date(med.expire) < new Date();
 
                         return (
-                          <tr key={med.id} className={`transition-colors hover:bg-slate-500/5 ${expiredFlag ? 'bg-red-500/5' : lowStockFlag ? 'bg-amber-500/5' : ''}`}>
+                          <tr key={med.id} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 52px' } as any} className={`transition-colors hover:bg-slate-500/5 ${expiredFlag ? 'bg-red-500/5' : lowStockFlag ? 'bg-amber-500/5' : ''}`}>
                             <td className="p-2.5 font-mono text-slate-400 text-sm">{index + 1}</td>
                             <td className="p-2.5 font-bold">
                               {isEditing ? <input type="text" value={editFormData.name} onChange={e => handleEditFormChange("name", e.target.value)} className="px-1.5 py-0.5 rounded border text-sm bg-transparent w-full" />
@@ -5927,6 +6292,17 @@ export default function Home() {
                     </tbody>
                   </table>
                 </div>
+                {filteredMedicines.length > INV_PAGE_SIZE && (
+                  <div className="flex items-center justify-between p-3 border-t border-slate-700/10 text-sm font-bold">
+                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
+                      {t("Page", "পাতা")} {invPage} / {invTotalPages} — {filteredMedicines.length} {t("items", "টি আইটেম")}
+                    </span>
+                    <div className="flex gap-2">
+                      <button onClick={() => setInvPage(p => Math.max(1, p - 1))} disabled={invPage === 1} className="px-3 py-1 rounded-lg border disabled:opacity-40 hover:bg-slate-500/10 transition">← {t("Prev", "আগে")}</button>
+                      <button onClick={() => setInvPage(p => Math.min(invTotalPages, p + 1))} disabled={invPage === invTotalPages} className="px-3 py-1 rounded-lg border disabled:opacity-40 hover:bg-slate-500/10 transition">{t("Next", "পরে")} →</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -6121,7 +6497,7 @@ export default function Home() {
                     )}
                     <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto">
                       {purchaseList.map(log => (
-                        <div key={log.id} className={`p-2.5 rounded-xl border flex flex-col gap-1 text-sm ${isDarkMode ? 'bg-slate-900/60 border-slate-700/60' : 'bg-slate-50 border-slate-200'}`}>
+                        <div key={log.id} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 110px' } as any} className={`p-2.5 rounded-xl border flex flex-col gap-1 text-sm ${isDarkMode ? 'bg-slate-900/60 border-slate-700/60' : 'bg-slate-50 border-slate-200'}`}>
                           <div className="flex items-center justify-between font-bold">
                             <span className="text-indigo-500 truncate max-w-[140px]">{log.medicineName}</span>
                             {currentUserRole === "ADMIN" && <span className="font-mono text-slate-400">{log.totalCost.toFixed(1)} {currencySymbol}</span>}
@@ -6723,8 +7099,8 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-700/10">
-                    {filteredInvoices.map(inv => (
-                      <tr key={inv.invoiceId} className="hover:bg-slate-500/5 transition-colors">
+                    {pagedInvoices.map(inv => (
+                      <tr key={inv.invoiceId} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 52px' } as any} className="hover:bg-slate-500/5 transition-colors">
                         <td className="p-2.5 font-mono font-black text-indigo-500">{inv.invoiceId}</td>
                         <td className="p-2.5 font-bold">
                           <div>{inv.customer}</div>
@@ -6766,6 +7142,17 @@ export default function Home() {
                   </tbody>
                 </table>
               </div>
+              {filteredInvoices.length > INVOICE_PAGE_SIZE && (
+                <div className="flex items-center justify-between pt-3 text-sm font-bold">
+                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
+                    {t("Page", "পাতা")} {invoicePage} / {invoiceTotalPages} — {filteredInvoices.length} {t("invoices", "টি রশিদ")}
+                  </span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setInvoicePage(p => Math.max(1, p - 1))} disabled={invoicePage === 1} className="px-3 py-1 rounded-lg border disabled:opacity-40 hover:bg-slate-500/10 transition">← {t("Prev", "আগে")}</button>
+                    <button onClick={() => setInvoicePage(p => Math.min(invoiceTotalPages, p + 1))} disabled={invoicePage === invoiceTotalPages} className="px-3 py-1 rounded-lg border disabled:opacity-40 hover:bg-slate-500/10 transition">{t("Next", "পরে")} →</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -7245,6 +7632,171 @@ export default function Home() {
           })()}
 
           {/* =========================================================
+              TAB: EXPENSE TRACKER
+          ========================================================= */}
+          {activeTab === "expense_tracker" && checkShouldRenderTabOption("expense_tracker") && (() => {
+            const now = new Date();
+            const todayStr = now.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' });
+            const isThisMonth = (d: any) => {
+              const dt = new Date(d.date || d.dateString);
+              return dt.getMonth() === now.getMonth() && dt.getFullYear() === now.getFullYear();
+            };
+            const todaysExpenses = expenseList.filter((e: any) => e.dateString === todayStr);
+            const monthsExpenses = expenseList.filter(isThisMonth);
+            const totalToday = todaysExpenses.reduce((s: number, e: any) => s + (e.amount || 0), 0);
+            const totalMonth = monthsExpenses.reduce((s: number, e: any) => s + (e.amount || 0), 0);
+            const totalAll = expenseList.reduce((s: number, e: any) => s + (e.amount || 0), 0);
+
+            const categoryBreakdown: Record<string, number> = {};
+            monthsExpenses.forEach((e: any) => {
+              categoryBreakdown[e.category] = (categoryBreakdown[e.category] || 0) + (e.amount || 0);
+            });
+
+            const visibleList = expenseFilter === "today" ? todaysExpenses
+              : expenseFilter === "month" ? monthsExpenses
+              : expenseList;
+
+            return (
+              <div className="flex flex-col gap-4">
+                {/* Summary cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-wide">{t("Today's Expense", "আজকের খরচ")}</p>
+                    <p className="text-base font-black text-rose-500 font-mono mt-1">{totalToday.toFixed(1)} {currencySymbol}</p>
+                  </div>
+                  <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-wide">{t("This Month", "এই মাসে")}</p>
+                    <p className="text-base font-black text-rose-500 font-mono mt-1">{totalMonth.toFixed(1)} {currencySymbol}</p>
+                  </div>
+                  <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-wide">{t("All Time", "সর্বমোট")}</p>
+                    <p className="text-base font-black text-rose-500 font-mono mt-1">{totalAll.toFixed(1)} {currencySymbol}</p>
+                  </div>
+                </div>
+
+                {/* Add / Edit form */}
+                {(checkShouldRenderTabOption("expense_add") || (editingExpenseId !== null && checkShouldRenderTabOption("expense_edit"))) && (
+                <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-rose-500 border-b pb-2 mb-3">
+                    {editingExpenseId !== null ? "✏️ " + t("Edit Expense", "খরচ সম্পাদনা") : "➕ " + t("Add Expense", "খরচ যোগ করুন")}
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Category", "ক্যাটাগরি")}</label>
+                      <select value={expenseCategory} onChange={e => setExpenseCategory(e.target.value)} className={`w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none ${isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
+                        {EXPENSE_PRESET_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      {expenseCategory === "Other" && (
+                        <input
+                          type="text"
+                          value={expenseCustomCategory}
+                          onChange={e => setExpenseCustomCategory(e.target.value)}
+                          placeholder={t("Enter custom category...", "নিজের ক্যাটাগরি লিখুন...")}
+                          className={`w-full mt-2 px-3 py-2 rounded-xl border text-sm outline-none ${isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Amount", "পরিমাণ")}</label>
+                      <input
+                        type="number"
+                        value={expenseAmount}
+                        onChange={e => setExpenseAmount(e.target.value)}
+                        placeholder={t("Enter amount...", "পরিমাণ লিখুন...")}
+                        className={`w-full px-3 py-2 rounded-xl border text-sm font-mono outline-none ${isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                      />
+                    </div>
+                    <div>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Payment Method", "পেমেন্ট মেথড")}</label>
+                      <select value={expensePaymentMethod} onChange={e => setExpensePaymentMethod(e.target.value)} className={`w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none ${isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
+                        <option value="Cash">{t("Cash", "নগদ")}</option>
+                        <option value="bKash">bKash</option>
+                        <option value="Card">{t("Card", "কার্ড")}</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Note (optional)", "নোট (ঐচ্ছিক)")}</label>
+                      <input
+                        type="text"
+                        value={expenseNote}
+                        onChange={e => setExpenseNote(e.target.value)}
+                        placeholder={t("Short note...", "সংক্ষিপ্ত নোট...")}
+                        className={`w-full px-3 py-2 rounded-xl border text-sm outline-none ${isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end mt-3">
+                    {editingExpenseId !== null && (
+                      <button onClick={resetExpenseForm} className={`px-4 py-2 text-sm font-bold rounded-xl transition ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{t("Cancel", "বাতিল")}</button>
+                    )}
+                    {(editingExpenseId !== null ? checkShouldRenderTabOption("expense_edit") : checkShouldRenderTabOption("expense_add")) && (
+                      <button onClick={handleSaveExpense} className="bg-rose-500 hover:bg-rose-600 text-white font-black px-5 py-2 rounded-xl uppercase tracking-wider shadow transition">
+                        {editingExpenseId !== null ? "✅ " + t("Update", "আপডেট") : "➕ " + t("Add Expense", "খরচ যোগ করুন")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                )}
+
+                {/* Category breakdown (this month) */}
+                {Object.keys(categoryBreakdown).length > 0 && (
+                  <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-rose-500 border-b pb-2 mb-3">{t("This Month by Category", "এই মাসের ক্যাটাগরি অনুযায়ী")}</h3>
+                    <div className="flex flex-col gap-1.5">
+                      {Object.entries(categoryBreakdown).sort((a, b) => b[1] - a[1]).map(([cat, amt]) => (
+                        <div key={cat} className="flex justify-between text-sm">
+                          <span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{cat}</span>
+                          <span className="font-mono font-bold">{amt.toFixed(1)} {currencySymbol}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* List */}
+                {checkShouldRenderTabOption("expense_view_history") && (
+                <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h3 className="text-sm font-black uppercase tracking-wider text-rose-500">{t("Expense History", "খরচের তালিকা")}</h3>
+                    <div className="flex gap-1.5">
+                      {(["all", "today", "month"] as const).map(f => (
+                        <button key={f} onClick={() => setExpenseFilter(f)} className={`px-3 py-1 rounded-lg text-sm font-bold transition ${expenseFilter === f ? 'bg-rose-500 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                          {f === "all" ? t("All", "সব") : f === "today" ? t("Today", "আজ") : t("This Month", "এই মাসে")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {visibleList.length === 0 ? (
+                    <p className={`text-sm text-center py-6 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{t("No expenses recorded yet.", "এখনো কোনো খরচ যোগ করা হয়নি।")}</p>
+                  ) : (
+                    <div className="flex flex-col gap-2 max-h-[420px] overflow-y-auto pr-1">
+                      {visibleList.map((entry: any) => (
+                        <div key={entry.id} className={`flex items-center justify-between p-3 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-sm">{entry.category}</span>
+                            <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{entry.dateString} · {entry.paymentMethod}{entry.note ? ` · ${entry.note}` : ''}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono font-black text-rose-500">{entry.amount.toFixed(1)} {currencySymbol}</span>
+                            {checkShouldRenderTabOption("expense_edit") && (
+                              <button onClick={() => startEditExpense(entry)} className="text-indigo-500 hover:text-indigo-600 text-sm font-bold">✏️</button>
+                            )}
+                            {checkShouldRenderTabOption("expense_delete") && (
+                              <button onClick={() => deleteExpenseEntry(entry.id)} className="text-red-500 hover:text-red-600 text-sm font-bold">🗑️</button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* =========================================================
               TAB: REPORT - Full Stock Report with Print
           ========================================================= */}
           {activeTab === "report" && checkShouldRenderTabOption("report_view") && (
@@ -7482,11 +8034,12 @@ export default function Home() {
                       <div class="row"><span>${t('bKash/Nagad:', 'বিকাশ/নগদ:')}</span><span>${computedDailyBkash.toFixed(1)} ${currencySymbol}</span></div>
                       <div class="row"><span>${t('Discount Given:', 'ছাড় দিয়েছি:')}</span><span>${computedDailyDiscount.toFixed(1)} ${currencySymbol}</span></div>
                       <div class="row"><span>${t('Due Collected Today:', 'আজ বাকি আদায়:')}</span><span>${computedDailyDueCollection.toFixed(1)} ${currencySymbol}</span></div>
+                      <div class="row"><span>${t("Today's Expense:", 'আজকের খরচ:')}</span><span>${computedDailyExpense.toFixed(1)} ${currencySymbol}</span></div>
                     </div>
                     <div class="line"></div>
                     <div class="sm">
                       <div class="row bold" style="font-size:12px;"><span>${t('💵 Total Cash in Hand:', '💵 মোট নগদ হাতে:')}</span><span>${cashInHand.toFixed(1)} ${currencySymbol}</span></div>
-                      <div class="row"><span>${t('Net Profit Today:', 'আজকের নিট লাভ:')}</span><span>${computedDailyProfitAmount.toFixed(1)} ${currencySymbol}</span></div>
+                      <div class="row"><span>${t('Net Profit Today:', 'আজকের নিট লাভ:')}</span><span>${(computedDailyProfitAmount - computedDailyExpense).toFixed(1)} ${currencySymbol}</span></div>
                     </div>
                     ${posShopFooter(t('End of Report', 'প্রতিবেদনের সমাপ্তি'))}
                   `;
@@ -7537,6 +8090,14 @@ export default function Home() {
                   <div className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>🏷️ {t("Discount Given", "ছাড় দিয়েছি")}</div>
                 </div>
                 )}
+                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-rose-900/30 border-rose-700' : 'bg-white border-slate-200'}`}>
+                  <div className="text-lg font-black text-rose-500 font-mono">{computedDailyExpense.toFixed(0)} {currencySymbol}</div>
+                  <div className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>💸 {t("Today's Expense", "আজকের খরচ")}</div>
+                </div>
+                <div className={`p-3 rounded-xl border text-center ${isDarkMode ? 'bg-teal-900/30 border-teal-700' : 'bg-white border-slate-200'}`}>
+                  <div className="text-lg font-black text-teal-500 font-mono">{(computedDailyProfitAmount - computedDailyExpense).toFixed(0)} {currencySymbol}</div>
+                  <div className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>🧮 {t("Net Profit", "নিট লাভ")}</div>
+                </div>
               </div>
 
               {/* Due Collection */}
@@ -7568,13 +8129,17 @@ export default function Home() {
                     <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("Due Collected:", "বাকি আদায়:")}</span>
                     <span className="font-bold font-mono text-violet-500">+ {computedDailyDueCollection.toFixed(1)} {currencySymbol}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{t("Expense:", "খরচ:")}</span>
+                    <span className="font-bold font-mono text-rose-500">- {computedDailyExpense.toFixed(1)} {currencySymbol}</span>
+                  </div>
                   <div className={`flex justify-between pt-2 border-t font-black text-base ${isDarkMode ? 'border-slate-600' : 'border-purple-200'}`}>
                     <span className="text-purple-500">{t("💵 Total Cash in Hand:", "💵 মোট নগদ হাতে:")}</span>
                     <span className="font-mono text-purple-500">{(computedDailySalesAmount - computedDailyDue + computedDailyDueCollection).toFixed(1)} {currencySymbol}</span>
                   </div>
                   <div className={`flex justify-between font-bold text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     <span>{t("Net Profit Today:", "আজকের নিট লাভ:")}</span>
-                    <span className="font-mono text-blue-500">{computedDailyProfitAmount.toFixed(1)} {currencySymbol}</span>
+                    <span className="font-mono text-teal-500 font-black">{(computedDailyProfitAmount - computedDailyExpense).toFixed(1)} {currencySymbol}</span>
                   </div>
                 </div>
               </div>
@@ -7643,6 +8208,10 @@ export default function Home() {
                           <div className="text-sm font-bold text-amber-500 mt-0.5">🏷️ {t("Discount Given", "ছাড় দিয়েছি")}</div>
                         </div>
                       )}
+                      <div className="bg-gradient-to-br from-rose-50 to-red-50 border-2 border-rose-200 rounded-xl p-2.5 text-center">
+                        <div className="text-base font-black text-rose-600">{computedDailyExpense.toFixed(0)} {currencySymbol}</div>
+                        <div className="text-sm font-bold text-rose-500 mt-0.5">💸 {t("Today's Expense", "আজকের খরচ")}</div>
+                      </div>
                     </div>
 
                     {/* Due collection */}
@@ -7661,11 +8230,12 @@ export default function Home() {
                         <div className="flex justify-between"><span className="text-violet-400">{t("Discount:", "ছাড়:")}</span><span className="font-mono text-amber-600">- {computedDailyDiscount.toFixed(1)} {currencySymbol}</span></div>
                         <div className="flex justify-between"><span className="text-violet-400">{t("Due Created:", "নতুন বাকি:")}</span><span className="font-mono text-red-600">- {computedDailyDue.toFixed(1)} {currencySymbol}</span></div>
                         <div className="flex justify-between"><span className="text-violet-400">{t("Due Collected:", "বাকি আদায়:")}</span><span className="font-mono text-violet-600">+ {computedDailyDueCollection.toFixed(1)} {currencySymbol}</span></div>
+                        <div className="flex justify-between"><span className="text-violet-400">{t("Expense:", "খরচ:")}</span><span className="font-mono text-rose-600">- {computedDailyExpense.toFixed(1)} {currencySymbol}</span></div>
                         <div className="flex justify-between items-center bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl px-3 py-2 mt-0.5 shadow-sm">
                           <span className="uppercase text-sm font-black tracking-wide">{t("Cash in Hand", "মোট নগদ হাতে")}</span>
                           <span className="font-mono text-base font-black">{(computedDailySalesAmount - computedDailyDue + computedDailyDueCollection).toFixed(1)} {currencySymbol}</span>
                         </div>
-                        <div className="flex justify-between text-sm"><span className="text-violet-400">{t("Net Profit Today:", "আজকের নিট লাভ:")}</span><span className="font-mono text-blue-600">{computedDailyProfitAmount.toFixed(1)} {currencySymbol}</span></div>
+                        <div className="flex justify-between text-sm"><span className="text-violet-400">{t("Net Profit Today:", "আজকের নিট লাভ:")}</span><span className="font-mono text-teal-600 font-black">{(computedDailyProfitAmount - computedDailyExpense).toFixed(1)} {currencySymbol}</span></div>
                       </div>
                     )}
 
@@ -7685,7 +8255,7 @@ export default function Home() {
           {/* =========================================================
               TAB: DAILY REPORT
           ========================================================= */}
-          {activeTab === "daily_report" && (() => {
+          {activeTab === "daily_report" && checkShouldRenderTabOption("daily_report") && (() => {
             const selectedDate = dailyReportDate;
             const setSelectedDate = setDailyReportDate;
 
@@ -7705,18 +8275,22 @@ export default function Home() {
             const dayReturns = invoices.filter((i: any) => i.isReturned && i.returnDetails && isSameDay(i.returnDetails.timestamp || i.dateString, selectedDate));
             const dayRefund = dayReturns.reduce((s: number, i: any) => s + (i.returnDetails?.refundedAmount || 0), 0);
             const dayInvoiceCount = dayInvoices.filter((i: any) => !i.isReturned).length;
+            const dayExpense = expenseList.filter((e: any) => isSameDay(e.dateString, selectedDate)).reduce((s: number, e: any) => s + (e.amount || 0), 0);
+            const dayNetProfit = dayProfit - dayExpense;
 
             const stats = [
-              { label: t("Total Sell", "মোট বিক্রয়"), value: daySell, icon: "💰", color: "indigo" },
-              { label: t("Total Profit", "মোট লাভ"), value: dayProfit, icon: "📈", color: "emerald" },
-              { label: t("New Due", "নতুন বাকি"), value: dayDue, icon: "⚠️", color: "red" },
-              { label: t("Due Collection", "বাকি আদায়"), value: dayDueCollection, icon: "✅", color: "blue" },
-              { label: t("Purchase / Stock In", "ক্রয় / স্টক ইন"), value: dayPurchase, icon: "📦", color: "amber" },
-              { label: t("Returns / Refund", "ফেরত / রিফান্ড"), value: dayRefund, icon: "🔄", color: "rose" },
-            ];
+              { key: "daily_report_sell", label: t("Total Sell", "মোট বিক্রয়"), value: daySell, icon: "💰", color: "indigo" },
+              { key: "daily_report_profit", label: t("Total Profit", "মোট লাভ"), value: dayProfit, icon: "📈", color: "emerald" },
+              { key: "daily_report_due", label: t("New Due", "নতুন বাকি"), value: dayDue, icon: "⚠️", color: "red" },
+              { key: "daily_report_due_collection", label: t("Due Collection", "বাকি আদায়"), value: dayDueCollection, icon: "✅", color: "blue" },
+              { key: "daily_report_purchase", label: t("Purchase / Stock In", "ক্রয় / স্টক ইন"), value: dayPurchase, icon: "📦", color: "amber" },
+              { key: "daily_report_returns", label: t("Returns / Refund", "ফেরত / রিফান্ড"), value: dayRefund, icon: "🔄", color: "rose" },
+              { key: "expense_tracker", label: t("Today's Expense", "আজকের খরচ"), value: dayExpense, icon: "💸", color: "rose" },
+              { key: "expense_view_profit", label: t("Net Profit", "নিট লাভ"), value: dayNetProfit, icon: "🧮", color: "teal" },
+            ].filter(s => checkShouldRenderTabOption(s.key));
 
             const colorMap: Record<string, string> = {
-              teal: isDarkMode ? 'bg-indigo-950/60 border-indigo-600 text-indigo-300' : 'bg-white border-slate-200 text-indigo-700',
+              teal: isDarkMode ? 'bg-teal-950/60 border-teal-600 text-teal-300' : 'bg-white border-slate-200 text-teal-700',
               emerald: isDarkMode ? 'bg-emerald-950/60 border-emerald-600 text-emerald-300' : 'bg-white border-slate-200 text-emerald-700',
               red: isDarkMode ? 'bg-red-950/60 border-red-600 text-red-300' : 'bg-white border-slate-200 text-red-700',
               blue: isDarkMode ? 'bg-blue-950/60 border-blue-600 text-blue-300' : 'bg-white border-slate-200 text-blue-700',
@@ -7811,7 +8385,7 @@ export default function Home() {
           {/* =========================================================
               TAB: MONTHLY REPORT
           ========================================================= */}
-          {activeTab === "monthly_report" && (() => {
+          {activeTab === "monthly_report" && checkShouldRenderTabOption("monthly_report") && (() => {
             // Build list of all unique year-months from invoices + purchases + due collection
             const allDates = [
               ...invoices.map((i: any) => i.dateString),
@@ -7851,6 +8425,8 @@ export default function Home() {
             const mReturns = invoices.filter((i: any) => i.isReturned && i.returnDetails && isInMonth(i.returnDetails.timestamp || i.dateString, selectedMonth));
             const mRefund = mReturns.reduce((s: number, i: any) => s + (i.returnDetails?.refundedAmount || 0), 0);
             const mInvoiceCount = mInvoices.filter((i: any) => !i.isReturned).length;
+            const mExpense = expenseList.filter((e: any) => isInMonth(e.dateString, selectedMonth)).reduce((s: number, e: any) => s + (e.amount || 0), 0);
+            const mNetProfit = mProfit - mExpense;
 
             // Group month invoices by day for daily breakdown table
             const dayMap: Record<string, { sell: number; profit: number; due: number; dueCol: number; purchase: number; count: number }> = {};
@@ -7875,16 +8451,18 @@ export default function Home() {
             const sortedDays = Object.keys(dayMap).sort((a, b) => b.localeCompare(a));
 
             const stats = [
-              { label: t("Total Sell", "মোট বিক্রয়"), value: mSell, icon: "💰", color: "indigo" },
-              { label: t("Total Profit", "মোট লাভ"), value: mProfit, icon: "📈", color: "emerald" },
-              { label: t("New Due", "নতুন বাকি"), value: mDue, icon: "⚠️", color: "red" },
-              { label: t("Due Collection", "বাকি আদায়"), value: mDueCollection, icon: "✅", color: "blue" },
-              { label: t("Purchase / Stock In", "ক্রয় / স্টক ইন"), value: mPurchase, icon: "📦", color: "amber" },
-              { label: t("Returns / Refund", "ফেরত / রিফান্ড"), value: mRefund, icon: "🔄", color: "rose" },
-            ];
+              { key: "monthly_report_sell", label: t("Total Sell", "মোট বিক্রয়"), value: mSell, icon: "💰", color: "indigo" },
+              { key: "monthly_report_profit", label: t("Total Profit", "মোট লাভ"), value: mProfit, icon: "📈", color: "emerald" },
+              { key: "monthly_report_due", label: t("New Due", "নতুন বাকি"), value: mDue, icon: "⚠️", color: "red" },
+              { key: "monthly_report_due_collection", label: t("Due Collection", "বাকি আদায়"), value: mDueCollection, icon: "✅", color: "blue" },
+              { key: "monthly_report_purchase", label: t("Purchase / Stock In", "ক্রয় / স্টক ইন"), value: mPurchase, icon: "📦", color: "amber" },
+              { key: "monthly_report_returns", label: t("Returns / Refund", "ফেরত / রিফান্ড"), value: mRefund, icon: "🔄", color: "rose" },
+              { key: "expense_tracker", label: t("Monthly Expense", "মাসিক খরচ"), value: mExpense, icon: "💸", color: "rose" },
+              { key: "expense_view_profit", label: t("Net Profit", "নিট লাভ"), value: mNetProfit, icon: "🧮", color: "teal" },
+            ].filter(s => checkShouldRenderTabOption(s.key));
 
             const colorMap: Record<string, string> = {
-              teal: isDarkMode ? 'bg-indigo-950/60 border-indigo-600 text-indigo-300' : 'bg-white border-slate-200 text-indigo-700',
+              teal: isDarkMode ? 'bg-teal-950/60 border-teal-600 text-teal-300' : 'bg-white border-slate-200 text-teal-700',
               emerald: isDarkMode ? 'bg-emerald-950/60 border-emerald-600 text-emerald-300' : 'bg-white border-slate-200 text-emerald-700',
               red: isDarkMode ? 'bg-red-950/60 border-red-600 text-red-300' : 'bg-white border-slate-200 text-red-700',
               blue: isDarkMode ? 'bg-blue-950/60 border-blue-600 text-blue-300' : 'bg-white border-slate-200 text-blue-700',
@@ -8090,15 +8668,6 @@ export default function Home() {
                       {[
                         { key: 'light',    emoji: '☀️', label: t('Light',    'হালকা'),      dot: '#f8fafc', dotB: '#e2e8f0', ring: '#94a3b8' },
                         { key: 'dark',     emoji: '🌙', label: t('Dark',     'অন্ধকার'),    dot: '#1e293b', dotB: '#334155', ring: '#64748b' },
-                        { key: 'ocean',    emoji: '🌊', label: t('Ocean',    'সমুদ্র'),      dot: '#0a1628', dotB: '#38bdf8', ring: '#38bdf8' },
-                        { key: 'forest',   emoji: '🌿', label: t('Forest',   'বন'),          dot: '#0a1a0f', dotB: '#34d399', ring: '#34d399' },
-                        { key: 'royal',    emoji: '👑', label: t('Royal',    'রাজকীয়'),     dot: '#160a28', dotB: '#a78bfa', ring: '#a78bfa' },
-                        { key: 'sunset',   emoji: '🌅', label: t('Sunset',   'সূর্যাস্ত'),   dot: '#1a0a05', dotB: '#fb923c', ring: '#fb923c' },
-                        { key: 'cherry',   emoji: '🌸', label: t('Cherry',   'চেরি'),        dot: '#1a0510', dotB: '#f472b6', ring: '#f472b6' },
-                        { key: 'midnight', emoji: '🌌', label: t('Midnight', 'মধ্যরাত'),     dot: '#050508', dotB: '#818cf8', ring: '#818cf8' },
-                        { key: 'nordic',   emoji: '❄️', label: t('Nordic',   'নর্ডিক'),      dot: '#1a1f2e', dotB: '#89dceb', ring: '#89dceb' },
-                        { key: 'lava',     emoji: '🌋', label: t('Lava',     'লাভা'),        dot: '#110805', dotB: '#f97316', ring: '#f97316' },
-                        { key: 'glacier',  emoji: '🏔️', label: t('Glacier',  'হিমবাহ'),      dot: '#f0f6ff', dotB: '#2563eb', ring: '#2563eb' },
                       ].map(th => (
                         <button
                           key={th.key}
@@ -8369,6 +8938,38 @@ export default function Home() {
                   { key: "report_view",      label: t("Report", "রিপোর্ট") },
                   { key: "closing_report",   label: t("Closing Report", "ক্লোজিং রিপোর্ট") },
                   { key: "returns",          label: t("Returns", "ফেরত") },
+                  { key: "expense_tracker",  label: t("Expense Tracker (Tab Access)", "খরচ ট্র্যাকার (ট্যাব এক্সেস)") },
+                  { key: "expense_add",       label: t("↳ Can Add Expense", "↳ খরচ যোগ করতে পারবে") },
+                  { key: "expense_edit",      label: t("↳ Can Edit Expense", "↳ খরচ সম্পাদনা করতে পারবে") },
+                  { key: "expense_delete",    label: t("↳ Can Delete Expense", "↳ খরচ মুছতে পারবে") },
+                  { key: "expense_view_history", label: t("↳ Can View Expense History", "↳ খরচের তালিকা দেখতে পারবে") },
+                  { key: "expense_view_profit",  label: t("↳ Can View Net Profit", "↳ নিট লাভ দেখতে পারবে") },
+                ]
+              },
+              {
+                label: t("Daily Report", "দৈনিক রিপোর্ট"),
+                icon: "🗓️",
+                items: [
+                  { key: "daily_report",              label: t("Daily Report (Tab)", "দৈনিক রিপোর্ট (ট্যাব)") },
+                  { key: "daily_report_sell",          label: t("Total Sell Card", "মোট বিক্রয় কার্ড") },
+                  { key: "daily_report_profit",        label: t("Total Profit Card", "মোট লাভ কার্ড") },
+                  { key: "daily_report_due",           label: t("New Due Card", "নতুন বাকি কার্ড") },
+                  { key: "daily_report_due_collection",label: t("Due Collection Card", "বাকি আদায় কার্ড") },
+                  { key: "daily_report_purchase",      label: t("Purchase / Stock In Card", "ক্রয় / স্টক ইন কার্ড") },
+                  { key: "daily_report_returns",       label: t("Returns / Refund Card", "ফেরত / রিফান্ড কার্ড") },
+                ]
+              },
+              {
+                label: t("Monthly Report", "মাসিক রিপোর্ট"),
+                icon: "📅",
+                items: [
+                  { key: "monthly_report",              label: t("Monthly Report (Tab)", "মাসিক রিপোর্ট (ট্যাব)") },
+                  { key: "monthly_report_sell",          label: t("Total Sell Card", "মোট বিক্রয় কার্ড") },
+                  { key: "monthly_report_profit",        label: t("Total Profit Card", "মোট লাভ কার্ড") },
+                  { key: "monthly_report_due",           label: t("New Due Card", "নতুন বাকি কার্ড") },
+                  { key: "monthly_report_due_collection",label: t("Due Collection Card", "বাকি আদায় কার্ড") },
+                  { key: "monthly_report_purchase",      label: t("Purchase / Stock In Card", "ক্রয় / স্টক ইন কার্ড") },
+                  { key: "monthly_report_returns",       label: t("Returns / Refund Card", "ফেরত / রিফান্ড কার্ড") },
                 ]
               },
               {
