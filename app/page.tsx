@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, startTransition } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
 // ============================================================
@@ -538,7 +538,7 @@ const CSS_FLOAT = `
           .animate-logo-pulse { animation: logo-pulse 2s ease-in-out infinite; }
           .animate-shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
           .animate-sidebar-item { animation: sidebar-item 0.3s ease forwards; }
-          .animate-tab-content { animation: tab-content 0.25s ease forwards; }
+          .animate-tab-content { animation: tab-content 0.05s ease forwards; }
           .animate-toast-in { animation: toast-in 0.35s cubic-bezier(0.22,1,0.36,1) forwards; }
           .animate-badge-pop { animation: badge-pop 0.3s ease; }
           .btn-press:active { transform: scale(0.96) !important; transition: transform 0.1s; }
@@ -576,7 +576,7 @@ const CSS_FLOAT_2 = `
         .animate-logo-pulse { animation: logo-pulse 2s ease-in-out infinite; }
         .animate-shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
         .animate-sidebar-item { animation: sidebar-item 0.3s ease forwards; }
-        .animate-tab-content { animation: tab-content 0.25s ease forwards; }
+        .animate-tab-content { animation: tab-content 0.05s ease forwards; }
         .animate-toast-in { animation: toast-in 0.35s cubic-bezier(0.22,1,0.36,1) forwards; }
         .animate-badge-pop { animation: badge-pop 0.3s ease; }
         .btn-press { transition: transform 0.12s, box-shadow 0.12s; }
@@ -692,10 +692,13 @@ const CSS_FLOAT_2 = `
         .sidebar-nav-btn { transition: all 0.18s ease; border: 2px solid transparent; border-radius: 11px; }
         .sidebar-nav-btn:hover { padding-left: 16px !important; }
 
-        /* ── Collapsible sidebar: thin icon-rail by default, expands smoothly on hover ── */
+        /* ── Collapsible sidebar: thin icon-rail by default, expands on hover ──
+           Was a deliberate ~0.38s "slide" animation. Sped way up per request
+           so hovering reveals the menu almost instantly. Pure CSS — no
+           JS/render logic involved, so this doesn't touch POS/Dashboard. */
         .sidebar-collapse {
           width: 4.5rem;
-          transition: width 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+          transition: width 0.04s linear;
           will-change: width;
           overflow: hidden;
         }
@@ -709,7 +712,7 @@ const CSS_FLOAT_2 = `
           display: grid;
           grid-template-columns: 0fr;
           min-width: 0;
-          transition: grid-template-columns 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+          transition: grid-template-columns 0.04s linear;
         }
         .sidebar-collapse:hover .sc-wrap {
           grid-template-columns: 1fr;
@@ -721,11 +724,11 @@ const CSS_FLOAT_2 = `
         }
         .sc-fade {
           opacity: 0;
-          transition: opacity 0.18s ease;
+          transition: opacity 0.04s linear;
         }
         .sidebar-collapse:hover .sc-fade {
           opacity: 1;
-          transition: opacity 0.32s ease 0.1s;
+          transition: opacity 0.04s linear;
         }
 
         .sc-row { justify-content: center; }
@@ -1121,6 +1124,95 @@ const LiveDayText = React.memo(function LiveDayText({ language }: { language: st
   return <>{val}</>;
 });
 
+// ── POS product grid card, memoized ──────────────────────────
+// This is the #1 remaining POS cost: with the old inline JSX, EVERY
+// keystroke (even in the cart's discount box, customer name, qty field —
+// anything, anywhere in the app) re-created all ~60 of these buttons from
+// scratch, including re-running Date() checks and rebuilding class-name
+// strings for every card. As a real React.memo component, a card only
+// re-renders if that specific medicine's own data (or the few passed
+// display props) actually changed — typing in an unrelated field no
+// longer touches these at all.
+const ProductCard = React.memo(function ProductCard({ med, onAdd, isDarkMode, currencySymbol, activeThreshold, outText, expText, outLabel, expLabel }: {
+  med: any; onAdd: (med: any) => void; isDarkMode: boolean; currencySymbol: string; activeThreshold: number;
+  outText: string; expText: string; outLabel: string; expLabel: string;
+}) {
+  const isExpired = new Date(med.expire) < new Date();
+  const isLowStock = med.stock <= (med.lowStockAlert || activeThreshold);
+  return (
+    <button
+      onClick={() => onAdd(med)}
+      disabled={med.stock === 0 || isExpired}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: '0 90px' } as any}
+      className={`p-2.5 rounded-xl border ccard cc-teal text-left transition hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-slate-800/60 border-slate-700 hover:border-indigo-500/50' : 'bg-white border-slate-200 hover:border-indigo-300 shadow-sm'}`}
+    >
+      <div className="font-black text-sm truncate mb-1">{med.name}</div>
+      <div className={`text-sm font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{med.category}</div>
+      <div className="flex items-center justify-between mt-1.5">
+        <span className="font-mono font-black text-indigo-500 text-sm">{med.price} {currencySymbol}</span>
+        <span className={`text-sm font-black px-1.5 py-0.5 rounded ${med.stock === 0 ? 'bg-red-500 text-white' : isExpired ? 'bg-red-500 text-white' : isLowStock ? 'bg-amber-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>
+          {med.stock === 0 ? outText : isExpired ? expText : `${med.stock}`}
+        </span>
+      </div>
+    </button>
+  );
+});
+
+// ── POS cart row, memoized ────────────────────────────────────
+// Same reasoning as ProductCard: only re-renders when this specific
+// cart item's own fields change, not on every unrelated keystroke.
+const CartRow = React.memo(function CartRow({ item, isDarkMode, currencySymbol, onQtyChange, onRemove }: {
+  item: any; isDarkMode: boolean; currencySymbol: string;
+  onQtyChange: (id: number, val: string) => void; onRemove: (item: any) => void;
+}) {
+  return (
+    <div className={`flex items-center gap-2 p-2 rounded-xl ${isDarkMode ? 'bg-slate-900/60' : 'bg-slate-50'}`}>
+      <div className="flex-1 min-w-0">
+        <div className="font-bold text-sm truncate">{item.name}</div>
+        <div className="text-sm text-indigo-500 font-mono">{item.price} {currencySymbol}</div>
+      </div>
+      <input type="number" min={1} value={item.qty} onChange={e => onQtyChange(item.id, e.target.value)} className={`w-12 px-1 py-0.5 text-center font-mono text-sm rounded border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`} />
+      <span className="text-sm font-mono font-black w-14 text-right">{((parseInt(item.qty) || 0) * item.price).toFixed(1)}</span>
+      <button onClick={() => onRemove(item)} className="text-red-400 hover:text-red-600 text-sm">✕</button>
+    </div>
+  );
+});
+
+// ── Isolated, self-contained search box ───────────────────────
+// This is the real fix for typing lag. Previously the typed text was
+// held in the GIANT parent component's state — so every keystroke
+// re-ran the entire ~9000-line render function (sidebar, whichever tab
+// is open, everything), and on a big/old phone that re-run itself is
+// what showed up as "text appears late". Here the keystroke is kept in
+// this tiny component's OWN state, so typing only re-renders this one
+// input — nothing else in the app touches or notices it.
+//
+// onSearch is called on every keystroke (no artificial delay), but
+// wrapped in startTransition — this tells React "the typed character
+// itself is urgent, update the box NOW; the search results are
+// low-priority, update them when you get a free moment." If you keep
+// typing before the low-priority update finishes, React throws away
+// the stale one and starts fresh — so the box never stutters or falls
+// behind, no matter how large the medicine list is.
+const SearchBox = React.memo(function SearchBox({ onSearch, placeholder, className }: {
+  onSearch: (val: string) => void; placeholder: string; className: string;
+}) {
+  const [val, setVal] = useState("");
+  return (
+    <input
+      type="text"
+      placeholder={placeholder}
+      value={val}
+      onChange={e => {
+        const next = e.target.value;
+        setVal(next);
+        startTransition(() => onSearch(next));
+      }}
+      className={className}
+    />
+  );
+});
+
 export default function Home() {
 
   // ============================================================
@@ -1482,7 +1574,14 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       window.history.pushState(null, '', `#${tab}`);
     }
-    setActiveTab(tab);
+    // startTransition: the click itself should always feel instant.
+    // Some tabs (Invoices, Inventory, Purchase History) can have a lot of
+    // rows to build — without this, clicking a menu item could freeze the
+    // whole screen for a moment until that tab's content finished
+    // rendering. With this, React treats "switch to this tab" as
+    // low-priority: it stays responsive to your tap/click right away, and
+    // fills in the new tab's content the instant it's ready.
+    startTransition(() => setActiveTab(tab));
   }, []);
 
   // On mount: read hash from URL to restore tab
@@ -2873,7 +2972,7 @@ export default function Home() {
   // ============================================================
   // POS / CART
   // ============================================================
-  const addToCart = (med: any) => {
+  const addToCart = useCallback((med: any) => {
     // FIX (stale-closure cart bug): read from refs (always the latest
     // committed value) instead of the closed-over `medicines` state, and
     // write via functional setState. Previously, two clicks fired in quick
@@ -2894,15 +2993,15 @@ export default function Home() {
       return [...prevCart, { ...med, qty: 1 }];
     });
     setMedicines(prevMeds => prevMeds.map(item => item.id === med.id ? { ...item, stock: item.stock - 1 } : item));
-  };
+  }, []);
 
-  const removeFromCart = (itemToRemove: any) => {
+  const removeFromCart = useCallback((itemToRemove: any) => {
     const currentCartQty = parseInt(itemToRemove.qty) || 0;
     setCart(prevCart => prevCart.filter(item => item.id !== itemToRemove.id));
     setMedicines(prevMeds => prevMeds.map(item => item.id === itemToRemove.id ? { ...item, stock: item.stock + currentCartQty } : item));
-  };
+  }, []);
 
-  const handleQuantityChange = (itemId: number, newQtyValue: string) => {
+  const handleQuantityChange = useCallback((itemId: number, newQtyValue: string) => {
     // FIX: read from refs instead of closed-over state, same reasoning as addToCart.
     const existingCartItem = cartRef.current.find(item => item.id === itemId);
     const originalMed = medicinesRef.current.find(m => m.id === itemId);
@@ -2925,7 +3024,7 @@ export default function Home() {
     const stockDifference = parsedQty - currentCartQty;
     setMedicines(prevMeds => prevMeds.map(m => m.id === itemId ? { ...m, stock: m.stock - stockDifference } : m));
     setCart(prevCart => prevCart.map(item => item.id === itemId ? { ...item, qty: parsedQty } : item));
-  };
+  }, []);
 
 
   const handleCheckoutIntent = () => {
@@ -4113,6 +4212,64 @@ export default function Home() {
     return matchesSearch && matchesCategory;
   }), [medicines, searchTerm, selectedCategory]);
 
+  // POS product grid — per request, nothing is shown until you actually
+  // type something (or pick a category). This also means the medicine
+  // list isn't filtered/rendered at all while the box is empty, which is
+  // itself a speed win on a big medicine list. While actively typing a
+  // name, results are capped at 40 cards — plenty to find what you want,
+  // and it keeps every keystroke's re-render cheap regardless of how
+  // many hundreds of medicines you have.
+  const posDisplayedMedicines = useMemo(() => {
+    if (searchTerm.trim()) return filteredMedicines.slice(0, 40);
+    if (selectedCategory !== "All") return filteredMedicines;
+    return [];
+  }, [filteredMedicines, searchTerm, selectedCategory]);
+
+  // Customer name → past customer suggestions (POS). Previously this map
+  // was rebuilt by looping over ALL invoices + ALL due records on every
+  // single render while the dropdown was open (i.e. on every keystroke
+  // anywhere in the cart, not just in this field) — the #1 cause of POS
+  // typing lag once invoice history grows. Now only recomputes when the
+  // name typed, invoices, or dueList actually change.
+  const customerNameSuggestions = useMemo(() => {
+    if (!(showCustomerSuggestions && customerName.trim().length >= 1)) return [];
+    const query = customerName.toLowerCase();
+    const pastMap: Record<string, { name: string; phone: string }> = {};
+    invoices.forEach((inv: any) => {
+      const key = inv.customer?.toLowerCase();
+      if (key && key !== t("regular customer", "সাধারণ গ্রাহক").toLowerCase() && !pastMap[key]) {
+        pastMap[key] = { name: inv.customer, phone: inv.phone !== "N/A" ? inv.phone : "" };
+      }
+    });
+    dueList.forEach((d: any) => {
+      const key = d.customerName?.toLowerCase();
+      if (key) pastMap[key] = { name: d.customerName, phone: d.phone !== "N/A" ? d.phone : pastMap[key]?.phone || "" };
+    });
+    const rawInput = customerName.trim();
+    return Object.values(pastMap).filter(c =>
+      c.name.toLowerCase().includes(query) || (c.phone && c.phone.includes(rawInput))
+    ).slice(0, 8);
+  }, [showCustomerSuggestions, customerName, invoices, dueList, language]);
+
+  // Phone → past customer suggestions (POS). Same fix as above.
+  const customerPhoneSuggestions = useMemo(() => {
+    if (!(showPhoneSuggestions && customerPhone.trim().length >= 2)) return [];
+    const phoneQuery = customerPhone.trim();
+    const pastMap: Record<string, { name: string; phone: string }> = {};
+    invoices.forEach((inv: any) => {
+      if (inv.phone && inv.phone !== "N/A") {
+        const key = inv.phone;
+        if (!pastMap[key]) pastMap[key] = { name: inv.customer, phone: inv.phone };
+      }
+    });
+    dueList.forEach((d: any) => {
+      if (d.phone && d.phone !== "N/A") {
+        pastMap[d.phone] = { name: d.customerName, phone: d.phone };
+      }
+    });
+    return Object.values(pastMap).filter(c => c.phone.includes(phoneQuery)).slice(0, 8);
+  }, [showPhoneSuggestions, customerPhone, invoices, dueList]);
+
   const filteredInvoices = useMemo(() => invoices.filter(inv => {
     const query = searchInvoiceQuery.toLowerCase();
     return inv.invoiceId.toLowerCase().includes(query) || inv.customer.toLowerCase().includes(query) || inv.phone.toLowerCase().includes(query);
@@ -4149,7 +4306,14 @@ export default function Home() {
     });
   }, [medicines]);
 
-  const countStockByCategory = useCallback((cat: string) => medicines.filter(m => m.category === cat).reduce((sum, item) => sum + item.stock, 0), [medicines]);
+  // Single pass instead of one full medicines-array scan PER category
+  // (was O(categories × medicines) on every Dashboard render).
+  const stockByCategoryMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    medicines.forEach(m => { map[m.category] = (map[m.category] || 0) + m.stock; });
+    return map;
+  }, [medicines]);
+  const countStockByCategory = useCallback((cat: string) => stockByCategoryMap[cat] || 0, [stockByCategoryMap]);
   const totalStockValue = useMemo(() => medicines.reduce((sum, m) => sum + (m.buyPrice * m.stock), 0), [medicines]);
   const totalStockRetailValue = useMemo(() => medicines.reduce((sum, m) => sum + (m.price * m.stock), 0), [medicines]);
   const totalDueFromCustomers = useMemo(() => dueList.reduce((sum, d) => sum + d.totalDue, 0), [dueList]);
@@ -4464,6 +4628,31 @@ export default function Home() {
       computedDailyExpense, computedMonthlyExpense,
     };
   }, [todayKey, invoices, purchaseList, dueCollectionLog, expenseList]);
+
+  // ── Last 7 Days Sales chart data — memoized ──────────────────
+  // This was previously computed inline inside the Dashboard tab's JSX
+  // (an IIFE that looped through ALL invoices once for EACH of the 7
+  // days = up to 7 full passes over your invoice history), and it rebuilt
+  // from scratch on every single render while the Dashboard tab was open
+  // — this was the main cause of Dashboard feeling slow as invoice
+  // history grew. Now it only recomputes when invoices or the date
+  // actually change. (Dashboard-only change — does not touch POS.)
+  const weeklySalesData = useMemo(() => {
+    const today = new Date(todayKey);
+    const weekDays = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today); d.setDate(today.getDate() - (6 - i)); return d;
+    });
+    const weekSales = weekDays.map(day =>
+      invoices.reduce((s, inv) => {
+        const d = parseCustomDateString(inv.dateString);
+        return (d.getFullYear() === day.getFullYear() && d.getMonth() === day.getMonth() && d.getDate() === day.getDate()) ? s + (inv.finalBill || 0) : s;
+      }, 0)
+    );
+    const totalWeek = weekSales.reduce((a, b) => a + b, 0);
+    const maxVal = Math.max(...weekSales, 1);
+    const maxIdx = weekSales.indexOf(Math.max(...weekSales));
+    return { weekDays, weekSales, totalWeek, maxVal, maxIdx };
+  }, [todayKey, invoices]);
 
   const {
     computedDailyPurchaseAmount, computedMonthlyPurchaseAmount, computedYearlyPurchaseAmount,
@@ -5194,11 +5383,9 @@ export default function Home() {
               <div id="pos-products" className="lg:col-span-7 flex flex-col gap-3">
                 <div className={`ccard cc-teal p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
                   <div className="flex gap-2 flex-wrap">
-                    <input
-                      type="text"
+                    <SearchBox
+                      onSearch={setSearchTerm}
                       placeholder={t("Search medicine...", "ওষুধ খুঁজুন...")}
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
                       className={`flex-1 px-3 py-2 text-sm rounded-xl border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                     />
                     <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} className={`px-2 py-2 text-sm rounded-xl border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
@@ -5213,32 +5400,31 @@ export default function Home() {
                       opening the Sell tab once stock grows past a few hundred
                       items. Cap the unsearched view; typing narrows it via
                       filteredMedicines same as before, uncapped. */}
-                  {(searchTerm.trim() || selectedCategory !== "All" ? filteredMedicines : filteredMedicines.slice(0, 60)).map(med => {
-                    const isExpired = new Date(med.expire) < new Date();
-                    const isLowStock = med.stock <= (med.lowStockAlert || activeThreshold);
-                    return (
-                      <button
-                        key={med.id}
-                        onClick={() => addToCart(med)}
-                        disabled={med.stock === 0 || isExpired}
-                        style={{ contentVisibility: 'auto', containIntrinsicSize: '0 90px' } as any}
-                        className={`p-2.5 rounded-xl border ccard cc-teal text-left transition hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-slate-800/60 border-slate-700 hover:border-indigo-500/50' : 'bg-white border-slate-200 hover:border-indigo-300 shadow-sm'}`}
-                      >
-                        <div className="font-black text-sm truncate mb-1">{med.name}</div>
-                        <div className={`text-sm font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{med.category}</div>
-                        <div className="flex items-center justify-between mt-1.5">
-                          <span className="font-mono font-black text-indigo-500 text-sm">{med.price} {currencySymbol}</span>
-                          <span className={`text-sm font-black px-1.5 py-0.5 rounded ${med.stock === 0 ? 'bg-red-500 text-white' : isExpired ? 'bg-red-500 text-white' : isLowStock ? 'bg-amber-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>
-                            {med.stock === 0 ? t("Out", "শেষ") : isExpired ? t("Exp", "মেয়াদ") : `${med.stock}`}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                  {filteredMedicines.length === 0 && <div className="col-span-3 text-center py-8 text-slate-400 italic text-sm">{t("No medicine found.", "কোনো ওষুধ পাওয়া যায়নি।")}</div>}
-                  {!searchTerm.trim() && selectedCategory === "All" && filteredMedicines.length > 60 && (
-                    <div className="col-span-2 md:col-span-3 text-center py-2 text-slate-400 text-sm italic">
-                      {t(`Showing 60 of ${filteredMedicines.length} — search or pick a category to find more.`, `৬০ / ${filteredMedicines.length} দেখানো হচ্ছে — বাকি খুঁজতে সার্চ করুন বা ক্যাটাগরি বাছাই করুন।`)}
+                  {posDisplayedMedicines.map(med => (
+                    <ProductCard
+                      key={med.id}
+                      med={med}
+                      onAdd={addToCart}
+                      isDarkMode={isDarkMode}
+                      currencySymbol={currencySymbol}
+                      activeThreshold={activeThreshold}
+                      outText={t("Out", "শেষ")}
+                      expText={t("Exp", "মেয়াদ")}
+                      outLabel="out"
+                      expLabel="exp"
+                    />
+                  ))}
+                  {!searchTerm.trim() && selectedCategory === "All" && (
+                    <div className="col-span-2 md:col-span-3 text-center py-8 text-slate-400 text-sm italic">
+                      {t("Type a medicine name above to search.", "ওষুধের নাম লিখে খুঁজুন।")}
+                    </div>
+                  )}
+                  {(searchTerm.trim() || selectedCategory !== "All") && posDisplayedMedicines.length === 0 && (
+                    <div className="col-span-3 text-center py-8 text-slate-400 italic text-sm">{t("No medicine found.", "কোনো ওষুধ পাওয়া যায়নি।")}</div>
+                  )}
+                  {searchTerm.trim() && filteredMedicines.length > 40 && (
+                    <div className="col-span-2 md:col-span-3 text-center py-1.5 text-slate-400 text-sm italic">
+                      {t(`Showing top 40 of ${filteredMedicines.length} matches — keep typing to narrow down.`, `${filteredMedicines.length} টির মধ্যে সেরা ৪০টি দেখানো হচ্ছে — আরও নির্দিষ্ট করতে লিখতে থাকুন।`)}
                     </div>
                   )}
                 </div>
@@ -5275,58 +5461,35 @@ export default function Home() {
                         placeholder={t("Type name or phone...", "নাম বা ফোন লিখুন...")}
                         className={`w-full px-2 py-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                       />
-                      {/* Customer suggestions from invoices + due list */}
-                      {showCustomerSuggestions && customerName.trim().length >= 1 && (() => {
-                        const query = customerName.toLowerCase();
-                        // Build unique customer map from past invoices
-                        const pastMap: Record<string, { name: string; phone: string }> = {};
-                        invoices.forEach((inv: any) => {
-                          const key = inv.customer?.toLowerCase();
-                          if (key && key !== t("regular customer","সাধারণ গ্রাহক").toLowerCase() && !pastMap[key]) {
-                            pastMap[key] = { name: inv.customer, phone: inv.phone !== "N/A" ? inv.phone : "" };
-                          }
-                        });
-                        // Merge due list into map (overrides phone if due exists)
-                        dueList.forEach((d: any) => {
-                          const key = d.customerName?.toLowerCase();
-                          if (key) pastMap[key] = { name: d.customerName, phone: d.phone !== "N/A" ? d.phone : pastMap[key]?.phone || "" };
-                        });
-
-                        const rawInput = customerName.trim();
-                        const matches = Object.values(pastMap).filter(c =>
-                          c.name.toLowerCase().includes(query) ||
-                          (c.phone && c.phone.includes(rawInput))
-                        ).slice(0, 8);
-
-                        return matches.length > 0 ? (
-                          <div className={`absolute z-30 left-0 right-0 top-full mt-0.5 rounded-xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900/50 backdrop-blur-2xl border-slate-700/40' : 'bg-white/60 backdrop-blur-2xl border-white/40'}`}>
-                            {matches.map((c, i) => {
-                              const due = dueList.find((d: any) => d.customerName.toLowerCase() === c.name.toLowerCase());
-                              return (
-                                <button
-                                  key={i}
-                                  onMouseDown={() => {
-                                    setCustomerName(c.name);
-                                    setCustomerPhone(c.phone || customerPhone);
-                                    if (due) setSelectedExistingDue(due);
-                                    setShowCustomerSuggestions(false);
-                                  }}
-                                  className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center hover:bg-indigo-500/10 transition ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
-                                >
-                                  <span>
-                                    <span className="font-bold">{c.name}</span>
-                                    {c.phone && <span className="font-mono text-xs text-slate-400 ml-2">{c.phone}</span>}
-                                  </span>
-                                  {due
-                                    ? <span className="text-red-500 font-mono font-black text-xs">🔴 {due.totalDue.toFixed(1)} {currencySymbol} {t("due","বাকি")}</span>
-                                    : <span className="text-indigo-400 text-xs">✔ {t("no due","বাকি নেই")}</span>
-                                  }
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : null;
-                      })()}
+                      {/* Customer suggestions from invoices + due list (memoized — see customerNameSuggestions) */}
+                      {customerNameSuggestions.length > 0 && (
+                        <div className={`absolute z-30 left-0 right-0 top-full mt-0.5 rounded-xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900/50 backdrop-blur-2xl border-slate-700/40' : 'bg-white/60 backdrop-blur-2xl border-white/40'}`}>
+                          {customerNameSuggestions.map((c, i) => {
+                            const due = dueList.find((d: any) => d.customerName.toLowerCase() === c.name.toLowerCase());
+                            return (
+                              <button
+                                key={i}
+                                onMouseDown={() => {
+                                  setCustomerName(c.name);
+                                  setCustomerPhone(c.phone || customerPhone);
+                                  if (due) setSelectedExistingDue(due);
+                                  setShowCustomerSuggestions(false);
+                                }}
+                                className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center hover:bg-indigo-500/10 transition ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
+                              >
+                                <span>
+                                  <span className="font-bold">{c.name}</span>
+                                  {c.phone && <span className="font-mono text-xs text-slate-400 ml-2">{c.phone}</span>}
+                                </span>
+                                {due
+                                  ? <span className="text-red-500 font-mono font-black text-xs">🔴 {due.totalDue.toFixed(1)} {currencySymbol} {t("due","বাকি")}</span>
+                                  : <span className="text-indigo-400 text-xs">✔ {t("no due","বাকি নেই")}</span>
+                                }
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                     <div className="relative">
                       <label className={`block text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Phone", "ফোন")}</label>
@@ -5343,27 +5506,10 @@ export default function Home() {
                         placeholder="01XXXXXXXXX"
                         className={`w-full px-2 py-1.5 rounded border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
                       />
-                      {/* Phone suggestions */}
-                      {showPhoneSuggestions && customerPhone.trim().length >= 2 && (() => {
-                        const phoneQuery = customerPhone.trim();
-                        const pastMap: Record<string, { name: string; phone: string }> = {};
-                        invoices.forEach((inv: any) => {
-                          if (inv.phone && inv.phone !== "N/A") {
-                            const key = inv.phone;
-                            if (!pastMap[key]) pastMap[key] = { name: inv.customer, phone: inv.phone };
-                          }
-                        });
-                        dueList.forEach((d: any) => {
-                          if (d.phone && d.phone !== "N/A") {
-                            pastMap[d.phone] = { name: d.customerName, phone: d.phone };
-                          }
-                        });
-                        const matches = Object.values(pastMap).filter(c =>
-                          c.phone.includes(phoneQuery)
-                        ).slice(0, 8);
-                        return matches.length > 0 ? (
+                      {/* Phone suggestions (memoized — see customerPhoneSuggestions) */}
+                      {customerPhoneSuggestions.length > 0 && (
                           <div className={`absolute z-30 left-0 right-0 top-full mt-0.5 rounded-xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900/50 backdrop-blur-2xl border-slate-700/40' : 'bg-white/60 backdrop-blur-2xl border-white/40'}`}>
-                            {matches.map((c, i) => {
+                            {customerPhoneSuggestions.map((c, i) => {
                               const due = dueList.find((d: any) => d.phone === c.phone);
                               return (
                                 <button
@@ -5388,8 +5534,7 @@ export default function Home() {
                               );
                             })}
                           </div>
-                        ) : null;
-                      })()}
+                      )}
                     </div>
                   </div>}
 
@@ -5404,15 +5549,14 @@ export default function Home() {
                   {/* Cart Items */}
                   <div className="flex flex-col gap-1.5 max-h-36 sm:max-h-48 overflow-y-auto mb-3">
                     {cart.map(item => (
-                      <div key={item.id} className={`flex items-center gap-2 p-2 rounded-xl ${isDarkMode ? 'bg-slate-900/60' : 'bg-slate-50'}`}>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-bold text-sm truncate">{item.name}</div>
-                          <div className="text-sm text-indigo-500 font-mono">{item.price} {currencySymbol}</div>
-                        </div>
-                        <input type="number" min={1} value={item.qty} onChange={e => handleQuantityChange(item.id, e.target.value)} className={`w-12 px-1 py-0.5 text-center font-mono text-sm rounded border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200'}`} />
-                        <span className="text-sm font-mono font-black w-14 text-right">{((parseInt(item.qty) || 0) * item.price).toFixed(1)}</span>
-                        <button onClick={() => removeFromCart(item)} className="text-red-400 hover:text-red-600 text-sm">✕</button>
-                      </div>
+                      <CartRow
+                        key={item.id}
+                        item={item}
+                        isDarkMode={isDarkMode}
+                        currencySymbol={currencySymbol}
+                        onQtyChange={handleQuantityChange}
+                        onRemove={removeFromCart}
+                      />
                     ))}
                     {cart.length === 0 && <div className="text-center py-6 text-slate-400 text-sm italic">{t("Cart is empty.", "কার্ট খালি।")}</div>}
                   </div>
@@ -6008,19 +6152,7 @@ export default function Home() {
               {(() => {
                 const bnDay = ['রবি','সোম','মঙ্গল','বুধ','বৃহঃ','শুক্র','শনি'];
                 const enDay = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                const today = new Date(todayKey);
-                const weekDays = Array.from({ length: 7 }, (_, i) => {
-                  const d = new Date(today); d.setDate(today.getDate() - (6 - i)); return d;
-                });
-                const weekSales = weekDays.map(day =>
-                  invoices.reduce((s, inv) => {
-                    const d = parseCustomDateString(inv.dateString);
-                    return (d.getFullYear()===day.getFullYear()&&d.getMonth()===day.getMonth()&&d.getDate()===day.getDate()) ? s+(inv.finalBill||0) : s;
-                  }, 0)
-                );
-                const totalWeek = weekSales.reduce((a,b)=>a+b,0);
-                const maxVal = Math.max(...weekSales, 1);
-                const maxIdx = weekSales.indexOf(Math.max(...weekSales));
+                const { weekDays, weekSales, totalWeek, maxVal, maxIdx } = weeklySalesData;
                 const CHART_H = 130;
                 const BAR_W = 44;
                 const GAP = 18;
@@ -6193,7 +6325,7 @@ export default function Home() {
                 <div className="p-3 border-b border-slate-700/10 flex items-center justify-between flex-wrap gap-2">
                   <h3 className="text-sm font-black uppercase tracking-wider text-indigo-500">{t("Medicine Stock List", "ওষুধের স্টক তালিকা")} ({medicines.length})</h3>
                   <div className="flex gap-2">
-                    <input type="text" placeholder={t("Search...", "খুঁজুন...")} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={`px-2 py-1 text-sm rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                    <SearchBox onSearch={setSearchTerm} placeholder={t("Search...", "খুঁজুন...")} className={`px-2 py-1 text-sm rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
                     <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} className={`px-2 py-1 text-sm rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
                       <option value="All">{t("All", "সব")}</option>
                       {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
