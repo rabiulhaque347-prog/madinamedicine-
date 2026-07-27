@@ -1379,6 +1379,7 @@ export default function Home() {
     daily_profit_view: true,
     monthly_profit_view: true,
     low_stock_alerts: true,
+    stock_out_view: true,
     expired_meds_view: true,
     supplier_management: true,
     batch_tracking: true,
@@ -1458,7 +1459,7 @@ export default function Home() {
   const [adminVisibleModules, setAdminVisibleModules] = useState<{ [key: string]: boolean }>({
     pos: true, inventory: true, procurement: true, purchase_history: true, invoices: true, returns: true,
     analytics: true, settings: true, modules_menu: true, daily_profit_view: true, monthly_profit_view: true,
-    low_stock_alerts: true, expired_meds_view: true, supplier_management: true, batch_tracking: true,
+    low_stock_alerts: true, stock_out_view: true, expired_meds_view: true, supplier_management: true, batch_tracking: true,
     customer_database: true, sales_reports: true, purchase_reports: true, vat_tax_calculator: true,
     discount_manager: true, receipt_customizer: true, user_role_switcher: true, backup_restore: true,
     advanced_analytics: true, medicine_suggestions_db: true, company_database: true, rack_management: true,
@@ -1667,7 +1668,16 @@ export default function Home() {
   const [dueCollectionLog, setDueCollectionLog] = useState<any[]>([]);
 
   // ── Daily / Monthly Report states ───────────────────────────
-  const [dailyReportDate, setDailyReportDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dailyReportDate, setDailyReportDate] = useState(() => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Dhaka',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date());
+    const y = parts.find(p => p.type === 'year')!.value;
+    const m = parts.find(p => p.type === 'month')!.value;
+    const d = parts.find(p => p.type === 'day')!.value;
+    return `${y}-${m}-${d}`;
+  });
   const [monthlyReportMonth, setMonthlyReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
   // dueCollectionLogRef always holds the latest log so the Firebase
   // listener can derive sales correctly even if the due-collection-log
@@ -1824,6 +1834,21 @@ export default function Home() {
     } catch (e) {
       return new Date();
     }
+  };
+
+  // Returns YYYY-MM-DD for the given date, ALWAYS in Bangladesh time
+  // (Asia/Dhaka, UTC+6) — regardless of the device/browser's own timezone
+  // setting. This keeps daily/monthly reports consistent even if a user's
+  // phone or computer clock is set to a different timezone.
+  const toLocalISODate = (d: Date): string => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Dhaka',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(d);
+    const y = parts.find(p => p.type === 'year')!.value;
+    const m = parts.find(p => p.type === 'month')!.value;
+    const day = parts.find(p => p.type === 'day')!.value;
+    return `${y}-${m}-${day}`;
   };
 
   // ============================================================
@@ -4295,6 +4320,7 @@ export default function Home() {
 
   const activeThreshold = useMemo(() => parseInt(lowStockThreshold) || 10, [lowStockThreshold]);
   const lowStockMedicines = useMemo(() => medicines.filter(m => m.stock <= (m.lowStockAlert || activeThreshold)), [medicines, activeThreshold]);
+  const stockOutMedicines = useMemo(() => medicines.filter(m => m.stock === 0), [medicines]);
   const expiredMedicines = useMemo(() => medicines.filter(m => new Date(m.expire) < new Date()), [medicines]);
   const expiringSoonMedicines = useMemo(() => {
     const today = new Date();
@@ -6252,6 +6278,25 @@ export default function Home() {
                           </div>
                         ))}
                         {lowStockMedicines.length === 0 && <div className="text-slate-400 italic text-sm py-3 text-center">{t("All stock levels OK!", "সব স্টক ঠিক আছে!")}</div>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Stock Out */}
+                  {checkShouldRenderTabOption("stock_out_view") && (
+                    <div className={`ccard cc-red p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+                      <div className="flex items-center justify-between border-b pb-2 mb-2">
+                        <h4 className="text-sm font-black uppercase text-red-500">⛔ {t("Stock Out", "স্টক আউট")}</h4>
+                        <span className="bg-red-500 text-white font-mono text-sm px-1.5 py-0.5 rounded-full font-bold">{stockOutMedicines.length}</span>
+                      </div>
+                      <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
+                        {stockOutMedicines.map(m => (
+                          <div key={m.id} className="flex justify-between items-center text-sm font-semibold p-1 bg-red-500/5 rounded border border-red-500/10">
+                            <span className="truncate max-w-[120px]">{m.name}</span>
+                            <span className="font-mono text-red-500 text-sm">{t("Out of stock", "স্টক শেষ")}</span>
+                          </div>
+                        ))}
+                        {stockOutMedicines.length === 0 && <div className="text-slate-400 italic text-sm py-3 text-center">{t("No stock-out items!", "স্টক আউট নেই!")}</div>}
                       </div>
                     </div>
                   )}
@@ -8394,7 +8439,7 @@ export default function Home() {
             const isSameDay = (dateStr: string, isoDate: string) => {
               try {
                 const d = parseCustomDateString(dateStr);
-                return d.toISOString().slice(0, 10) === isoDate;
+                return toLocalISODate(d) === isoDate;
               } catch { return false; }
             };
 
@@ -8563,7 +8608,7 @@ export default function Home() {
             // Group month invoices by day for daily breakdown table
             const dayMap: Record<string, { sell: number; profit: number; due: number; dueCol: number; purchase: number; count: number }> = {};
             mInvoices.forEach((i: any) => {
-              const day = parseCustomDateString(i.dateString).toISOString().slice(0, 10);
+              const day = toLocalISODate(parseCustomDateString(i.dateString));
               if (!dayMap[day]) dayMap[day] = { sell: 0, profit: 0, due: 0, dueCol: 0, purchase: 0, count: 0 };
               dayMap[day].sell += i.finalBill || 0;
               dayMap[day].profit += i.profit || 0;
@@ -8571,12 +8616,12 @@ export default function Home() {
               if (!i.isReturned) dayMap[day].count++;
             });
             dueCollectionLog.filter((l: any) => isInMonth(l.dateString, selectedMonth)).forEach((l: any) => {
-              const day = parseCustomDateString(l.dateString).toISOString().slice(0, 10);
+              const day = toLocalISODate(parseCustomDateString(l.dateString));
               if (!dayMap[day]) dayMap[day] = { sell: 0, profit: 0, due: 0, dueCol: 0, purchase: 0, count: 0 };
               dayMap[day].dueCol += l.amount || 0;
             });
             purchaseList.filter((p: any) => isInMonth(p.dateString, selectedMonth)).forEach((p: any) => {
-              const day = parseCustomDateString(p.dateString).toISOString().slice(0, 10);
+              const day = toLocalISODate(parseCustomDateString(p.dateString));
               if (!dayMap[day]) dayMap[day] = { sell: 0, profit: 0, due: 0, dueCol: 0, purchase: 0, count: 0 };
               dayMap[day].purchase += p.totalCost || 0;
             });
@@ -9134,6 +9179,7 @@ export default function Home() {
                   { key: "monthly_due_collection_view", label: t("Monthly Due Collection", "মাসিক বাকি আদায়") },
                   { key: "bkash_nagad_view",        label: t("bKash/Nagad Stats", "বিকাশ/নগদ তথ্য") },
                   { key: "low_stock_alerts",        label: t("Low Stock Alerts", "কম স্টক সতর্কতা") },
+                  { key: "stock_out_view",          label: t("Stock Out List", "স্টক আউট তালিকা") },
                   { key: "expired_meds_view",       label: t("Expired Medicines", "মেয়াদ শেষ ওষুধ") },
                   { key: "stock_value_calculator",  label: t("Stock Value Summary", "স্টক মূল্য সারসংক্ষেপ") },
                   { key: "category_wise_stock",     label: t("Category Stock View", "ক্যাটাগরি স্টক") },
