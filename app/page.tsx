@@ -138,6 +138,54 @@ const fbGet = async (key: string): Promise<string | null> => {
   } catch { return null; }
 };
 
+// ── Atomic multi-key write ───────────────────────────────────
+// ROOT CAUSE FIX: a Sale used to be saved as 5 separate, un-awaited
+// fbSet() calls (invoices, meds/stock, due list, due log, sales,
+// profit) racing each other over the network. If the tab closed, the
+// network blipped, or one request timed out mid-flight, some keys
+// landed and others didn't — e.g. stock got deducted but the invoice
+// never saved, exactly the symptom reported.
+//
+// Firebase's Realtime Database REST API supports a single multi-path
+// PATCH to the database root: { "/keyA": valueA, "/keyB": valueB, ... }
+// This is ONE HTTP request — the server applies all paths in a single
+// write. Either the whole request lands, or (on network failure/abort)
+// none of it does. That removes the interleaving window that caused
+// partial sales. It is not a cross-request ACID transaction (a second
+// device could still write concurrently — that's handled separately
+// by fetchLatestList/updateMedicinesOnCloud re-fetching fresh state
+// first), but it eliminates the single-sale partial-write failure mode.
+const fbMultiSet = async (updates: Record<string, string>): Promise<boolean> => {
+  if (!isFirebaseConfigured()) return false;
+  const body: Record<string, string> = {};
+  for (const key of Object.keys(updates)) {
+    if (!CLOUD_SYNC_KEYS.includes(key)) continue; // guard against typos writing outside the sync'd key set
+    body[`/${key}`] = updates[key];
+  }
+  try {
+    const res = await fetchWithTimeout(`${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}.json`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }, 15000); // slightly longer timeout — this call now carries the whole sale
+    return res.ok;
+  } catch {
+    return false;
+  }
+};
+
+// cloudSet-compatible wrapper so pending-save UI indicators still work
+// for the atomic multi-key write.
+const cloudMultiSet = async (updates: Record<string, string>): Promise<boolean> => {
+  pendingSaves++;
+  notifySaveListeners();
+  const ok = await fbMultiSet(updates);
+  pendingSaves = Math.max(0, pendingSaves - 1);
+  if (!ok) hasFailedSave = true;
+  notifySaveListeners();
+  return ok;
+};
+
 // Read ALL cloud keys at once (faster than individual reads on load)
 const fbGetAll = async (): Promise<Record<string, string> | null> => {
   if (!isFirebaseConfigured()) return null;
@@ -3167,8 +3215,16 @@ export default function Home() {
     const formattedTime = today.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const formattedDate = today.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' });
 
+    // FIX (atomicity — the root cause bug): a unique transaction id ties the
+    // invoice, the stock movement, and the payment/due entries together as
+    // one logical unit. Every write below carries it, so a partial write is
+    // detectable and traceable even if something still slips through (e.g.
+    // a second device racing this same write outside this app's control).
+    const transactionId = `TXN-${Date.now()}-${genId()}`;
+
     const newInvoice = {
       invoiceId: `M-${Date.now().toString().slice(-6)}`,
+      transactionId,
       customer: customerName || t("Regular Customer", "সাধারণ গ্রাহক"),
       phone: customerPhone || "N/A",
       dateString: `${formattedDate} | ${formattedTime}`,
@@ -3188,24 +3244,17 @@ export default function Home() {
     };
 
     const updatedInvoices = [newInvoice, ...invoices];
-    setInvoices(updatedInvoices);
-    setLastInvoice(newInvoice);
 
-    cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
-
-    // FIX (multi-device stock conflict): instead of overwriting Firebase with
-    // this device's local medicines array (which already had the cart's hold
-    // baked in and may be stale relative to other devices), re-fetch the
-    // latest stock and subtract only THIS sale's quantities on top of it —
-    // so a sale completed on another device at nearly the same time isn't lost.
+    // Stock deduction — computed here but NOT written to Firebase yet.
+    // FIX (multi-device stock conflict): subtract only THIS sale's
+    // quantities on top of the freshest stock, so a sale completed on
+    // another device at nearly the same time isn't lost.
     const soldQtyByMedId: Record<number, number> = {};
     cart.forEach(item => {
       soldQtyByMedId[item.id] = (soldQtyByMedId[item.id] || 0) + (parseInt(item.qty) || 0);
     });
-    updateMedicinesOnCloud(latestMeds =>
-      latestMeds.map(m =>
-        soldQtyByMedId[m.id] ? { ...m, stock: Math.max(0, m.stock - soldQtyByMedId[m.id]) } : m
-      )
+    const updatedMeds = freshMedsForValidation.map((m: any) =>
+      soldQtyByMedId[m.id] ? { ...m, stock: Math.max(0, m.stock - soldQtyByMedId[m.id]) } : m
     );
 
     let updatedDueList = [...dueList];
@@ -3225,6 +3274,7 @@ export default function Home() {
         // never lost on a later invoices-only recalculation.
         const logEntry = {
           id: genId(),
+          transactionId,
           customerName: freshExistingDue.customerName,
           phone: freshExistingDue.phone || "N/A",
           amount: prevDuePaid,
@@ -3232,8 +3282,6 @@ export default function Home() {
           date: today.toISOString()
         };
         updatedDueCollectionLog = [logEntry, ...dueCollectionLog];
-        setDueCollectionLog(updatedDueCollectionLog);
-        cloudSet('madina_v7_due_collection_log', JSON.stringify(updatedDueCollectionLog));
 
         // Update or remove previous due entry
         if (newPrevDue <= 0) {
@@ -3248,15 +3296,10 @@ export default function Home() {
 
     // Single, consistent sales/profit derivation (invoices + all due collections)
     const { sales: finalTotalSales, profit: finalTotalProfit } = computeSalesAndProfit(updatedInvoices, updatedDueCollectionLog);
-    setTotalSales(finalTotalSales);
-    setTotalProfit(finalTotalProfit);
-    cloudSet('madina_v7_sales', finalTotalSales.toString());
-    cloudSet('madina_v7_profit', finalTotalProfit.toString());
 
     if (dueAmt > 0) {
       const effectiveName = customerName.trim() || t("Regular Customer", "সাধারণ গ্রাহক");
       const effectivePhone = customerPhone || "N/A";
-
 
       // newBillDue (this new bill's own unpaid portion) is already computed
       // above and used as newInvoice.due. Prev due's unpaid portion is
@@ -3281,8 +3324,45 @@ export default function Home() {
       }
     }
 
+    // FIX (root cause): everything the sale touches — invoice, stock, sales
+    // total, profit total, due list, due collection log — is written in ONE
+    // atomic multi-path Firebase request instead of 5 independent, un-awaited
+    // ones. If the tab closes, the network drops, or the request times out,
+    // NONE of these keys change — there is no window where stock is deducted
+    // but the invoice never landed. Local React state is only updated AFTER
+    // the write is confirmed, so the on-screen UI never shows a sale that
+    // didn't actually save.
+    addToast(t("⏳ Saving sale...", "⏳ বিক্রয় সংরক্ষণ হচ্ছে..."), 'success');
+    const writeOk = await cloudMultiSet({
+      madina_v7_invoices: JSON.stringify(updatedInvoices),
+      madina_v7_meds: JSON.stringify(updatedMeds),
+      madina_v7_due_list: JSON.stringify(updatedDueList),
+      madina_v7_due_collection_log: JSON.stringify(updatedDueCollectionLog),
+      madina_v7_sales: finalTotalSales.toString(),
+      madina_v7_profit: finalTotalProfit.toString(),
+    });
+
+    if (!writeOk) {
+      // Nothing was saved — stock was never touched, invoice was never
+      // created. Tell the cashier plainly and let them retry, instead of
+      // silently losing the sale or leaving stock/invoice out of sync.
+      playSound('error');
+      alert(t(
+        `❌ Sale could NOT be saved — no internet connection or Firebase is unreachable.\n\nNOTHING was changed: stock, invoice, and totals are all unaffected.\nPlease check your connection and press "Confirm Sale" again.\n\n(Transaction ref: ${transactionId})`,
+        `❌ বিক্রয়টি সংরক্ষণ করা যায়নি — ইন্টারনেট সংযোগ নেই বা Firebase-এ পৌঁছানো যাচ্ছে না।\n\nকিছুই পরিবর্তন হয়নি: স্টক, ইনভয়েস এবং টোটাল সব আগের মতোই আছে।\nইন্টারনেট সংযোগ পরীক্ষা করে আবার "Confirm Sale" চাপুন।\n\n(ট্রানজেকশন রেফারেন্স: ${transactionId})`
+      ));
+      addToast(t("❌ Sale not saved — retry when online", "❌ বিক্রয় সংরক্ষণ হয়নি — সংযোগ ফিরলে আবার চেষ্টা করুন"), 'error');
+      return; // abort — local state untouched, cart stays as-is so the cashier can just retry
+    }
+
+    // Write confirmed — now, and only now, reflect it in local state.
+    setInvoices(updatedInvoices);
+    setLastInvoice(newInvoice);
+    setMedicines(updatedMeds);
     setDueList(updatedDueList);
-    cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
+    setDueCollectionLog(updatedDueCollectionLog);
+    setTotalSales(finalTotalSales);
+    setTotalProfit(finalTotalProfit);
 
     setCart([]); setCustomerName(""); setCustomerPhone(""); setDiscountValue("0"); setCashReceived(""); setInvoiceDue("0");
     setSelectedExistingDue(null);
