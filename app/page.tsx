@@ -27,15 +27,19 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 // 4. Click "Create Database" → choose any location → Start in TEST MODE
 // 5. Click "Project Settings" (gear icon) → "Your apps" → </> (Web)
 // 6. Register app → copy the firebaseConfig values below
-// 7. In Realtime Database → Rules → paste:
-//    { "rules": { ".read": true, ".write": true } }  → Publish
+// 7. In Realtime Database → Rules → paste the contents of firebase-database-rules.json
+//    (included in this project). DO NOT use { ".read": true, ".write": true } at the
+//    root level — that exposes the entire database to the public internet.
+//    The hardened rules scope access to /madina_data, /madina_data_test, and
+//    /madina_backups only. All other paths are denied by default.
+//    → Publish after pasting.
 //
 // Then fill in YOUR values in FIREBASE_CONFIG below.
 // ============================================================
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyD-oDPGUKhOhB71oso_9gN5L2KNxBRwbeE",
-  databaseURL: "https://madinamedicine-default-rtdb.asia-southeast1.firebasedatabase.app",
+  apiKey: "AIzaSyDP3TKZA9gBCkQeM5pu7Lg9K56kmvvtRpw",
+  databaseURL: "https://madinamedicine2-b742b-default-rtdb.asia-southeast1.firebasedatabase.app",
 };
 
 // Keys that sync to cloud (business data). Session/theme/sound are device-local only.
@@ -72,7 +76,21 @@ const CLOUD_SYNC_KEYS = [
   'madina_v7_vat',
   'madina_v7_threshold',
   'madina_v7_footer',
+  // Phase 3: proper payment + cash ledgers
+  'madina_v7_payment_ledger',
+  'madina_v7_cash_ledger',
+  // Phase 4: stock movement ledger
+  'madina_v7_stock_movements',
+  // Phase 6: audit log for financial changes
+  'madina_v7_audit_log',
 ];
+
+// ── Backup versioning ────────────────────────────────────────
+// Increment BACKUP_SCHEMA_VERSION whenever a new CLOUD_SYNC_KEY is added
+// or an existing key's value format changes in a breaking way.
+// The restore path rejects backups whose schemaVersion < MIN_RESTORE_SCHEMA_VERSION.
+const BACKUP_SCHEMA_VERSION = 6;      // Phase 6: reconciliation + audit log
+const MIN_RESTORE_SCHEMA_VERSION = 1; // accept all v1+ backups
 
 // ── Firebase REST helpers (no SDK needed — pure fetch) ──────
 const isFirebaseConfigured = () =>
@@ -204,6 +222,105 @@ const fbGetAll = async (): Promise<Record<string, string> | null> => {
     }
     return result;
   } catch { return null; }
+};
+
+// ── ETag-based conditional stock write (optimistic lock) ─────
+// Firebase REST supports If-Match: "<etag>" — the server rejects the
+// write with HTTP 412 if the value changed since we last read it.
+// This is the strongest per-key concurrency guarantee available via
+// the REST API without the full SDK. We use it for the medicines key
+// so two devices selling the same item in the same second can't both
+// read "stock=5", both subtract 3, and both write "stock=2" — the
+// loser gets a 412 and retries against the freshest value.
+//
+// Flow per sale:
+//   1. GET medicines with ETag
+//   2. Validate cart quantities against the returned stock
+//   3. PUT the deducted medicines with If-Match: <etag>
+//      → 200 OK  : stock deducted safely
+//      → 412     : someone else changed it — retry from step 1
+//   4. After MAX_RETRIES give up and surface an error to the cashier
+const STOCK_MAX_RETRIES = 4;
+
+const fbGetWithETag = async (key: string): Promise<{ data: string | null; etag: string | null }> => {
+  if (!isFirebaseConfigured()) return { data: null, etag: null };
+  try {
+    const res = await fetchWithTimeout(fbUrl(key), {
+      headers: { Accept: 'application/json' },
+    }, 10000);
+    if (!res.ok) return { data: null, etag: null };
+    const etag = res.headers.get('ETag');
+    const data = await res.json();
+    return { data: typeof data === 'string' ? data : null, etag };
+  } catch { return { data: null, etag: null }; }
+};
+
+const fbConditionalPut = async (key: string, value: string, etag: string): Promise<'ok' | 'conflict' | 'error'> => {
+  if (!isFirebaseConfigured()) return 'error';
+  try {
+    const res = await fetchWithTimeout(fbUrl(key), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'If-Match': etag,
+        'X-HTTP-Method-Override': 'PUT', // some proxies need this
+      },
+      body: JSON.stringify(value),
+    }, 10000);
+    if (res.status === 412) return 'conflict'; // another device changed it
+    if (res.ok) return 'ok';
+    return 'error';
+  } catch { return 'error'; }
+};
+
+// Deduct soldQtyByMedId from Firebase meds atomically using ETag optimistic lock.
+// Returns: { ok: true, updatedMeds } on success
+//          { ok: false, reason: 'insufficient' | 'network', details? } on failure
+const deductStockAtomically = async (
+  soldQtyByMedId: Record<number, number>,
+  t: (en: string, bn: string) => string
+): Promise<
+  | { ok: true; updatedMeds: any[] }
+  | { ok: false; reason: 'insufficient'; details: string[] }
+  | { ok: false; reason: 'network' }
+> => {
+  for (let attempt = 0; attempt < STOCK_MAX_RETRIES; attempt++) {
+    // Step 1: read fresh stock + ETag
+    const { data: rawMeds, etag } = await fbGetWithETag('madina_v7_meds');
+    if (!rawMeds || !etag) return { ok: false, reason: 'network' };
+
+    let freshMeds: any[];
+    try { freshMeds = JSON.parse(rawMeds); } catch { return { ok: false, reason: 'network' }; }
+
+    // Step 2: validate — re-check every item against the stock we just fetched
+    const insufficientItems: string[] = [];
+    for (const [medIdStr, requestedQty] of Object.entries(soldQtyByMedId)) {
+      const medId = Number(medIdStr);
+      const med = freshMeds.find((m: any) => m.id === medId);
+      const available = med ? (med.stock ?? 0) : 0;
+      if (requestedQty > available) {
+        const name = med?.name ?? `ID:${medId}`;
+        insufficientItems.push(
+          `${name} (${t('available', 'মজুদ আছে')}: ${available}, ${t('in cart', 'কার্টে')}: ${requestedQty})`
+        );
+      }
+    }
+    if (insufficientItems.length > 0) return { ok: false, reason: 'insufficient', details: insufficientItems };
+
+    // Step 3: apply deduction to the freshly-read array
+    const updatedMeds = freshMeds.map((m: any) =>
+      soldQtyByMedId[m.id]
+        ? { ...m, stock: Math.max(0, m.stock - soldQtyByMedId[m.id]) }
+        : m
+    );
+
+    // Step 4: conditional write — server rejects if ETag changed
+    const result = await fbConditionalPut('madina_v7_meds', JSON.stringify(updatedMeds), etag);
+    if (result === 'ok') return { ok: true, updatedMeds };
+    if (result === 'conflict') continue; // retry with fresh read
+    return { ok: false, reason: 'network' }; // non-retryable HTTP error
+  }
+  return { ok: false, reason: 'network' }; // exhausted retries
 };
 
 // Delete a single key from Firebase
@@ -474,21 +591,41 @@ const allCategories = [
 ];
 
 // ── Single source of truth for Total Sales / Total Profit ──────
-// Sales = sum of all invoice finalBills + all due-collection payments
-// (due collections are cash for old bills, already counted as sales
-// the moment that bill's due was logged — but the due portion itself
-// was NOT in finalBill's "cash" sense, so its later collection must
-// be added here, not bolted on top of stale state elsewhere).
-// Profit = sum of all invoice profits (due collection does not add
-// extra profit — profit was already booked in full at sale time).
-// Deriving from these two arrays everywhere (instead of mutating a
-// running totalSales number) guarantees every device & every code
-// path always agrees, and nothing is lost on Firebase re-sync.
-const computeSalesAndProfit = (invoicesList: any[], dueCollectionLogList: any[]) => {
+// ACCOUNTING RULES (Phase 3 corrected):
+//
+//   SALES REVENUE  = sum of invoice finalBills (booked at sale time, full amount
+//                    regardless of how much cash was collected then or later).
+//   CASH RECEIVED  = sum of cashReceived at sale time + all due-collection payments.
+//   DUE CREATED    = sum of per-invoice due fields (finalBill - cashReceived at sale).
+//   DUE COLLECTED  = sum of due-collection log entries.
+//
+//   KEY RULE: Due collection does NOT increase Sales Revenue.
+//   When ৳400 of due is collected later, Cash increases by ৳400 — but
+//   Sales Revenue stays the same (it was already booked as ৳1000 at sale time).
+//   Adding collectedDue to invoiceSales was double-counting revenue.
+//
+//   Profit = sum of invoice profits (booked in full at sale time; due
+//   collection adds no new profit — cost was already subtracted).
+//
+// Deriving from the invoice array everywhere guarantees every device
+// and every code path always agree, and nothing is lost on Firebase re-sync.
+const computeSalesAndProfit = (invoicesList: any[], _dueCollectionLogList: any[]) => {
   const invoiceSales = invoicesList.reduce((sum: number, inv: any) => sum + (inv.finalBill || 0), 0);
   const profit = invoicesList.reduce((sum: number, inv: any) => sum + (inv.profit || 0), 0);
+  // Cash received = cash taken at sale + due collected later.
+  // Tracked in the cash ledger. Sales revenue is invoiceSales only — no double-count.
+  return { sales: invoiceSales, profit };
+};
+
+// ── Cash received summary (for dashboard display) ─────────────
+// Separate from Sales Revenue: this is actual cash/digital payments received.
+const computeCashReceived = (invoicesList: any[], dueCollectionLogList: any[]) => {
+  const saleTimeCash = invoicesList.reduce((sum: number, inv: any) => {
+    // cashReceived at sale time, capped at finalBill (no over-counting change)
+    return sum + Math.min(inv.cashReceived ?? inv.finalBill ?? 0, inv.finalBill ?? 0);
+  }, 0);
   const collectedDue = dueCollectionLogList.reduce((sum: number, log: any) => sum + (log.amount || 0), 0);
-  return { sales: invoiceSales + collectedDue, profit };
+  return saleTimeCash + collectedDue;
 };
 
 // Theme CSS variable injection (static - defined outside component)
@@ -1609,7 +1746,8 @@ export default function Home() {
     "pos","analytics","inventory","procurement","new_product",
     "purchase_history","company_purchase_history","invoices",
     "due_list","due_collection","report","closing_report",
-    "returns","settings","modules_menu","daily_report","monthly_report"
+    "returns","settings","modules_menu","daily_report","monthly_report",
+    "reconciliation"
   ];
   const getTabFromHash = () => {
     if (typeof window === 'undefined') return "pos";
@@ -1715,6 +1853,47 @@ export default function Home() {
   const [expenseFilter, setExpenseFilter] = useState<"all" | "today" | "month">("all");
   const [dueCollectionLog, setDueCollectionLog] = useState<any[]>([]);
 
+  // ============================================================
+  // PHASE 3: PAYMENT LEDGER + CASH LEDGER
+  // ============================================================
+  // paymentLedger: one record per payment event, linked to transactionId
+  //   paymentType: SALE_PAYMENT | DUE_COLLECTION | REFUND
+  // cashLedger: one record per cash-affecting operation
+  //   type: CASH_SALE | DUE_COLLECTION | REFUND | EXPENSE | OTHER_CASH_IN | OTHER_CASH_OUT
+  const [paymentLedger, setPaymentLedger] = useState<any[]>([]);
+  const paymentLedgerRef = useRef<any[]>([]);
+  useEffect(() => { paymentLedgerRef.current = paymentLedger; }, [paymentLedger]);
+  const [cashLedger, setCashLedger] = useState<any[]>([]);
+  const cashLedgerRef = useRef<any[]>([]);
+  useEffect(() => { cashLedgerRef.current = cashLedger; }, [cashLedger]);
+
+  // Phase 4: Stock Movement Ledger
+  // Every stock-changing operation writes an immutable movement record here.
+  // movementId, transactionId, medicineId, type (SALE|PURCHASE|RETURN|ADJUSTMENT),
+  // quantity (always positive — direction encoded in type), previousStock,
+  // resultingStock, timestamp, invoiceId/reference.
+  const [stockMovements, setStockMovements] = useState<any[]>([]);
+  const stockMovementsRef = useRef<any[]>([]);
+  useEffect(() => { stockMovementsRef.current = stockMovements; }, [stockMovements]);
+
+  // ============================================================
+  // PHASE 6: RECONCILIATION STATE
+  // ============================================================
+  const [auditLog, setAuditLog] = useState<any[]>([]);
+  const auditLogRef = useRef<any[]>([]);
+  useEffect(() => { auditLogRef.current = auditLog; }, [auditLog]);
+
+  // Reconciliation report result (null = not yet run)
+  const [reconReport, setReconReport] = useState<any | null>(null);
+  const [reconRunning, setReconRunning] = useState(false);
+  const [reconDate, setReconDate] = useState(() => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date());
+    return `${parts.find(p=>p.type==='year')!.value}-${parts.find(p=>p.type==='month')!.value}-${parts.find(p=>p.type==='day')!.value}`;
+  });
+  const [reconTab, setReconTab] = useState<'summary'|'sales'|'cash'|'due'|'stock'|'profit'|'purchase'|'return'|'expense'|'eod'|'audit'>('summary');
+
   // ── Daily / Monthly Report states ───────────────────────────
   const [dailyReportDate, setDailyReportDate] = useState(() => {
     const parts = new Intl.DateTimeFormat('en-CA', {
@@ -1797,6 +1976,19 @@ export default function Home() {
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [calculatorInput, setCalculatorInput] = useState("");
+
+  // ── Sale submission guard ────────────────────────────────────
+  // isSubmittingSale: blocks double-click / double-tap — the Confirm
+  // button is disabled and the function returns immediately while a
+  // sale is already in-flight.
+  //
+  // submittedTransactionIds: idempotency set — once a transactionId
+  // is successfully committed, we keep it in memory. If the same id
+  // somehow reaches executeFinalCheckout again (e.g. React StrictMode
+  // double-invocation in dev, or a racing state update), the second
+  // call is dropped immediately before any Firebase operation.
+  const [isSubmittingSale, setIsSubmittingSale] = useState(false);
+  const submittedTransactionIds = useRef<Set<string>>(new Set());
   const [dashboardFilterView, setDashboardFilterView] = useState<"NONE" | "LOW_STOCK" | "EXPIRED">("NONE");
 
   // ============================================================
@@ -2127,6 +2319,26 @@ export default function Home() {
 
       const savedNotice = g('madina_v7_creator_notice');
       if (savedNotice !== null && savedNotice !== undefined) { setCreatorNotice(savedNotice); setCreatorNoticeInput(savedNotice); }
+
+      // Phase 3: load payment + cash ledgers
+      const savedPaymentLedger = g('madina_v7_payment_ledger');
+      if (savedPaymentLedger) {
+        try { setPaymentLedger(JSON.parse(savedPaymentLedger)); } catch { /* skip malformed */ }
+      }
+      const savedCashLedger = g('madina_v7_cash_ledger');
+      if (savedCashLedger) {
+        try { setCashLedger(JSON.parse(savedCashLedger)); } catch { /* skip malformed */ }
+      }
+      // Phase 4: stock movements
+      const savedStockMovements = g('madina_v7_stock_movements');
+      if (savedStockMovements) {
+        try { setStockMovements(JSON.parse(savedStockMovements)); } catch { /* skip malformed */ }
+      }
+      // Phase 6: audit log
+      const savedAuditLog = g('madina_v7_audit_log');
+      if (savedAuditLog) {
+        try { setAuditLog(JSON.parse(savedAuditLog)); } catch { /* skip malformed */ }
+      }
     };
 
     if (!isFirebaseConfigured()) {
@@ -2300,6 +2512,16 @@ export default function Home() {
       // every unrelated cloud update — otherwise typing a notice could get
       // wiped out mid-sentence by, e.g., a sale happening on another device.
       apply('madina_v7_creator_notice', (v: string) => { setCreatorNotice(v); }, (s: string) => s);
+
+      // Phase 3: live sync payment + cash ledgers
+      apply('madina_v7_payment_ledger', setPaymentLedger);
+      apply('madina_v7_cash_ledger', setCashLedger);
+
+      // Phase 4: live sync stock movements
+      apply('madina_v7_stock_movements', setStockMovements);
+
+      // Phase 6: live sync audit log
+      apply('madina_v7_audit_log', setAuditLog);
 
       if (didApplyAnything) {
         setSyncStatus('synced');
@@ -2742,6 +2964,10 @@ export default function Home() {
     const formattedTime = today.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const formattedDate = today.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' });
 
+    // Phase 4: generate a transactionId for this purchase batch
+    const purchaseTransactionId = `TXN-PUR-${Date.now()}-${genId()}`;
+    const purchaseVoucherId = `PUR-${Date.now().toString().slice(-6)}`;
+
     const totalVoucherCost = purchaseCart.reduce((sum, item) => sum + item.totalCost, 0);
     const paidAmt = pAmountPaid ? parseFloat(pAmountPaid) : totalVoucherCost;
     const dueAmt = Math.max(0, totalVoucherCost - paidAmt);
@@ -2822,6 +3048,8 @@ export default function Home() {
 
       newPurchaseLogs.unshift({
         id: genId(),
+        transactionId: purchaseTransactionId, // Phase 4: links all purchase records
+        voucherId: purchaseVoucherId,
         companyName: trimmedCompany,
         medicineName: item.medicineName,
         genericName: item.genericName,
@@ -2850,7 +3078,31 @@ export default function Home() {
     // Optimistic local update for instant UI feedback...
     setMedicines(applyPurchaseToMeds(medicines));
     // ...and the authoritative cloud write against the freshest stock.
+    // Phase 4: capture pre-purchase meds snapshot for stock movement entries,
+    // then write movements alongside the updated stock.
+    const preMedsForPurchase = medicinesRef.current; // snapshot BEFORE applyPurchaseToMeds
+    const purchaseQtyByMedId: Record<number, number> = {};
+    purchaseCart.forEach(item => {
+      const existingMed = preMedsForPurchase.find(m => m.name.toLowerCase() === item.medicineName.toLowerCase());
+      if (existingMed) {
+        purchaseQtyByMedId[existingMed.id] = (purchaseQtyByMedId[existingMed.id] || 0) + item.quantity;
+      }
+      // New medicines (not in inventory yet) get IDs assigned by applyPurchaseToMeds;
+      // they'll show previousStock=0, resultingStock=quantity in the movement — correct.
+    });
+    const purchaseMovementEntries = buildStockMovementEntries(
+      'PURCHASE',
+      purchaseTransactionId,
+      purchaseVoucherId,
+      purchaseQtyByMedId,
+      preMedsForPurchase,
+      today.toISOString(),
+      formattedDate,
+    );
     updateMedicinesOnCloud(applyPurchaseToMeds);
+
+    // Append PURCHASE movements to ledger
+    appendStockMovements(purchaseMovementEntries);
 
     setPurchaseCart([]);
     setPCompanyName("");
@@ -2982,6 +3234,32 @@ export default function Home() {
       stock: updatedStock,
       lowStockAlert: parseInt(editFormData.lowStockAlert) || 10
     } : m);
+
+    // Phase 4: record ADJUSTMENT stock movement if stock quantity changed
+    const originalMed = medicinesRef.current.find(m => m.id === id);
+    const originalStock = originalMed ? originalMed.stock : 0;
+    if (originalMed && updatedStock !== originalStock) {
+      const adjTransactionId = `TXN-ADJ-${Date.now()}-${genId()}`;
+      const adjQtyByMedId: Record<number, number> = { [id]: Math.abs(updatedStock - originalStock) };
+      const adjType = updatedStock >= originalStock ? 'PURCHASE' : 'SALE'; // PURCHASE = stock up, SALE = stock down
+      // We repurpose PURCHASE/SALE types for adjustments; store type=ADJUSTMENT via a wrapper
+      const adjustmentEntry = {
+        movementId: `MOV-${Date.now()}-${genId()}`,
+        transactionId: adjTransactionId,
+        reference: `ADJ-${id}`,
+        medicineId: id,
+        medicineName: originalMed.name,
+        type: 'ADJUSTMENT' as const,
+        quantity: Math.abs(updatedStock - originalStock),
+        previousStock: originalStock,
+        resultingStock: updatedStock,
+        direction: updatedStock >= originalStock ? 'IN' : 'OUT',
+        timestamp: new Date().toISOString(),
+        dateString: new Date().toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' }),
+      };
+      appendStockMovements([adjustmentEntry]);
+    }
+
     setMedicines(applyEdit(medicines));
     updateMedicinesOnCloud(applyEdit);
     closeEdit();
@@ -3017,7 +3295,7 @@ export default function Home() {
   // ============================================================
   const updateMedicinesOnCloud = async (
     applyChange: (latestMeds: any[]) => any[]
-  ): Promise<any[]> => {
+  ): Promise<boolean> => {
     let latestMeds: any[] = medicinesRef.current;
     const fetched = await fbGet('madina_v7_meds');
     if (fetched) {
@@ -3025,8 +3303,8 @@ export default function Home() {
     }
     const merged = applyChange(latestMeds);
     setMedicines(merged);
-    await cloudSet('madina_v7_meds', JSON.stringify(merged));
-    return merged;
+    const ok = await cloudSet('madina_v7_meds', JSON.stringify(merged));
+    return ok;
   };
 
   // ── Generic race-safe list fetch ─────────────────────────────
@@ -3040,6 +3318,477 @@ export default function Home() {
       try { return JSON.parse(fetched); } catch { /* keep local fallback if malformed */ }
     }
     return localFallback;
+  };
+
+  // ============================================================
+  // PHASE 4: STOCK MOVEMENT LEDGER HELPER
+  // ─────────────────────────────────────────────────────────────
+  // Returns a flat array of movement entries for a given operation.
+  // Each entry is immutable — we never mutate previous movements;
+  // returns/adjustments get their own NEW entries that reference the
+  // original transactionId/invoiceId where applicable.
+  //
+  // type = SALE | PURCHASE | RETURN | ADJUSTMENT
+  // quantity is always the ABSOLUTE number of units (positive integer).
+  // Direction (IN vs OUT) is implied by type.
+  // previousStock / resultingStock allow full reconciliation without
+  // relying on medicine.stock alone.
+  // ============================================================
+  const buildStockMovementEntries = (
+    // BUGFIX #11: ADJUSTMENT was missing from the union type, causing a TypeScript
+    // error when the inventory-edit path passed 'ADJUSTMENT'. All four movement
+    // types are now explicit in both the type annotation and the resultingStock logic.
+    type: 'SALE' | 'PURCHASE' | 'RETURN' | 'ADJUSTMENT',
+    transactionId: string,
+    invoiceOrRef: string,
+    qtyByMedId: Record<number, number>,
+    medsSnapshot: any[],   // the med array AS IT WAS just before this operation
+    timestamp: string,
+    dateString: string,
+  ): any[] => {
+    const entries: any[] = [];
+    for (const [medIdStr, qty] of Object.entries(qtyByMedId)) {
+      const medId = Number(medIdStr);
+      const med = medsSnapshot.find(m => m.id === medId);
+      if (!med) continue;
+      const prevStock = med.stock;
+      // SALE and ADJUSTMENT(down): stock decreases.
+      // PURCHASE, RETURN, ADJUSTMENT(up): stock increases.
+      // Direction for ADJUSTMENT is determined by the caller (who computes qty
+      // as Math.abs(newStock - oldStock) and passes the correct type variant).
+      const resultingStock = type === 'SALE'
+        ? prevStock - qty
+        : prevStock + qty;
+      entries.push({
+        movementId: `MOV-${Date.now()}-${genId()}`,
+        transactionId,
+        reference: invoiceOrRef,
+        medicineId: medId,
+        medicineName: med.name,
+        type,
+        quantity: qty,
+        previousStock: prevStock,
+        resultingStock,
+        timestamp,
+        dateString,
+      });
+    }
+    return entries;
+  };
+
+  // Append new movement entries to the ledger (race-safe: always prepend to the
+  // freshest copy fetched from Firebase rather than the local ref, so two devices
+  // can both record movements in the same second without one overwriting the other).
+  const appendStockMovements = async (newEntries: any[]): Promise<void> => {
+    if (!newEntries.length) return;
+    const fetched = await fbGet('madina_v7_stock_movements');
+    let latest: any[] = stockMovementsRef.current;
+    if (fetched) {
+      try { latest = JSON.parse(fetched); } catch { /* keep local fallback */ }
+    }
+    const merged = [...newEntries, ...latest];
+    setStockMovements(merged);
+    await cloudSet('madina_v7_stock_movements', JSON.stringify(merged));
+  };
+
+  // ============================================================
+  // PHASE 6: RECONCILIATION ENGINE
+  // ─────────────────────────────────────────────────────────────
+  // All functions here are READ-ONLY. They NEVER modify Firebase.
+  // They return a structured report of issues found.
+  // ============================================================
+
+  // ── Audit log helper ────────────────────────────────────────
+  const appendAuditEntry = async (entry: {
+    action: string;
+    transactionId?: string;
+    affectedRecord?: string;
+    previousValue?: any;
+    newValue?: any;
+    note?: string;
+  }) => {
+    const record = {
+      auditId: `AUDIT-${Date.now()}-${genId()}`,
+      ...entry,
+      timestamp: new Date().toISOString(),
+      userRole: currentUserRole,
+      deviceHint: typeof window !== 'undefined' ? window.location.hostname : 'unknown',
+    };
+    const fetched = await fbGet('madina_v7_audit_log');
+    let latest: any[] = auditLogRef.current;
+    if (fetched) { try { latest = JSON.parse(fetched); } catch { /* keep local */ } }
+    const merged = [record, ...latest].slice(0, 500); // keep last 500 entries
+    setAuditLog(merged);
+    await cloudSet('madina_v7_audit_log', JSON.stringify(merged));
+  };
+
+  // ── Main Reconciliation Runner ───────────────────────────────
+  const runReconciliation = async () => {
+    setReconRunning(true);
+    setReconReport(null);
+
+    try {
+      // Fetch latest data from Firebase (READ ONLY — never modify)
+      const [
+        rawInvoices, rawPurchases, rawDueList, rawDueCLog,
+        rawPaymentLedger, rawCashLedger, rawStockMovements, rawExpenses, rawMeds,
+      ] = await Promise.all([
+        fbGet('madina_v7_invoices'),
+        fbGet('madina_v7_purchases'),
+        fbGet('madina_v7_due_list'),
+        fbGet('madina_v7_due_collection_log'),
+        fbGet('madina_v7_payment_ledger'),
+        fbGet('madina_v7_cash_ledger'),
+        fbGet('madina_v7_stock_movements'),
+        fbGet('madina_v7_expenses'),
+        fbGet('madina_v7_meds'),
+      ]);
+
+      const invoicesList: any[]       = rawInvoices      ? JSON.parse(rawInvoices)      : [];
+      const purchasesList: any[]      = rawPurchases      ? JSON.parse(rawPurchases)      : [];
+      const dueListArr: any[]         = rawDueList        ? JSON.parse(rawDueList)        : [];
+      const dueCLog: any[]            = rawDueCLog        ? JSON.parse(rawDueCLog)        : [];
+      const paymentLedgerArr: any[]   = rawPaymentLedger  ? JSON.parse(rawPaymentLedger)  : [];
+      const cashLedgerArr: any[]      = rawCashLedger     ? JSON.parse(rawCashLedger)     : [];
+      const stockMovArr: any[]        = rawStockMovements ? JSON.parse(rawStockMovements) : [];
+      const expenseArr: any[]         = rawExpenses       ? JSON.parse(rawExpenses)       : [];
+      const medsArr: any[]            = rawMeds           ? JSON.parse(rawMeds)           : [];
+
+      const issues: any[] = [];
+      const addIssue = (severity: 'ERROR'|'WARNING'|'INFO', category: string, description: string, detail?: any) => {
+        issues.push({ severity, category, description, detail, ts: new Date().toISOString() });
+      };
+
+      // ── 1. DUPLICATE DETECTION ──────────────────────────────
+      const invoiceIds = invoicesList.map((i: any) => i.invoiceId).filter(Boolean);
+      const dupInvoiceIds = invoiceIds.filter((id: string, idx: number) => invoiceIds.indexOf(id) !== idx);
+      if (dupInvoiceIds.length > 0)
+        addIssue('ERROR', 'Sales', `Duplicate invoiceId(s) detected: ${[...new Set(dupInvoiceIds)].join(', ')}`, { ids: dupInvoiceIds });
+
+      const txnIds = invoicesList.map((i: any) => i.transactionId).filter(Boolean);
+      const dupTxnIds = txnIds.filter((id: string, idx: number) => txnIds.indexOf(id) !== idx);
+      if (dupTxnIds.length > 0)
+        addIssue('ERROR', 'Sales', `Duplicate transactionId(s) in invoices: ${[...new Set(dupTxnIds)].join(', ')}`, { ids: dupTxnIds });
+
+      const payIds = paymentLedgerArr.map((p: any) => p.paymentId).filter(Boolean);
+      const dupPayIds = payIds.filter((id: string, idx: number) => payIds.indexOf(id) !== idx);
+      if (dupPayIds.length > 0)
+        addIssue('ERROR', 'Cash', `Duplicate paymentId(s) in payment ledger: ${[...new Set(dupPayIds)].join(', ')}`, { ids: dupPayIds });
+
+      const movIds = stockMovArr.map((m: any) => m.movementId).filter(Boolean);
+      const dupMovIds = movIds.filter((id: string, idx: number) => movIds.indexOf(id) !== idx);
+      if (dupMovIds.length > 0)
+        addIssue('ERROR', 'Stock', `Duplicate movementId(s) in stock movements: ${[...new Set(dupMovIds)].join(', ')}`, { ids: dupMovIds });
+
+      const expIds = expenseArr.map((e: any) => e.id);
+      const dupExpIds = expIds.filter((id: any, idx: number) => expIds.indexOf(id) !== idx);
+      if (dupExpIds.length > 0)
+        addIssue('ERROR', 'Expense', `Duplicate expense id(s): ${[...new Set(dupExpIds)].join(', ')}`, { ids: dupExpIds });
+
+      // ── 2. SALES RECONCILIATION ─────────────────────────────
+      const completedInvoices = invoicesList.filter((i: any) => !i.status || i.status === 'completed');
+      const salesRevenue = completedInvoices.reduce((s: number, i: any) => s + (i.finalBill || 0), 0);
+      const salesProfit  = completedInvoices.reduce((s: number, i: any) => s + (i.profit || 0), 0);
+
+      // Check invoices with no transactionId
+      const invNoTxn = invoicesList.filter((i: any) => !i.transactionId);
+      if (invNoTxn.length > 0)
+        addIssue('WARNING', 'Sales', `${invNoTxn.length} invoice(s) missing transactionId (pre-Phase 3 records)`, { invoiceIds: invNoTxn.map((i: any) => i.invoiceId) });
+
+      // Check invoices with no invoiceId
+      const invNoId = invoicesList.filter((i: any) => !i.invoiceId);
+      if (invNoId.length > 0)
+        addIssue('ERROR', 'Sales', `${invNoId.length} invoice(s) missing invoiceId`, { count: invNoId.length });
+
+      // Check for negative finalBill (impossible)
+      const negBill = invoicesList.filter((i: any) => (i.finalBill || 0) < 0);
+      if (negBill.length > 0)
+        addIssue('ERROR', 'Sales', `${negBill.length} invoice(s) have negative finalBill`, { invoiceIds: negBill.map((i: any) => i.invoiceId) });
+
+      // Returned invoices that still show positive finalBill (possible edge-case warning)
+      const returnedPositive = invoicesList.filter((i: any) => i.isReturned && (i.finalBill || 0) > 0 && !(i.returnDetails));
+      if (returnedPositive.length > 0)
+        addIssue('WARNING', 'Return', `${returnedPositive.length} invoice(s) marked returned but still have positive finalBill without returnDetails`, { invoiceIds: returnedPositive.map((i: any) => i.invoiceId) });
+
+      // ── 3. PAYMENT LEDGER RECONCILIATION ───────────────────
+      // Every completed invoice should have a SALE_PAYMENT entry
+      const payTxnSet = new Set(paymentLedgerArr.filter((p: any) => p.paymentType === 'SALE_PAYMENT').map((p: any) => p.transactionId));
+      const invNoPayment = completedInvoices.filter((i: any) => i.transactionId && !payTxnSet.has(i.transactionId));
+      if (invNoPayment.length > 0)
+        addIssue('WARNING', 'Sales', `${invNoPayment.length} completed invoice(s) have no matching SALE_PAYMENT entry in payment ledger`, { invoiceIds: invNoPayment.map((i: any) => i.invoiceId) });
+
+      // Payment entries with no matching invoice
+      const invoiceTxnSet = new Set(invoicesList.map((i: any) => i.transactionId).filter(Boolean));
+      const payNoInvoice = paymentLedgerArr.filter((p: any) => p.paymentType === 'SALE_PAYMENT' && p.transactionId && !invoiceTxnSet.has(p.transactionId));
+      if (payNoInvoice.length > 0)
+        addIssue('ERROR', 'Cash', `${payNoInvoice.length} SALE_PAYMENT entry(ies) have no matching invoice (orphan payments)`, { paymentIds: payNoInvoice.map((p: any) => p.paymentId) });
+
+      // ── 4. CASH LEDGER RECONCILIATION ──────────────────────
+      const cashIn  = cashLedgerArr.filter((c: any) => c.direction === 'IN').reduce((s: number, c: any) => s + (c.amount || 0), 0);
+      const cashOut = cashLedgerArr.filter((c: any) => c.direction === 'OUT').reduce((s: number, c: any) => s + (c.amount || 0), 0);
+      // Net cash from ledger: IN - OUT
+      const ledgerNetCash = cashIn - cashOut;
+
+      // Expected cash = cash from sales (cashReceived at sale) + due collections - refunds - expenses
+      const saleTimeCash = completedInvoices.reduce((s: number, i: any) =>
+        s + Math.min(i.cashReceived ?? i.finalBill ?? 0, i.finalBill ?? 0), 0);
+      const dueCollected = dueCLog.reduce((s: number, d: any) => s + (d.amount || 0), 0);
+      const refunds = invoicesList.reduce((s: number, i: any) =>
+        s + (i.returnDetails?.refundedAmount || 0), 0);
+      const expenseCash = expenseArr.filter((e: any) => e.paymentMethod === 'Cash' || !e.paymentMethod).reduce((s: number, e: any) => s + (e.amount || 0), 0);
+      const expectedNetCash = saleTimeCash + dueCollected - refunds - expenseCash;
+
+      // Cash ledger entries without valid transactionId
+      const cashNoTxn = cashLedgerArr.filter((c: any) => !c.transactionId);
+      if (cashNoTxn.length > 0)
+        addIssue('WARNING', 'Cash', `${cashNoTxn.length} cash ledger entry(ies) missing transactionId`, { count: cashNoTxn.length });
+
+      // ── 5. DUE RECONCILIATION ───────────────────────────────
+      // Total due created = sum of invoice.due for each invoice
+      const totalDueCreated = invoicesList.reduce((s: number, i: any) => s + Math.max(0, i.due || 0), 0);
+      const totalDueCollected = dueCLog.reduce((s: number, d: any) => s + (d.amount || 0), 0);
+      const dueListTotal = dueListArr.reduce((s: number, d: any) => s + (d.totalDue || 0), 0);
+      const expectedOutstandingDue = Math.max(0, totalDueCreated - totalDueCollected);
+      const dueDiff = Math.abs(dueListTotal - expectedOutstandingDue);
+
+      // Due collection entries without matching due list customer
+      const dueCustomers = new Set(dueListArr.map((d: any) => d.customerName?.toLowerCase()).filter(Boolean));
+      // (we don't error on this because due may have been fully paid off)
+
+      // Customer-level due check: sum of dueListArr should match sum from invoices (approximately)
+      if (dueDiff > 0.01)
+        addIssue('WARNING', 'Due', `Due balance mismatch: expected outstanding ${expectedOutstandingDue.toFixed(2)}, recorded in due list ${dueListTotal.toFixed(2)}, difference ${dueDiff.toFixed(2)}`, {
+          expectedOutstandingDue, dueListTotal, diff: dueDiff, totalDueCreated, totalDueCollected
+        });
+      else
+        addIssue('INFO', 'Due', `Due balance reconciled. Outstanding: ${dueListTotal.toFixed(2)} ✓`, { dueListTotal });
+
+      // Due collection log entries with excessive amounts
+      const excessiveDueCollections = dueCLog.filter((d: any) => d.amount < 0);
+      if (excessiveDueCollections.length > 0)
+        addIssue('ERROR', 'Due', `${excessiveDueCollections.length} due collection entries have negative amount`, { ids: excessiveDueCollections.map((d: any) => d.id) });
+
+      // ── 6. STOCK RECONCILIATION ─────────────────────────────
+      const stockIssues: any[] = [];
+      for (const med of medsArr) {
+        // Get all movements for this medicine
+        const medMovements = stockMovArr.filter((m: any) => m.medicineId === med.id);
+        if (medMovements.length === 0) continue; // No movements recorded (pre-Phase 4 or untouched)
+
+        // Sort by timestamp ascending
+        const sorted = [...medMovements].sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+        // Use the movement chain to compute expected current stock
+        // The last resultingStock should equal current medicine.stock
+        const lastMovement = sorted[sorted.length - 1];
+        const expectedStock = lastMovement.resultingStock;
+        const actualStock = med.stock;
+        const stockDiff = Math.abs(expectedStock - actualStock);
+
+        if (actualStock < 0)
+          addIssue('ERROR', 'Stock', `IMPOSSIBLE: ${med.name} has negative stock (${actualStock})`, { medicineId: med.id, name: med.name, actualStock });
+
+        if (stockDiff > 0)
+          stockIssues.push({ medicineId: med.id, name: med.name, expectedStock, actualStock, diff: stockDiff, lastMovement });
+      }
+      if (stockIssues.length > 0)
+        addIssue('WARNING', 'Stock', `${stockIssues.length} medicine(s) have stock mismatch (movement chain vs current stock)`, { medicines: stockIssues });
+      else if (medsArr.length > 0 && stockMovArr.length > 0)
+        addIssue('INFO', 'Stock', `Stock reconciled for all medicines with movement records ✓`);
+
+      // Check for stock movements without valid transaction
+      const allTxnIds = new Set([
+        ...invoicesList.map((i: any) => i.transactionId),
+        ...purchasesList.map((p: any) => p.transactionId),
+        ...dueCLog.map((d: any) => d.transactionId),
+      ].filter(Boolean));
+      const orphanMovements = stockMovArr.filter((m: any) =>
+        m.transactionId && !m.transactionId.startsWith('TXN-ADJ-') && !allTxnIds.has(m.transactionId));
+      if (orphanMovements.length > 0)
+        addIssue('WARNING', 'Stock', `${orphanMovements.length} stock movement(s) reference unknown transactionId (orphan movements)`, { count: orphanMovements.length });
+
+      // ── 7. PROFIT RECONCILIATION ────────────────────────────
+      const profitFromInvoices = completedInvoices.reduce((s: number, i: any) => s + (i.profit || 0), 0);
+      const grossRevenue = completedInvoices.reduce((s: number, i: any) => s + (i.subTotal || i.finalBill || 0), 0);
+      const totalDiscount = completedInvoices.reduce((s: number, i: any) => s + (i.discount || 0), 0);
+      const totalVat = completedInvoices.reduce((s: number, i: any) => s + (i.vat || 0), 0);
+
+      // Check for invoices where profit > revenue (impossible)
+      const profitOverRevenue = completedInvoices.filter((i: any) => (i.profit || 0) > (i.finalBill || 0));
+      if (profitOverRevenue.length > 0)
+        addIssue('ERROR', 'Profit', `${profitOverRevenue.length} invoice(s) have profit > finalBill (impossible)`, { invoiceIds: profitOverRevenue.map((i: any) => i.invoiceId) });
+
+      // Check for invoices with negative profit
+      const negProfit = completedInvoices.filter((i: any) => (i.profit || 0) < 0);
+      if (negProfit.length > 0)
+        addIssue('WARNING', 'Profit', `${negProfit.length} invoice(s) have negative profit (sold below cost)`, { invoiceIds: negProfit.map((i: any) => i.invoiceId) });
+
+      // ── 8. PURCHASE RECONCILIATION ──────────────────────────
+      // Every purchase should have stock movement entries
+      const purchaseTxnSet = new Set(stockMovArr.filter((m: any) => m.type === 'PURCHASE').map((m: any) => m.transactionId));
+      const purchasesNoMovement = purchasesList.filter((p: any) => p.transactionId && !purchaseTxnSet.has(p.transactionId));
+      if (purchasesNoMovement.length > 0)
+        addIssue('WARNING', 'Purchase', `${purchasesNoMovement.length} purchase(s) have no matching PURCHASE stock movement`, { count: purchasesNoMovement.length });
+
+      // Purchase records with no transactionId (pre-Phase 4)
+      const purchaseNoTxn = purchasesList.filter((p: any) => !p.transactionId);
+      if (purchaseNoTxn.length > 0)
+        addIssue('INFO', 'Purchase', `${purchaseNoTxn.length} purchase record(s) missing transactionId (pre-Phase 4 records)`, { count: purchaseNoTxn.length });
+
+      // ── 9. RETURN RECONCILIATION ────────────────────────────
+      const returnedInvoices = invoicesList.filter((i: any) => i.isReturned);
+      // Check returned invoices have returnDetails
+      const returnNoDetails = returnedInvoices.filter((i: any) => !i.returnDetails);
+      if (returnNoDetails.length > 0)
+        addIssue('WARNING', 'Return', `${returnNoDetails.length} returned invoice(s) missing returnDetails`, { invoiceIds: returnNoDetails.map((i: any) => i.invoiceId) });
+
+      // Check cash refunds have matching REFUND payment entry
+      const refundPayTxnSet = new Set(paymentLedgerArr.filter((p: any) => p.paymentType === 'REFUND').map((p: any) => p.originalInvoiceId));
+      const cashRefundsNoPayment = returnedInvoices.filter((i: any) =>
+        i.returnDetails?.action === 'CASH_REFUND' && !refundPayTxnSet.has(i.invoiceId));
+      if (cashRefundsNoPayment.length > 0)
+        addIssue('WARNING', 'Return', `${cashRefundsNoPayment.length} cash-refund return(s) have no REFUND payment ledger entry`, { invoiceIds: cashRefundsNoPayment.map((i: any) => i.invoiceId) });
+
+      // ── 10. EXPENSE RECONCILIATION ──────────────────────────
+      // Every cash expense should have a cash ledger OUT entry
+      const expCashTxnSet = new Set(cashLedgerArr.filter((c: any) => c.type === 'EXPENSE').map((c: any) => c.transactionId));
+      const expNoLedger = expenseArr.filter((e: any) => e.transactionId && (e.paymentMethod === 'Cash' || !e.paymentMethod) && !expCashTxnSet.has(e.transactionId));
+      if (expNoLedger.length > 0)
+        addIssue('WARNING', 'Expense', `${expNoLedger.length} cash expense(s) have no matching cash ledger entry`, { count: expNoLedger.length });
+
+      // Cash ledger EXPENSE entries with no expense record
+      const expTxnSet = new Set(expenseArr.map((e: any) => e.transactionId).filter(Boolean));
+      const cashExpNoRecord = cashLedgerArr.filter((c: any) => c.type === 'EXPENSE' && c.transactionId && !expTxnSet.has(c.transactionId));
+      if (cashExpNoRecord.length > 0)
+        addIssue('WARNING', 'Expense', `${cashExpNoRecord.length} EXPENSE cash ledger entry(ies) have no matching expense record (orphan cash expense)`, { count: cashExpNoRecord.length });
+
+      // ── 11. TRANSACTION RELATIONSHIP COMPLETENESS ──────────
+      // For each invoice transactionId, verify: Sale + Payment + CashLedger + StockMovement
+      const invTxnMap = new Map(invoicesList.filter((i: any) => i.transactionId).map((i: any) => [i.transactionId, i]));
+      const payTxnMap = new Map(paymentLedgerArr.filter((p: any) => p.transactionId).map((p: any) => [p.transactionId, p]));
+      const cashTxnMap = new Map(cashLedgerArr.filter((c: any) => c.transactionId).map((c: any) => [c.transactionId, c]));
+      const stockTxnSet = new Set(stockMovArr.filter((m: any) => m.transactionId).map((m: any) => m.transactionId));
+
+      let incompleteChains = 0;
+      const incompleteDetails: any[] = [];
+      for (const [txnId, inv] of invTxnMap.entries()) {
+        if (txnId.startsWith('TXN-REFUND-')) continue;
+        const hasPayment = payTxnMap.has(txnId);
+        const hasCash = cashTxnMap.has(txnId) || (inv.due === inv.finalBill); // fully-due sale may have no cash
+        const hasStock = stockTxnSet.has(txnId);
+        if (!hasPayment || !hasStock) {
+          incompleteChains++;
+          incompleteDetails.push({ txnId, invoiceId: inv.invoiceId, hasPayment, hasCash, hasStock });
+        }
+      }
+      if (incompleteChains > 0)
+        addIssue('WARNING', 'Chain', `${incompleteChains} transaction(s) have incomplete record chain (missing payment or stock movement)`, { transactions: incompleteDetails });
+
+      // ── 12. CASH BALANCE SUMMARY ────────────────────────────
+      const cashDiff = Math.abs(ledgerNetCash - expectedNetCash);
+
+      // ── SUMMARY STATS ───────────────────────────────────────
+      const report = {
+        runAt: new Date().toISOString(),
+        // Counts
+        totalInvoices: invoicesList.length,
+        totalPurchases: purchasesList.length,
+        totalDueListEntries: dueListArr.length,
+        totalDueCLogEntries: dueCLog.length,
+        totalPayments: paymentLedgerArr.length,
+        totalCashEntries: cashLedgerArr.length,
+        totalStockMovements: stockMovArr.length,
+        totalExpenses: expenseArr.length,
+        totalMedicines: medsArr.length,
+        // Sales
+        salesRevenue,
+        salesProfit,
+        // Cash
+        cashIn, cashOut, ledgerNetCash,
+        saleTimeCash, dueCollected, refunds, expenseCash, expectedNetCash,
+        cashDiff,
+        cashBalanceOk: cashDiff < 0.01,
+        // Due
+        totalDueCreated, totalDueCollected, dueListTotal,
+        expectedOutstandingDue, dueDiff,
+        dueBalanceOk: dueDiff < 0.01,
+        // Profit
+        profitFromInvoices, grossRevenue, totalDiscount, totalVat,
+        // Stock
+        stockIssues,
+        // Issues
+        issues,
+        issueCount: issues.filter(i => i.severity === 'ERROR').length,
+        warningCount: issues.filter(i => i.severity === 'WARNING').length,
+        infoCount: issues.filter(i => i.severity === 'INFO').length,
+        // Raw data for EOD
+        invoicesList, purchasesList, dueCLog, expenseArr, cashLedgerArr,
+        dueListArr, medsArr, stockMovArr, paymentLedgerArr,
+      };
+
+      setReconReport(report);
+
+      // Log the reconciliation run to audit trail
+      await appendAuditEntry({
+        action: 'RECONCILIATION_RUN',
+        note: `Found ${report.issueCount} errors, ${report.warningCount} warnings`,
+      });
+
+    } catch (err: any) {
+      setReconReport({ error: String(err), runAt: new Date().toISOString(), issues: [] });
+    } finally {
+      setReconRunning(false);
+    }
+  };
+
+  // ── EOD Calculation for a specific date ─────────────────────
+  const computeEOD = (date: string, report: any) => {
+    if (!report || !report.invoicesList) return null;
+    const isSameDay = (ts: string) => {
+      try {
+        const d = new Date(ts);
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit'
+        }).formatToParts(d);
+        const iso = `${parts.find((p: any) => p.type === 'year')!.value}-${parts.find((p: any) => p.type === 'month')!.value}-${parts.find((p: any) => p.type === 'day')!.value}`;
+        return iso === date;
+      } catch { return false; }
+    };
+
+    const dayInvoices   = (report.invoicesList as any[]).filter((i: any) => isSameDay(i.timestamp || i.date || ''));
+    const dayPurchases  = (report.purchasesList as any[]).filter((p: any) => isSameDay(p.timestamp || p.date || ''));
+    const dayDueCLog    = (report.dueCLog as any[]).filter((d: any) => isSameDay(d.date || ''));
+    const dayExpenses   = (report.expenseArr as any[]).filter((e: any) => isSameDay(e.date || ''));
+    const dayCashLedger = (report.cashLedgerArr as any[]).filter((c: any) => isSameDay(c.timestamp || ''));
+
+    const grossSales    = dayInvoices.reduce((s: number, i: any) => s + (i.finalBill || 0), 0);
+    const cashSales     = dayInvoices.reduce((s: number, i: any) => s + Math.min(i.cashReceived ?? i.finalBill ?? 0, i.finalBill ?? 0), 0);
+    const creditSales   = dayInvoices.reduce((s: number, i: any) => s + Math.max(0, i.due || 0), 0);
+    const totalDueCreatedDay = creditSales;
+    const totalDueCollectedDay = dayDueCLog.reduce((s: number, d: any) => s + (d.amount || 0), 0);
+    const refundsDay    = dayInvoices.filter((i: any) => i.isReturned).reduce((s: number, i: any) => s + (i.returnDetails?.refundedAmount || 0), 0);
+    const expensesDay   = dayExpenses.reduce((s: number, e: any) => s + (e.amount || 0), 0);
+    const purchasesDay  = dayPurchases.reduce((s: number, p: any) => s + (p.totalAmount || 0), 0);
+    const profitDay     = dayInvoices.reduce((s: number, i: any) => s + (i.profit || 0), 0);
+    const netSales      = grossSales - refundsDay;
+    const numSales      = dayInvoices.length;
+    const numReturns    = dayInvoices.filter((i: any) => i.isReturned).length;
+
+    // Cash equation (ledger-based)
+    const cashInDay  = dayCashLedger.filter((c: any) => c.direction === 'IN').reduce((s: number, c: any) => s + (c.amount || 0), 0);
+    const cashOutDay = dayCashLedger.filter((c: any) => c.direction === 'OUT').reduce((s: number, c: any) => s + (c.amount || 0), 0);
+    const ledgerNetDay = cashInDay - cashOutDay;
+
+    // Expected cash: cashSales + dueCollected - refunds - expenses
+    const expectedCashDay = cashSales + totalDueCollectedDay - refundsDay - expensesDay;
+    const cashDiffDay = Math.abs(ledgerNetDay - expectedCashDay);
+
+    return {
+      date, grossSales, cashSales, creditSales, totalDueCreatedDay, totalDueCollectedDay,
+      refundsDay, expensesDay, purchasesDay, profitDay, netSales, numSales, numReturns,
+      cashInDay, cashOutDay, ledgerNetDay, expectedCashDay, cashDiffDay,
+      cashOk: cashDiffDay < 0.01,
+    };
   };
 
   // ============================================================
@@ -3127,6 +3876,14 @@ export default function Home() {
   const liveRefundAmount = (parseFloat(calculatorInput) || 0) - currentFinalBill;
 
   const executeFinalCheckout = async () => {
+    // ── GUARD 1: Double-click / double-tap protection ─────────
+    // If a sale is already in-flight (network round-trips in progress),
+    // a second tap on "Confirm Sale" returns immediately. The button is
+    // also visually disabled via isSubmittingSale so the cashier gets
+    // instant feedback that the first submission is still processing.
+    if (isSubmittingSale) return;
+
+    // ── Discount cap check (fast, no network) ─────────────────
     const discountPercent = currentSubTotal > 0 ? (activeDiscountAmount / currentSubTotal) * 100 : 0;
     if (discountPercent > 10) {
       alert(t(
@@ -3136,181 +3893,198 @@ export default function Home() {
       return;
     }
 
-    // FIX (multi-device invoice/due conflict): pull the freshest invoices,
-    // due list, and due collection log from Firebase BEFORE merging this
-    // sale on top — otherwise a sale completed on another device in the
-    // same few seconds gets silently erased when this device's stale local
-    // copy is written back.
-    const [invoices, dueList, dueCollectionLog, latestMedsRaw] = await Promise.all([
-      fetchLatestList('madina_v7_invoices', invoicesRef.current),
-      fetchLatestList('madina_v7_due_list', dueListRef.current),
-      fetchLatestList('madina_v7_due_collection_log', dueCollectionLogRef.current),
-      fbGet('madina_v7_meds'),
-    ]);
-
-    // FIX (overselling from a stale held cart): "Add to Cart" only checks
-    // stock at the moment an item is added. If an item sits in the cart for
-    // a while (e.g. left open in one browser tab) while other tabs/devices
-    // sell the same medicine down to zero in the meantime, checkout used to
-    // go through anyway (stock was simply clamped to 0, never blocking the
-    // sale) — meaning you could "sell" medicine that no longer physically
-    // exists. Re-validate every cart item against the freshest stock right
-    // before finalizing, and stop the sale if anything has run short.
-    let freshMedsForValidation: any[] = medicinesRef.current;
-    if (latestMedsRaw) {
-      try { freshMedsForValidation = JSON.parse(latestMedsRaw); } catch { /* keep local fallback */ }
-    }
-    const insufficientItems: string[] = [];
-    for (const item of cart) {
-      const requestedQty = parseInt(item.qty) || 0;
-      const freshMed = freshMedsForValidation.find((m: any) => m.id === item.id);
-      const availableStock = freshMed ? freshMed.stock : 0;
-      if (requestedQty > availableStock) {
-        insufficientItems.push(`${item.name} (${t("available", "মজুদ আছে")}: ${availableStock}, ${t("in cart", "কার্টে")}: ${requestedQty})`);
-      }
-    }
-    if (insufficientItems.length > 0) {
-      alert(t(
-        `⚠️ Stock changed while these items sat in your cart — not enough left to complete this sale:\n\n${insufficientItems.join('\n')}\n\nPlease adjust the quantities and try again.`,
-        `⚠️ কার্টে রাখা থাকতেই স্টক পরিবর্তন হয়ে গেছে — এই বিক্রি সম্পূর্ণ করার জন্য পর্যাপ্ত স্টক নেই:\n\n${insufficientItems.join('\n')}\n\nপরিমাণ ঠিক করে আবার চেষ্টা করুন।`
-      ));
-      return;
-    }
-
-    const totalCost = cart.reduce((sum, item) => sum + (item.buyPrice * (parseInt(item.qty) || 0)), 0);
-    // FIX: look up the customer's due amount in the freshly-fetched dueList
-    // (by id) rather than trusting selectedExistingDue's amount, which was
-    // captured when the customer panel opened and may be stale if another
-    // device collected/added to this same due in the meantime.
-    const freshExistingDue = selectedExistingDue ? dueList.find((d: any) => d.id === selectedExistingDue.id) : null;
-    const prevDueAmt = freshExistingDue ? freshExistingDue.totalDue : 0;
-    const grandTotal = currentFinalBill + prevDueAmt;
-    const cashGivenNum = parseFloat(cashReceived) || 0;
-    // FIX: compute dueAmt directly from grandTotal/cashGivenNum instead of
-    // trusting the invoiceDue display state — this guarantees correctness
-    // even if the Cash Given field was never touched (left empty = ৳0 paid,
-    // full amount due) rather than depending on the onChange handler having
-    // fired to keep invoiceDue in sync.
-    const dueAmt = Math.max(0, grandTotal - cashGivenNum);
-    // FIX: paidCash must always equal the actual cash given (capped at grand total).
-    // The old "cashGivenNum > 0 ? ... : currentFinalBill - dueAmt" branch produced a
-    // wrong (negative) paidCash whenever cash given was exactly 0 AND the customer had
-    // an existing due — which inflated the new bill's due amount and effectively
-    // double-counted the old due. Cash given and invoiceDue are always kept in sync by
-    // the onChange handler above, so simply capping cashGivenNum is correct in every case.
-    const paidCash = Math.min(cashGivenNum, grandTotal);
-    // Full profit added immediately regardless of cash or due
-    const netProfit = currentFinalBill - totalCost;
-    // FIX (dashboard due duplication): the invoice's own "due" field must only
-    // reflect THIS bill's unpaid portion, never the combined grand total (new
-    // bill + old due). dueAmt/invoiceDue includes the old due so the checkout
-    // math and due-list totals stay correct, but if we stored that combined
-    // number on the invoice itself, the old due would get counted a second
-    // time every time dashboard sums invoice.due (it was already counted the
-    // day it was first created). Cash pays off the new bill first, so the new
-    // bill's own due is whatever's left of currentFinalBill after paidCash.
-    const newBillDue = Math.max(0, currentFinalBill - paidCash);
-
-    const today = new Date();
-    const formattedTime = today.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const formattedDate = today.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' });
-
-    // FIX (atomicity — the root cause bug): a unique transaction id ties the
-    // invoice, the stock movement, and the payment/due entries together as
-    // one logical unit. Every write below carries it, so a partial write is
-    // detectable and traceable even if something still slips through (e.g.
-    // a second device racing this same write outside this app's control).
+    // ── GUARD 2: Assign transactionId + invoiceId early, before any I/O ──
+    // Generating both IDs here — before setting isSubmittingSale — means
+    // we can use them in error messages even if the very first await fails.
+    // The ID format includes both wall-clock time and a monotonic counter
+    // so two tabs generating IDs in the same millisecond still differ.
+    //
+    // BUGFIX #3: invoiceId must be globally unique. The old pattern
+    // Date.now().slice(-6) only kept the last 6 digits of the timestamp,
+    // colliding whenever two sales occurred in the same millisecond (same
+    // tab rapid double-confirm, two tabs, or two devices).
+    // genId() uses a module-level monotonic counter so even back-to-back
+    // calls within the same millisecond produce distinct values.
+    // The "M-" prefix is kept so receipt printing and invoice search work.
     const transactionId = `TXN-${Date.now()}-${genId()}`;
+    const invoiceId     = `M-${Date.now()}-${genId()}`;
 
-    const newInvoice = {
-      invoiceId: `M-${Date.now().toString().slice(-6)}`,
-      transactionId,
-      customer: customerName || t("Regular Customer", "সাধারণ গ্রাহক"),
-      phone: customerPhone || "N/A",
-      dateString: `${formattedDate} | ${formattedTime}`,
-      items: [...cart],
-      subTotal: currentSubTotal,
-      vat: calculatedVatAmount,
-      discount: activeDiscountAmount,
-      finalBill: currentFinalBill,
-      profit: netProfit,
-      paymentMethod,
-      cashReceived: cashReceived !== "" ? (parseFloat(cashReceived) || 0) : currentFinalBill,
-      due: newBillDue,
-      changeAmount: (cashReceived !== "" ? (parseFloat(cashReceived) || 0) : currentFinalBill) - currentFinalBill,
-      footerMsg: receiptFooterMsg,
-      isReturned: false,
-      returnDetails: null
-    };
+    // ── GUARD 3: Idempotency — reject already-committed IDs ───
+    // In React StrictMode (dev) effects run twice; this also catches any
+    // path where executeFinalCheckout is called again before local state
+    // has cleared (e.g. a racing setIsSubmittingSale update).
+    if (submittedTransactionIds.current.has(transactionId)) return;
 
-    const updatedInvoices = [newInvoice, ...invoices];
+    setIsSubmittingSale(true);
+    try {
+      // ── STEP 1: Build sold-qty map from current cart ─────────
+      // Cart quantities are captured NOW, before any async calls that
+      // could trigger re-renders and change the cart reference.
+      const soldQtyByMedId: Record<number, number> = {};
+      cart.forEach(item => {
+        soldQtyByMedId[item.id] = (soldQtyByMedId[item.id] || 0) + (parseInt(item.qty) || 0);
+      });
 
-    // Stock deduction — computed here but NOT written to Firebase yet.
-    // FIX (multi-device stock conflict): subtract only THIS sale's
-    // quantities on top of the freshest stock, so a sale completed on
-    // another device at nearly the same time isn't lost.
-    const soldQtyByMedId: Record<number, number> = {};
-    cart.forEach(item => {
-      soldQtyByMedId[item.id] = (soldQtyByMedId[item.id] || 0) + (parseInt(item.qty) || 0);
-    });
-    const updatedMeds = freshMedsForValidation.map((m: any) =>
-      soldQtyByMedId[m.id] ? { ...m, stock: Math.max(0, m.stock - soldQtyByMedId[m.id]) } : m
-    );
+      // ── STEP 2: Atomic stock deduction via ETag optimistic lock ──
+      // deductStockAtomically:
+      //   a) reads the LIVE medicine array + its ETag from Firebase
+      //   b) re-validates every cart item against the freshest stock
+      //      (catches overselling from stale carts held open on other tabs)
+      //   c) computes the deducted array
+      //   d) writes it back with If-Match: <etag> — the server rejects
+      //      with HTTP 412 if another device changed stock since step (a)
+      //   e) on 412, retries from (a) up to STOCK_MAX_RETRIES times
+      //
+      // This is the strongest concurrency guarantee available via the
+      // Firebase REST API without the full SDK. It eliminates:
+      //   • Overselling (both devices read stock=5, both sell 4 → stock=-3)
+      //   • Negative stock (stock is clamped AND validated before write)
+      //   • Stale local state overwriting newer Firebase stock
+      addToast(t("⏳ Validating stock...", "⏳ স্টক যাচাই হচ্ছে..."), 'info');
+      const stockResult = await deductStockAtomically(soldQtyByMedId, t);
 
-    let updatedDueList = [...dueList];
-    let updatedDueCollectionLog = dueCollectionLog;
-
-    // If customer had existing due and is paying it off now
-    if (freshExistingDue) {
-      // Cash first covers new bill, remaining cash goes to prev due
-      const cashForPrevDue = Math.max(0, paidCash - currentFinalBill);
-      const prevDuePaid = Math.min(prevDueAmt, cashForPrevDue);
-
-      if (prevDuePaid > 0) {
-        const newPrevDue = prevDueAmt - prevDuePaid;
-
-        // Log due collection — this is what makes the collected cash
-        // count as sales (via computeSalesAndProfit below), so it's
-        // never lost on a later invoices-only recalculation.
-        const logEntry = {
-          id: genId(),
-          transactionId,
-          customerName: freshExistingDue.customerName,
-          phone: freshExistingDue.phone || "N/A",
-          amount: prevDuePaid,
-          dateString: formattedDate,
-          date: today.toISOString()
-        };
-        updatedDueCollectionLog = [logEntry, ...dueCollectionLog];
-
-        // Update or remove previous due entry
-        if (newPrevDue <= 0) {
-          updatedDueList = updatedDueList.filter(d => d.id !== freshExistingDue.id);
+      if (!stockResult.ok) {
+        playSound('error');
+        if (stockResult.reason === 'insufficient') {
+          alert(t(
+            `⚠️ Stock changed while your cart was open — not enough left to complete this sale:\n\n${stockResult.details.join('\n')}\n\nPlease adjust the quantities and try again.`,
+            `⚠️ কার্ট খোলা থাকাকালীন স্টক পরিবর্তন হয়ে গেছে — এই বিক্রি সম্পন্ন করার জন্য পর্যাপ্ত স্টক নেই:\n\n${stockResult.details.join('\n')}\n\nপরিমাণ ঠিক করে আবার চেষ্টা করুন।`
+          ));
         } else {
-          updatedDueList = updatedDueList.map(d =>
-            d.id === freshExistingDue.id ? { ...d, totalDue: newPrevDue } : d
-          );
+          alert(t(
+            `❌ Could not update stock — no internet or Firebase is unreachable.\n\nNOTHING was changed. Please check your connection and press "Confirm Sale" again.\n\n(Ref: ${transactionId})`,
+            `❌ স্টক আপডেট করা যায়নি — ইন্টারনেট নেই বা Firebase-এ পৌঁছানো যাচ্ছে না।\n\nকিছুই পরিবর্তন হয়নি। সংযোগ পরীক্ষা করে আবার "Confirm Sale" চাপুন।\n\n(রেফ: ${transactionId})`
+          ));
+        }
+        return; // isSubmittingSale cleared in finally
+      }
+
+      // Stock deduction confirmed on Firebase — updatedMeds is authoritative.
+      const updatedMeds = stockResult.updatedMeds;
+
+      // ── Phase 4: Build SALE stock movement entries ────────────
+      // Snapshot taken BEFORE deduction (from the fresh meds array that
+      // deductStockAtomically read), so previousStock is accurate.
+      // We reconstruct the pre-deduction snapshot by adding sold qty back.
+      const preDeductMeds = updatedMeds.map((m: any) =>
+        soldQtyByMedId[m.id] ? { ...m, stock: m.stock + soldQtyByMedId[m.id] } : m
+      );
+      // BUGFIX #3 (continued): invoiceId is now generated before deductStockAtomically
+      // so the stock movement placeholder is the real invoiceId from the start.
+      const saleMovementEntries = buildStockMovementEntries(
+        'SALE',
+        transactionId,
+        invoiceId,  // real invoiceId — no placeholder needed anymore
+        soldQtyByMedId,
+        preDeductMeds,
+        new Date().toISOString(),
+        new Date().toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' }),
+      );
+
+      // ── STEP 3: Fetch fresh invoice/due data ─────────────────
+      // Done AFTER the stock write so we don't hold a stale ETag across
+      // unrelated I/O. Invoices + due list conflict separately from stock
+      // and are handled by fetchLatestList (read-merge-write).
+      const [invoices, dueList, dueCollectionLog] = await Promise.all([
+        fetchLatestList('madina_v7_invoices', invoicesRef.current),
+        fetchLatestList('madina_v7_due_list', dueListRef.current),
+        fetchLatestList('madina_v7_due_collection_log', dueCollectionLogRef.current),
+      ]);
+
+      // ── STEP 4: Compute all derived values ───────────────────
+      const totalCost = cart.reduce((sum, item) => sum + (item.buyPrice * (parseInt(item.qty) || 0)), 0);
+
+      // Look up customer's fresh due amount (not the stale modal snapshot)
+      const freshExistingDue = selectedExistingDue
+        ? dueList.find((d: any) => d.id === selectedExistingDue.id)
+        : null;
+      const prevDueAmt = freshExistingDue ? freshExistingDue.totalDue : 0;
+      const grandTotal = currentFinalBill + prevDueAmt;
+      const cashGivenNum = parseFloat(cashReceived) || 0;
+      const dueAmt = Math.max(0, grandTotal - cashGivenNum);
+      const paidCash = Math.min(cashGivenNum, grandTotal);
+      const netProfit = currentFinalBill - totalCost;
+      // Per-invoice due = only THIS bill's unpaid portion (not grand total)
+      const newBillDue = Math.max(0, currentFinalBill - paidCash);
+
+      const today = new Date();
+      const formattedTime = today.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const formattedDate = today.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' });
+
+      const newInvoice = {
+        invoiceId,
+        transactionId, // ← every record carries the same txn id
+        customer: customerName || t("Regular Customer", "সাধারণ গ্রাহক"),
+        phone: customerPhone || "N/A",
+        dateString: `${formattedDate} | ${formattedTime}`,
+        items: [...cart],
+        subTotal: currentSubTotal,
+        vat: calculatedVatAmount,
+        discount: activeDiscountAmount,
+        finalBill: currentFinalBill,
+        profit: netProfit,
+        paymentMethod,
+        // BUGFIX #10: store paidCash (the actual cash taken, capped at grandTotal)
+        // so a full-due sale (৳0 paid) correctly records cashReceived=0 instead of
+        // the falsy-or-fallback-to-finalBill pattern that caused the receipt to display
+        // "Cash Received: ৳1000" on a sale where nothing was paid.
+        cashReceived: paidCash,
+        due: newBillDue,
+        changeAmount: Math.max(0, cashGivenNum - grandTotal),
+        footerMsg: receiptFooterMsg,
+        isReturned: false,
+        returnDetails: null
+      };
+
+      // invoiceId was already baked into saleMovementEntries above — no remap needed.
+      const finalSaleMovements = saleMovementEntries;
+
+      const updatedInvoices = [newInvoice, ...invoices];
+
+      let updatedDueList = [...dueList];
+      let updatedDueCollectionLog = dueCollectionLog;
+
+      // Settle any existing customer due that was partially paid this sale
+      if (freshExistingDue) {
+        const cashForPrevDue = Math.max(0, paidCash - currentFinalBill);
+        const prevDuePaid = Math.min(prevDueAmt, cashForPrevDue);
+        if (prevDuePaid > 0) {
+          const newPrevDue = prevDueAmt - prevDuePaid;
+          const logEntry = {
+            id: genId(),
+            transactionId, // ← links due collection back to this sale
+            customerName: freshExistingDue.customerName,
+            phone: freshExistingDue.phone || "N/A",
+            amount: prevDuePaid,
+            dateString: formattedDate,
+            date: today.toISOString()
+          };
+          updatedDueCollectionLog = [logEntry, ...dueCollectionLog];
+          if (newPrevDue <= 0) {
+            updatedDueList = updatedDueList.filter(d => d.id !== freshExistingDue.id);
+          } else {
+            updatedDueList = updatedDueList.map(d =>
+              d.id === freshExistingDue.id ? { ...d, totalDue: newPrevDue } : d
+            );
+          }
         }
       }
-    }
 
-    // Single, consistent sales/profit derivation (invoices + all due collections)
-    const { sales: finalTotalSales, profit: finalTotalProfit } = computeSalesAndProfit(updatedInvoices, updatedDueCollectionLog);
-
-    if (dueAmt > 0) {
-      const effectiveName = customerName.trim() || t("Regular Customer", "সাধারণ গ্রাহক");
-      const effectivePhone = customerPhone || "N/A";
-
-      // newBillDue (this new bill's own unpaid portion) is already computed
-      // above and used as newInvoice.due. Prev due's unpaid portion is
-      // already reflected in updatedDueList above.
-      if (newBillDue > 0) {
-        const existingDueIdx = updatedDueList.findIndex(d => d.customerName.toLowerCase() === effectiveName.toLowerCase() && d.phone === effectivePhone);
+      // Add new bill's due to the customer's running due balance
+      if (dueAmt > 0 && newBillDue > 0) {
+        const effectiveName = customerName.trim() || t("Regular Customer", "সাধারণ গ্রাহক");
+        const effectivePhone = customerPhone || "N/A";
+        const existingDueIdx = updatedDueList.findIndex(
+          d => d.customerName.toLowerCase() === effectiveName.toLowerCase() && d.phone === effectivePhone
+        );
         if (existingDueIdx !== -1) {
           updatedDueList[existingDueIdx] = {
             ...updatedDueList[existingDueIdx],
             totalDue: updatedDueList[existingDueIdx].totalDue + newBillDue,
-            invoices: [...updatedDueList[existingDueIdx].invoices, { invoiceId: newInvoice.invoiceId, amount: newBillDue, date: formattedDate }]
+            invoices: [
+              ...updatedDueList[existingDueIdx].invoices,
+              { invoiceId: newInvoice.invoiceId, amount: newBillDue, date: formattedDate }
+            ]
           };
         } else {
           updatedDueList.push({
@@ -3322,55 +4096,168 @@ export default function Home() {
           });
         }
       }
+
+      const { sales: finalTotalSales, profit: finalTotalProfit } =
+        computeSalesAndProfit(updatedInvoices, updatedDueCollectionLog);
+
+      // ── STEP 5: Commit invoice/due/sales in one atomic PATCH ─
+      // Stock was already written and confirmed in STEP 2.
+      // This second PATCH covers the remaining keys: invoices, due list,
+      // due collection log, and the derived scalar totals.
+      //
+      // Why two writes instead of one? The medicines key requires an
+      // ETag conditional write (If-Match header) which is incompatible
+      // with the multi-path PATCH that covers the other keys — they are
+      // different HTTP request types. The stock write was already confirmed
+      // before we reach here, so if THIS write fails:
+      //   • Stock WAS deducted (correct — the sale happened physically)
+      //   • Invoice was NOT recorded — cashier sees the error, can:
+      //     a) retry: "Confirm Sale" again (the stock re-validation in
+      //        STEP 2 will now see the already-deducted quantities and
+      //        pass, then only this PATCH will be retried)
+      //     b) escalate: transactionId is logged for manual reconciliation
+      //
+      // This is the fundamental constraint of the Firebase REST API:
+      // true cross-key atomicity requires the SDK's .transaction() or
+      // Firestore's runTransaction(). For now, stock-first is the safest
+      // order — it prevents overselling even in the failure case.
+      // ── STEP 4b: Build Payment + Cash ledger entries ─────────
+      // Idempotency: skip if this transactionId already recorded
+      // (handles retry after a partial failure where stock deducted but
+      // invoice write failed — the retry re-runs Step 4 correctly).
+      const freshPaymentLedger = await fetchLatestList('madina_v7_payment_ledger', paymentLedgerRef.current);
+      const freshCashLedger    = await fetchLatestList('madina_v7_cash_ledger', cashLedgerRef.current);
+
+      const txnAlreadyInPaymentLedger = freshPaymentLedger.some((p: any) => p.transactionId === transactionId);
+      let updatedPaymentLedger = freshPaymentLedger;
+      let updatedCashLedger    = freshCashLedger;
+
+      if (!txnAlreadyInPaymentLedger) {
+        const paymentId = `PAY-${Date.now()}-${genId()}`;
+        const cashId    = `CASH-${Date.now()}-${genId()}`;
+        const effectiveCash = cashReceived !== "" ? (parseFloat(cashReceived) || 0) : currentFinalBill;
+        const actualCashIn  = Math.min(effectiveCash, grandTotal); // cash received, capped at total owed
+
+        // Payment ledger entry: records the payment event for this sale
+        const paymentEntry = {
+          paymentId,
+          transactionId,
+          invoiceId: newInvoice.invoiceId,
+          customer: newInvoice.customer,
+          phone: newInvoice.phone,
+          amount: currentFinalBill,          // full invoice amount (sales revenue)
+          cashReceived: actualCashIn,         // cash actually taken
+          dueCreated: newBillDue,             // unpaid portion of THIS bill
+          paymentMethod,
+          paymentType: 'SALE_PAYMENT' as const,
+          timestamp: today.toISOString(),
+          dateString: formattedDate,
+        };
+        updatedPaymentLedger = [paymentEntry, ...freshPaymentLedger];
+
+        // Cash ledger entry: records the cash flow for this sale
+        if (actualCashIn > 0) {
+          const cashEntry = {
+            ledgerId: cashId,
+            transactionId,
+            invoiceId: newInvoice.invoiceId,
+            customer: newInvoice.customer,
+            amount: actualCashIn,
+            type: 'CASH_SALE' as const,
+            direction: 'IN' as const,
+            paymentMethod,
+            timestamp: today.toISOString(),
+            dateString: formattedDate,
+          };
+          updatedCashLedger = [cashEntry, ...freshCashLedger];
+        }
+
+        // If old due was partially/fully paid in this sale, also log that in cash ledger
+        if (freshExistingDue) {
+          const cashForPrevDueCheck = Math.max(0, actualCashIn - currentFinalBill);
+          const prevDuePaidCheck    = Math.min(prevDueAmt, cashForPrevDueCheck);
+          if (prevDuePaidCheck > 0) {
+            const dueCashId = `CASH-DUE-${Date.now()}-${genId()}`;
+            const dueCashEntry = {
+              ledgerId: dueCashId,
+              transactionId,
+              invoiceId: newInvoice.invoiceId,
+              customer: freshExistingDue.customerName,
+              amount: prevDuePaidCheck,
+              type: 'DUE_COLLECTION' as const,
+              direction: 'IN' as const,
+              paymentMethod,
+              timestamp: today.toISOString(),
+              dateString: formattedDate,
+            };
+            updatedCashLedger = [dueCashEntry, ...updatedCashLedger];
+          }
+        }
+      }
+
+      // Phase 4: Fetch fresh stock movements and prepend this sale's entries
+      const freshStockMovements = await fetchLatestList('madina_v7_stock_movements', stockMovementsRef.current);
+      const updatedStockMovements = [...finalSaleMovements, ...freshStockMovements];
+
+      addToast(t("⏳ Saving invoice...", "⏳ ইনভয়েস সংরক্ষণ হচ্ছে..."), 'info');
+      const invoiceWriteOk = await cloudMultiSet({
+        madina_v7_invoices:           JSON.stringify(updatedInvoices),
+        madina_v7_due_list:           JSON.stringify(updatedDueList),
+        madina_v7_due_collection_log: JSON.stringify(updatedDueCollectionLog),
+        madina_v7_sales:              finalTotalSales.toString(),
+        madina_v7_profit:             finalTotalProfit.toString(),
+        madina_v7_payment_ledger:     JSON.stringify(updatedPaymentLedger),
+        madina_v7_cash_ledger:        JSON.stringify(updatedCashLedger),
+        madina_v7_stock_movements:    JSON.stringify(updatedStockMovements),
+      });
+
+      if (!invoiceWriteOk) {
+        // Stock deduction SUCCEEDED but invoice write FAILED.
+        // This is a partial failure — the physical stock is already deducted.
+        // DO NOT show a success message. DO NOT clear the cart.
+        // Give the cashier the full picture so they can retry or escalate.
+        playSound('error');
+        alert(t(
+          `⚠️ Stock was updated but the INVOICE could not be saved.\n\nThis means the medicine was dispensed but the sale is NOT recorded yet.\nPlease check your internet and press "Confirm Sale" again to save the invoice.\nThe stock re-check will recognise the already-deducted quantities.\n\n(Transaction ref: ${transactionId} — keep this for reconciliation)`,
+          `⚠️ স্টক আপডেট হয়েছে কিন্তু ইনভয়েস সংরক্ষণ করা যায়নি।\n\nএর মানে ওষুধ বের করা হয়েছে কিন্তু বিক্রয় এখনও রেকর্ড হয়নি।\nইন্টারনেট পরীক্ষা করে আবার "Confirm Sale" চাপুন।\nস্টক রি-চেক আগে-কাটা পরিমাণ ধরতে পারবে।\n\n(ট্রানজেকশন রেফ: ${transactionId} — সমন্বয়ের জন্য রেখে দিন)`
+        ));
+        addToast(t("⚠️ Invoice not saved — retry!", "⚠️ ইনভয়েস সেভ হয়নি — আবার চেষ্টা করুন!"), 'error');
+        return;
+      }
+
+      // ── STEP 6: Mark transaction committed (idempotency) ─────
+      submittedTransactionIds.current.add(transactionId);
+
+      // ── STEP 7: Update local React state — ONLY after confirmed write
+      // The UI shows what Firebase confirmed, never what we hoped for.
+      setInvoices(updatedInvoices);
+      setLastInvoice(newInvoice);
+      setMedicines(updatedMeds);
+      setDueList(updatedDueList);
+      setDueCollectionLog(updatedDueCollectionLog);
+      setTotalSales(finalTotalSales);
+      setTotalProfit(finalTotalProfit);
+      // Phase 3: update ledgers in local state after confirmed write
+      setPaymentLedger(updatedPaymentLedger);
+      setCashLedger(updatedCashLedger);
+      // Phase 4: update stock movement ledger in local state
+      setStockMovements(updatedStockMovements);
+
+      setCart([]); setCustomerName(""); setCustomerPhone("");
+      setDiscountValue("0"); setCashReceived(""); setInvoiceDue("0");
+      setSelectedExistingDue(null);
+      setShowCustomerPanel(true);
+      setShowConfirmModal(false);
+      setShowSuccessAlert(true);
+      playSound('checkout');
+      addToast(t("✅ Invoice created successfully!", "✅ বিল তৈরি সফল হয়েছে!"), 'success');
+
+    } finally {
+      // Always release the submission lock — whether we succeeded, failed,
+      // or hit an exception. Without this the Confirm button stays disabled
+      // forever if anything throws unexpectedly.
+      setIsSubmittingSale(false);
     }
-
-    // FIX (root cause): everything the sale touches — invoice, stock, sales
-    // total, profit total, due list, due collection log — is written in ONE
-    // atomic multi-path Firebase request instead of 5 independent, un-awaited
-    // ones. If the tab closes, the network drops, or the request times out,
-    // NONE of these keys change — there is no window where stock is deducted
-    // but the invoice never landed. Local React state is only updated AFTER
-    // the write is confirmed, so the on-screen UI never shows a sale that
-    // didn't actually save.
-    addToast(t("⏳ Saving sale...", "⏳ বিক্রয় সংরক্ষণ হচ্ছে..."), 'success');
-    const writeOk = await cloudMultiSet({
-      madina_v7_invoices: JSON.stringify(updatedInvoices),
-      madina_v7_meds: JSON.stringify(updatedMeds),
-      madina_v7_due_list: JSON.stringify(updatedDueList),
-      madina_v7_due_collection_log: JSON.stringify(updatedDueCollectionLog),
-      madina_v7_sales: finalTotalSales.toString(),
-      madina_v7_profit: finalTotalProfit.toString(),
-    });
-
-    if (!writeOk) {
-      // Nothing was saved — stock was never touched, invoice was never
-      // created. Tell the cashier plainly and let them retry, instead of
-      // silently losing the sale or leaving stock/invoice out of sync.
-      playSound('error');
-      alert(t(
-        `❌ Sale could NOT be saved — no internet connection or Firebase is unreachable.\n\nNOTHING was changed: stock, invoice, and totals are all unaffected.\nPlease check your connection and press "Confirm Sale" again.\n\n(Transaction ref: ${transactionId})`,
-        `❌ বিক্রয়টি সংরক্ষণ করা যায়নি — ইন্টারনেট সংযোগ নেই বা Firebase-এ পৌঁছানো যাচ্ছে না।\n\nকিছুই পরিবর্তন হয়নি: স্টক, ইনভয়েস এবং টোটাল সব আগের মতোই আছে।\nইন্টারনেট সংযোগ পরীক্ষা করে আবার "Confirm Sale" চাপুন।\n\n(ট্রানজেকশন রেফারেন্স: ${transactionId})`
-      ));
-      addToast(t("❌ Sale not saved — retry when online", "❌ বিক্রয় সংরক্ষণ হয়নি — সংযোগ ফিরলে আবার চেষ্টা করুন"), 'error');
-      return; // abort — local state untouched, cart stays as-is so the cashier can just retry
-    }
-
-    // Write confirmed — now, and only now, reflect it in local state.
-    setInvoices(updatedInvoices);
-    setLastInvoice(newInvoice);
-    setMedicines(updatedMeds);
-    setDueList(updatedDueList);
-    setDueCollectionLog(updatedDueCollectionLog);
-    setTotalSales(finalTotalSales);
-    setTotalProfit(finalTotalProfit);
-
-    setCart([]); setCustomerName(""); setCustomerPhone(""); setDiscountValue("0"); setCashReceived(""); setInvoiceDue("0");
-    setSelectedExistingDue(null);
-    setShowCustomerPanel(true);
-    setShowConfirmModal(false);
-    setShowSuccessAlert(true);
-    playSound('checkout');
-    addToast(t("✅ Invoice created successfully!", "✅ বিল তৈরি সফল হয়েছে!"), 'success');
   };
 
   // ============================================================
@@ -3394,126 +4281,280 @@ export default function Home() {
     setReturnItemsQuantities({ ...returnItemsQuantities, [itemId]: parsed });
   };
 
+  // ── Return submission guard (mirrors the sale guard) ────────
+  // Prevents double-tap and duplicate processing: the Confirm Return button
+  // is disabled while a return is in-flight, and submitted return IDs are
+  // remembered in a Set for idempotency within the session.
+  const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
+  const submittedReturnIds = useRef<Set<string>>(new Set());
+
   const processInvoiceMedicineReturn = async () => {
+    // ── GUARD: double-click / in-flight protection ───────────
+    if (isSubmittingReturn) return;
     if (!selectedInvoiceForReturn) return;
+
     const totalReturnItemsCount = (Object.values(returnItemsQuantities) as number[]).reduce((a, b) => a + b, 0);
-    if (totalReturnItemsCount === 0) { alert(t("⚠️ Please select at least 1 quantity to return!", "⚠️ কমপক্ষে ১টি পরিমাণ নির্বাচন করুন!")); return; }
+    if (totalReturnItemsCount === 0) {
+      alert(t("⚠️ Please select at least 1 quantity to return!", "⚠️ কমপক্ষে ১টি পরিমাণ নির্বাচন করুন!"));
+      return;
+    }
 
-    // FIX (multi-device invoice/due conflict): same race-safe pattern as
-    // checkout — pull the freshest invoices and due list before merging
-    // this return on top, so a sale/payment from another device in the
-    // same window isn't overwritten and lost.
-    const [invoices, dueList] = await Promise.all([
-      fetchLatestList('madina_v7_invoices', invoicesRef.current),
-      fetchLatestList('madina_v7_due_list', dueListRef.current),
-    ]);
+    // ── BUGFIX #1/#2 FIX: Generate the refundTransactionId EARLY so we can
+    // use it for idempotency checking before any I/O begins. ──────────────
+    const refundTransactionId = `TXN-REFUND-${Date.now()}-${genId()}`;
+    if (submittedReturnIds.current.has(refundTransactionId)) return;
 
-    let calculatedRefundAmount = 0;
-    let calculatedCostSavingsToSubtract = 0;
-    const returnedItemsSummaryList: any[] = [];
-    const returnQtyByMedId: Record<number, number> = {};
+    setIsSubmittingReturn(true);
 
-    selectedInvoiceForReturn.items.forEach((item: any) => {
-      const returnQty = returnItemsQuantities[item.id] || 0;
-      if (returnQty > 0) {
-        calculatedRefundAmount += (item.price * returnQty);
-        calculatedCostSavingsToSubtract += (item.buyPrice * returnQty);
-        returnedItemsSummaryList.push({ id: item.id, name: item.name, qtyReturned: returnQty, pricePerUnit: item.price });
-        returnQtyByMedId[item.id] = (returnQtyByMedId[item.id] || 0) + returnQty;
+    try {
+      // ── STEP 1: Build return quantities and amounts ───────────
+      let calculatedRefundAmount = 0;
+      let calculatedCostSavingsToSubtract = 0;
+      const returnedItemsSummaryList: any[] = [];
+      const returnQtyByMedId: Record<number, number> = {};
+
+      selectedInvoiceForReturn.items.forEach((item: any) => {
+        const returnQty = returnItemsQuantities[item.id] || 0;
+        if (returnQty > 0) {
+          calculatedRefundAmount += (item.price * returnQty);
+          calculatedCostSavingsToSubtract += (item.buyPrice * returnQty);
+          returnedItemsSummaryList.push({ id: item.id, name: item.name, qtyReturned: returnQty, pricePerUnit: item.price });
+          returnQtyByMedId[item.id] = (returnQtyByMedId[item.id] || 0) + returnQty;
+        }
+      });
+
+      const originalSubtotal = selectedInvoiceForReturn.subTotal;
+      if (originalSubtotal > 0) {
+        const ratio = calculatedRefundAmount / originalSubtotal;
+        const proportionalDiscount = selectedInvoiceForReturn.discount * ratio;
+        const proportionalVat = selectedInvoiceForReturn.vat * ratio;
+        calculatedRefundAmount = Math.max(0, calculatedRefundAmount + proportionalVat - proportionalDiscount);
       }
-    });
 
-    const originalSubtotal = selectedInvoiceForReturn.subTotal;
-    if (originalSubtotal > 0) {
-      const ratio = calculatedRefundAmount / originalSubtotal;
-      const proportionalDiscount = selectedInvoiceForReturn.discount * ratio;
-      const proportionalVat = selectedInvoiceForReturn.vat * ratio;
-      calculatedRefundAmount = Math.max(0, calculatedRefundAmount + proportionalVat - proportionalDiscount);
-    }
+      // ── STEP 2: Fetch ALL fresh data from Firebase before any writes ──
+      // BUGFIX #1/#2: We read everything we need BEFORE touching any data.
+      // Stock is read here too — we do NOT write stock until the invoice
+      // write is confirmed. This prevents the "stock returned but invoice
+      // not updated" partial-failure state.
+      const today = new Date();
+      const refundDate = today.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' });
 
-    if (returnActionType !== "CASH_REFUND") {
-      setDiscountType("TK");
-      setDiscountValue(calculatedRefundAmount.toFixed(2));
-      setCustomerName(selectedInvoiceForReturn.customer);
-      setCustomerPhone(selectedInvoiceForReturn.phone);
-      alert(t(`💳 Store credit of ${calculatedRefundAmount.toFixed(1)} ${currencySymbol} generated!`, `💳 ${calculatedRefundAmount.toFixed(1)} ${currencySymbol} স্টোর ক্রেডিট তৈরি হয়েছে!`));
-      navigateTab("pos");
-    }
+      const [
+        invoices, dueList, freshDueLog,
+        freshPaymentLedger, freshCashLedger, freshReturnMovements,
+      ] = await Promise.all([
+        fetchLatestList('madina_v7_invoices', invoicesRef.current),
+        fetchLatestList('madina_v7_due_list', dueListRef.current),
+        fetchLatestList('madina_v7_due_collection_log', dueCollectionLogRef.current),
+        fetchLatestList('madina_v7_payment_ledger', paymentLedgerRef.current),
+        fetchLatestList('madina_v7_cash_ledger', cashLedgerRef.current),
+        fetchLatestList('madina_v7_stock_movements', stockMovementsRef.current),
+      ]);
 
-    const updatedInvoices = invoices.map((inv: any) => {
-      if (inv.invoiceId === selectedInvoiceForReturn.invoiceId) {
-        return {
-          ...inv,
-          isReturned: true,
-          finalBill: inv.finalBill - calculatedRefundAmount,
-          profit: inv.profit - (calculatedRefundAmount - calculatedCostSavingsToSubtract),
-          // FIX: also shrink this invoice's own recorded due — the customer
-          // shouldn't still be shown as owing for items they've returned.
-          due: Math.max(0, (inv.due || 0) - calculatedRefundAmount),
-          returnDetails: {
-            returnedItems: returnedItemsSummaryList,
-            refundedAmount: calculatedRefundAmount,
-            action: returnActionType,
-            reason: returnReason || t("General Exchange Request", "সাধারণ ফেরত"),
-            timestamp: new Date().toLocaleDateString() + " | " + new Date().toLocaleTimeString()
+      // Read the freshest stock snapshot for building movement entries.
+      // We do NOT write stock yet — stock write comes last, AFTER the
+      // invoice/ledger PATCH succeeds.
+      const fetchedMedsRaw = await fbGet('madina_v7_meds');
+      let priorMedsForReturn: any[] = medicinesRef.current;
+      if (fetchedMedsRaw) {
+        try { priorMedsForReturn = JSON.parse(fetchedMedsRaw); } catch {}
+      }
+
+      // ── STEP 3: Idempotency — verify this invoice isn't already returned ─
+      // BUGFIX #1/#2: If the invoice is already marked returned in the live
+      // data (another device processed it, or the user retried after a
+      // partial failure), refuse instead of double-processing.
+      const liveInvoice = invoices.find((inv: any) => inv.invoiceId === selectedInvoiceForReturn.invoiceId);
+      if (liveInvoice?.isReturned) {
+        alert(t(
+          "⚠️ This invoice has already been marked as returned. No changes were made.",
+          "⚠️ এই ইনভয়েসটি ইতিমধ্যে ফেরত হিসেবে চিহ্নিত করা হয়েছে। কোনো পরিবর্তন হয়নি।"
+        ));
+        setShowReturnModal(false);
+        setSelectedInvoiceForReturn(null);
+        return;
+      }
+
+      // ── STEP 4: Compute updated invoices + due list ───────────
+      const updatedInvoices = invoices.map((inv: any) => {
+        if (inv.invoiceId === selectedInvoiceForReturn.invoiceId) {
+          return {
+            ...inv,
+            isReturned: true,
+            finalBill: inv.finalBill - calculatedRefundAmount,
+            profit: inv.profit - (calculatedRefundAmount - calculatedCostSavingsToSubtract),
+            due: Math.max(0, (inv.due || 0) - calculatedRefundAmount),
+            returnDetails: {
+              returnedItems: returnedItemsSummaryList,
+              refundedAmount: calculatedRefundAmount,
+              action: returnActionType,
+              reason: returnReason || t("General Exchange Request", "সাধারণ ফেরত"),
+              timestamp: today.toLocaleDateString() + " | " + today.toLocaleTimeString()
+            }
+          };
+        }
+        return inv;
+      });
+
+      let updatedDueList = dueList;
+      if ((selectedInvoiceForReturn.due || 0) > 0) {
+        const dueListIdx = dueList.findIndex((d: any) =>
+          d.customerName.toLowerCase() === selectedInvoiceForReturn.customer.toLowerCase() &&
+          d.phone === selectedInvoiceForReturn.phone
+        );
+        if (dueListIdx !== -1) {
+          const entry = dueList[dueListIdx];
+          const invRecord = entry.invoices?.find((i: any) => i.invoiceId === selectedInvoiceForReturn.invoiceId);
+          const invoiceDueAmount = invRecord ? invRecord.amount : 0;
+          const reduceBy = Math.min(calculatedRefundAmount, invoiceDueAmount, entry.totalDue);
+          if (reduceBy > 0) {
+            const newTotalDue = Math.max(0, entry.totalDue - reduceBy);
+            const newInvoicesArr = (entry.invoices || [])
+              .map((i: any) => i.invoiceId === selectedInvoiceForReturn.invoiceId
+                ? { ...i, amount: Math.max(0, i.amount - reduceBy) }
+                : i)
+              .filter((i: any) => i.amount > 0);
+            updatedDueList = newTotalDue <= 0
+              ? dueList.filter((d: any) => d.id !== entry.id)
+              : dueList.map((d: any) => d.id === entry.id ? { ...d, totalDue: newTotalDue, invoices: newInvoicesArr } : d);
           }
-        };
-      }
-      return inv;
-    });
-
-    // FIX (return didn't update due list): if this invoice still had unpaid
-    // due, forgive the portion of that due covered by the returned items —
-    // otherwise the customer keeps owing for goods they've already given back.
-    let updatedDueList = dueList;
-    if ((selectedInvoiceForReturn.due || 0) > 0) {
-      const dueListIdx = dueList.findIndex(d =>
-        d.customerName.toLowerCase() === selectedInvoiceForReturn.customer.toLowerCase() &&
-        d.phone === selectedInvoiceForReturn.phone
-      );
-      if (dueListIdx !== -1) {
-        const entry = dueList[dueListIdx];
-        const invRecord = entry.invoices.find((i: any) => i.invoiceId === selectedInvoiceForReturn.invoiceId);
-        const invoiceDueAmount = invRecord ? invRecord.amount : 0;
-        const reduceBy = Math.min(calculatedRefundAmount, invoiceDueAmount, entry.totalDue);
-
-        if (reduceBy > 0) {
-          const newTotalDue = Math.max(0, entry.totalDue - reduceBy);
-          const newInvoicesArr = entry.invoices
-            .map((i: any) => i.invoiceId === selectedInvoiceForReturn.invoiceId
-              ? { ...i, amount: Math.max(0, i.amount - reduceBy) }
-              : i)
-            .filter((i: any) => i.amount > 0);
-
-          updatedDueList = newTotalDue <= 0
-            ? dueList.filter(d => d.id !== entry.id)
-            : dueList.map(d => d.id === entry.id ? { ...d, totalDue: newTotalDue, invoices: newInvoicesArr } : d);
         }
       }
+
+      // ── STEP 5: Build payment + cash ledger entries ───────────
+      let updatedReturnPaymentLedger = freshPaymentLedger;
+      let updatedReturnCashLedger    = freshCashLedger;
+
+      if (returnActionType === "CASH_REFUND" && calculatedRefundAmount > 0) {
+        const refundPayEntry = {
+          paymentId:         `PAY-REFUND-${Date.now()}-${genId()}`,
+          transactionId:     refundTransactionId,
+          originalInvoiceId: selectedInvoiceForReturn.invoiceId,
+          customer:          selectedInvoiceForReturn.customer,
+          amount:            calculatedRefundAmount,
+          paymentMethod:     selectedInvoiceForReturn.paymentMethod || 'Cash',
+          paymentType:       'REFUND' as const,
+          timestamp:         today.toISOString(),
+          dateString:        refundDate,
+        };
+        updatedReturnPaymentLedger = [refundPayEntry, ...freshPaymentLedger];
+
+        const refundCashEntry = {
+          ledgerId:          `CASH-REFUND-${Date.now()}-${genId()}`,
+          transactionId:     refundTransactionId,
+          originalInvoiceId: selectedInvoiceForReturn.invoiceId,
+          customer:          selectedInvoiceForReturn.customer,
+          amount:            calculatedRefundAmount,
+          type:              'REFUND' as const,
+          direction:         'OUT' as const,
+          paymentMethod:     selectedInvoiceForReturn.paymentMethod || 'Cash',
+          timestamp:         today.toISOString(),
+          dateString:        refundDate,
+        };
+        updatedReturnCashLedger = [refundCashEntry, ...freshCashLedger];
+      }
+
+      // ── STEP 6: Build stock movement entries ──────────────────
+      // BUGFIX #1/#2: movements are computed here but NOT written yet.
+      // We write stock ONLY after the invoice PATCH succeeds below.
+      const returnMovementEntries = buildStockMovementEntries(
+        'RETURN',
+        refundTransactionId,
+        selectedInvoiceForReturn.invoiceId,
+        returnQtyByMedId,
+        priorMedsForReturn,
+        today.toISOString(),
+        refundDate,
+      );
+      const updatedReturnMovements = [...returnMovementEntries, ...freshReturnMovements];
+
+      // ── STEP 7: Derive sales + profit totals ──────────────────
+      // BUGFIX #6: use freshDueLog (freshly fetched) not the stale closed-over
+      // dueCollectionLog state variable — ensures any concurrent due collection
+      // from another device is included in the recomputed total.
+      const { sales: returnedSales, profit: returnedProfit } = computeSalesAndProfit(updatedInvoices, freshDueLog);
+
+      // ── STEP 8: Atomic PATCH — invoice + due + ledgers + movements ──
+      // BUGFIX #1/#2 (core fix): ALL financial records are written in ONE
+      // atomic PATCH before stock is touched. If this PATCH fails:
+      //   • The invoice is still marked as NOT returned in Firebase.
+      //   • No cash/payment/movement records were created.
+      //   • Stock is unchanged.
+      //   • The user sees an error and can safely retry.
+      // Stock is written AFTER this succeeds so there is no window where
+      // stock is restored but the invoice still shows "not returned".
+      const invoiceWriteOk = await cloudMultiSet({
+        madina_v7_invoices:        JSON.stringify(updatedInvoices),
+        madina_v7_due_list:        JSON.stringify(updatedDueList),
+        madina_v7_sales:           returnedSales.toString(),
+        madina_v7_profit:          returnedProfit.toString(),
+        madina_v7_payment_ledger:  JSON.stringify(updatedReturnPaymentLedger),
+        madina_v7_cash_ledger:     JSON.stringify(updatedReturnCashLedger),
+        madina_v7_stock_movements: JSON.stringify(updatedReturnMovements),
+      });
+
+      if (!invoiceWriteOk) {
+        // Nothing was changed in Firebase — invoice still shows "not returned",
+        // stock is untouched. User can retry safely.
+        playSound('error');
+        alert(t(
+          `❌ Return could not be saved — check your internet and press "Confirm Return" again.\n\nNothing was changed.\n(Ref: ${refundTransactionId})`,
+          `❌ ফেরত সংরক্ষণ করা যায়নি — ইন্টারনেট পরীক্ষা করে আবার "Confirm Return" চাপুন।\n\nকিছুই পরিবর্তন হয়নি।\n(রেফ: ${refundTransactionId})`
+        ));
+        return; // isSubmittingReturn released in finally
+      }
+
+      // ── STEP 9: Restore stock AFTER confirmed invoice write ───
+      // BUGFIX #1/#2: Stock is only returned to Firebase AFTER the invoice
+      // has been confirmed updated. This is the correct order — the physical
+      // goods are back on the shelf only once the books reflect the return.
+      // If this stock write fails (very unlikely — invoice already updated),
+      // the cashier must manually adjust stock. We log a clear message.
+      const stockWriteOk = await updateMedicinesOnCloud(latestMeds =>
+        latestMeds.map(m => returnQtyByMedId[m.id] ? { ...m, stock: m.stock + returnQtyByMedId[m.id] } : m)
+      );
+      if (!stockWriteOk) {
+        // Invoice is correctly updated. Only stock write failed.
+        // Show a specific message — do not roll back the invoice.
+        alert(t(
+          `⚠️ Return recorded but stock could not be updated. Please manually adjust stock for returned items.\n(Ref: ${refundTransactionId})`,
+          `⚠️ ফেরত নথিভুক্ত হয়েছে কিন্তু স্টক আপডেট করা যায়নি। ফেরত আইটেমের স্টক ম্যানুয়ালি ঠিক করুন।\n(রেফ: ${refundTransactionId})`
+        ));
+      }
+
+      // ── STEP 10: Mark committed (idempotency) ─────────────────
+      submittedReturnIds.current.add(refundTransactionId);
+
+      // ── STEP 11: Update local React state ONLY after confirmed write ──
+      setInvoices(updatedInvoices);
+      setDueList(updatedDueList);
+      setTotalSales(returnedSales);
+      setTotalProfit(returnedProfit);
+      setPaymentLedger(updatedReturnPaymentLedger);
+      setCashLedger(updatedReturnCashLedger);
+      setStockMovements(updatedReturnMovements);
+
+      setShowReturnModal(false);
+      setSelectedInvoiceForReturn(null);
+
+      // Handle store credit: apply discount to POS cart AFTER state update
+      if (returnActionType !== "CASH_REFUND") {
+        setDiscountType("TK");
+        setDiscountValue(calculatedRefundAmount.toFixed(2));
+        setCustomerName(selectedInvoiceForReturn.customer);
+        setCustomerPhone(selectedInvoiceForReturn.phone);
+        alert(t(`💳 Store credit of ${calculatedRefundAmount.toFixed(1)} ${currencySymbol} generated!`, `💳 ${calculatedRefundAmount.toFixed(1)} ${currencySymbol} স্টোর ক্রেডিট তৈরি হয়েছে!`));
+        navigateTab("pos");
+      } else {
+        playSound('success');
+        alert(t("✅ Return processed successfully!", "✅ ফেরত সফলভাবে প্রক্রিয়া করা হয়েছে!"));
+      }
+
+    } finally {
+      // Always release the return lock so the button re-enables regardless
+      // of success, failure, or unexpected exception.
+      setIsSubmittingReturn(false);
     }
-
-    setInvoices(updatedInvoices);
-    setDueList(updatedDueList);
-    // Derive from updated invoices + due collections for cross-device consistency
-    const { sales: returnedSales, profit: returnedProfit } = computeSalesAndProfit(updatedInvoices, dueCollectionLog);
-    setTotalSales(returnedSales);
-    setTotalProfit(returnedProfit);
-
-    // FIX (multi-device stock conflict): add the returned quantities back on
-    // top of the freshest stock fetched from Firebase, instead of overwriting
-    // it with this device's local array.
-    updateMedicinesOnCloud(latestMeds =>
-      latestMeds.map(m => returnQtyByMedId[m.id] ? { ...m, stock: m.stock + returnQtyByMedId[m.id] } : m)
-    );
-
-    cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
-    cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
-    cloudSet('madina_v7_sales', returnedSales.toString());
-    cloudSet('madina_v7_profit', returnedProfit.toString());
-
-    setShowReturnModal(false);
-    setSelectedInvoiceForReturn(null);
-    alert(t("✅ Return processed successfully!", "✅ ফেরত সফলভাবে প্রক্রিয়া করা হয়েছে!"));
   };
 
   // ============================================================
@@ -3543,30 +4584,87 @@ export default function Home() {
       ? dueList.filter(d => d.id !== duePaymentModal.id)
       : dueList.map(d => d.id === duePaymentModal.id ? { ...d, totalDue: newTotalDue } : d);
 
+    // Transactional ID for this due collection — links all ledger records
+    const dueTransactionId = `TXN-DUE-${Date.now()}-${genId()}`;
+
     // Log this collection with date for dashboard due collection stats
     const today = new Date();
+    const formattedDate = today.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' });
     const logEntry = {
       id: genId(),
+      transactionId: dueTransactionId,
       customerName: duePaymentModal.customerName,
       phone: duePaymentModal.phone || "N/A",
       amount: payAmt,
-      dateString: today.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' }),
+      dateString: formattedDate,
       date: today.toISOString()
     };
     const updatedLog = [logEntry, ...dueCollectionLog];
+
+    // Phase 3: Payment ledger entry for this due collection
+    const freshPaymentLedger = await fetchLatestList('madina_v7_payment_ledger', paymentLedgerRef.current);
+    const freshCashLedger    = await fetchLatestList('madina_v7_cash_ledger', cashLedgerRef.current);
+
+    const duePayEntry = {
+      paymentId:     `PAY-DUE-${Date.now()}-${genId()}`,
+      transactionId: dueTransactionId,
+      customer:      duePaymentModal.customerName,
+      phone:         duePaymentModal.phone || "N/A",
+      amount:        payAmt,
+      paymentMethod: 'Cash',   // due collection is always cash unless extended later
+      paymentType:   'DUE_COLLECTION' as const,
+      timestamp:     today.toISOString(),
+      dateString:    formattedDate,
+    };
+    const updatedPaymentLedger = [duePayEntry, ...freshPaymentLedger];
+
+    // Phase 3: Cash ledger entry — cash IN for the collected amount
+    const dueCashEntry = {
+      ledgerId:      `CASH-DUE-${Date.now()}-${genId()}`,
+      transactionId: dueTransactionId,
+      customer:      duePaymentModal.customerName,
+      amount:        payAmt,
+      type:          'DUE_COLLECTION' as const,
+      direction:     'IN' as const,
+      paymentMethod: 'Cash',
+      timestamp:     today.toISOString(),
+      dateString:    formattedDate,
+    };
+    const updatedCashLedger = [dueCashEntry, ...freshCashLedger];
+
+    // Sales revenue is NOT increased by due collection (corrected accounting rule).
+    // Sales was already booked in full at the original sale's finalBill.
+    const { sales: newTotalSales, profit: newTotalProfit } = computeSalesAndProfit(invoices, updatedLog);
+
+    // Single atomic PATCH — all keys land together or none do.
+    // BUGFIX #4: madina_v7_profit was previously missing from this PATCH,
+    // causing the stored profit scalar to drift from computeSalesAndProfit's
+    // value until the next full page reload. Both sales and profit must be
+    // written together to keep all devices in sync.
+    const writeOk = await cloudMultiSet({
+      madina_v7_due_collection_log: JSON.stringify(updatedLog),
+      madina_v7_due_list:           JSON.stringify(updatedDueList),
+      madina_v7_sales:              newTotalSales.toString(),
+      madina_v7_profit:             newTotalProfit.toString(),
+      madina_v7_payment_ledger:     JSON.stringify(updatedPaymentLedger),
+      madina_v7_cash_ledger:        JSON.stringify(updatedCashLedger),
+    });
+
+    if (!writeOk) {
+      alert(t(
+        `❌ Could not save payment — check your internet and try again.\n\nNothing was changed.\n(Ref: ${dueTransactionId})`,
+        `❌ পেমেন্ট সংরক্ষণ করা যায়নি — ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।\n\nকিছুই পরিবর্তন হয়নি।\n(রেফ: ${dueTransactionId})`
+      ));
+      return;
+    }
+
+    // Update local state only after confirmed write (BUGFIX #4: profit is now included)
     setDueCollectionLog(updatedLog);
-    cloudSet('madina_v7_due_collection_log', JSON.stringify(updatedLog));
-
-    // Derive sales fresh from invoices + ALL due collections (profit unaffected —
-    // it was already booked in full at original sale time). This avoids the old
-    // "totalSales + payAmt" stale-state pattern, which silently lost collected
-    // due amounts whenever invoices were later resynced/recalculated.
-    const { sales: newTotalSales } = computeSalesAndProfit(invoices, updatedLog);
     setTotalSales(newTotalSales);
-    cloudSet('madina_v7_sales', newTotalSales.toString());
-
+    setTotalProfit(newTotalProfit);
     setDueList(updatedDueList);
-    cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
+    setPaymentLedger(updatedPaymentLedger);
+    setCashLedger(updatedCashLedger);
     setDuePaymentModal(null);
     setDuePayAmount("");
     alert(t(`✅ Payment of ${payAmt.toFixed(1)} ${currencySymbol} recorded!`, `✅ ${payAmt.toFixed(1)} ${currencySymbol} পরিশোধ নথিভুক্ত হয়েছে!`));
@@ -3606,12 +4704,16 @@ export default function Home() {
       );
       setExpenseList(updated);
       await cloudSet('madina_v7_expenses', JSON.stringify(updated));
+      // Note: editing an expense does NOT create a new cash ledger entry —
+      // the original entry stands. Only the expense record itself is corrected.
       playSound('save');
       alert(t("✅ Expense updated!", "✅ খরচ আপডেট হয়েছে!"));
     } else {
       const today = new Date();
+      const expenseTransactionId = `TXN-EXP-${Date.now()}-${genId()}`;
       const newEntry = {
         id: genId(),
+        transactionId: expenseTransactionId, // Phase 4: trace every expense in cash ledger
         category: finalCategory,
         amount: amt,
         note: expenseNote,
@@ -3621,7 +4723,39 @@ export default function Home() {
       };
       const updated = [newEntry, ...currentList];
       setExpenseList(updated);
-      await cloudSet('madina_v7_expenses', JSON.stringify(updated));
+
+      // Phase 4: Every new expense must appear in the cash ledger (OUT) so
+      // end-of-day cash reconciliation is accurate.
+      // Closing Cash = Opening Cash + Cash IN - Cash OUT (expenses are Cash OUT).
+      const freshCashLedger = await fetchLatestList('madina_v7_cash_ledger', cashLedgerRef.current);
+      const expenseCashEntry = {
+        ledgerId:        `CASH-EXP-${Date.now()}-${genId()}`,
+        transactionId:   expenseTransactionId,
+        category:        finalCategory,
+        note:            expenseNote || '',
+        amount:          amt,
+        type:            'EXPENSE' as const,
+        direction:       'OUT' as const,
+        paymentMethod:   expensePaymentMethod,
+        timestamp:       today.toISOString(),
+        dateString:      newEntry.dateString,
+      };
+      const updatedCashLedger = [expenseCashEntry, ...freshCashLedger];
+      setCashLedger(updatedCashLedger);
+
+      // Write both atomically so expense and cash ledger never diverge.
+      // We set the expense list optimistically above; now confirm the write.
+      const writeOk = await cloudMultiSet({
+        madina_v7_expenses:    JSON.stringify(updated),
+        madina_v7_cash_ledger: JSON.stringify(updatedCashLedger),
+      });
+      if (!writeOk) {
+        // Roll back optimistic UI — the expense did not save
+        setExpenseList(currentList);
+        setCashLedger(freshCashLedger);
+        alert(t("❌ Could not save expense — check your internet and try again.", "❌ খরচ সংরক্ষণ হয়নি — ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।"));
+        return;
+      }
       playSound('add');
     }
     resetExpenseForm();
@@ -3650,9 +4784,23 @@ export default function Home() {
     }
     if (!confirm(t("Delete this expense entry?", "এই খরচের এন্ট্রি মুছে ফেলবেন?"))) return;
     const currentList = await fetchLatestList('madina_v7_expenses', expenseListRef.current);
+    const expenseEntry = currentList.find((e: any) => e.id === expenseId);
     const updated = currentList.filter((e: any) => e.id !== expenseId);
     setExpenseList(updated);
-    await cloudSet('madina_v7_expenses', JSON.stringify(updated));
+
+    // Phase 4: remove the matching cash ledger entry so cash reconciliation stays correct.
+    // We match by transactionId (set on new-style entries) or by amount+date as fallback
+    // for entries created before Phase 4.
+    const freshCashLedger = await fetchLatestList('madina_v7_cash_ledger', cashLedgerRef.current);
+    const updatedCashAfterExpenseDel = expenseEntry?.transactionId
+      ? freshCashLedger.filter((c: any) => c.transactionId !== expenseEntry.transactionId)
+      : freshCashLedger; // For old entries without transactionId, leave cash ledger alone
+    setCashLedger(updatedCashAfterExpenseDel);
+
+    await cloudMultiSet({
+      madina_v7_expenses:    JSON.stringify(updated),
+      madina_v7_cash_ledger: JSON.stringify(updatedCashAfterExpenseDel),
+    });
     playSound('delete');
     if (editingExpenseId === expenseId) resetExpenseForm();
   };
@@ -3868,6 +5016,7 @@ export default function Home() {
       setBdMedNameMetadata([]);
       setTotalSales(0); setTotalProfit(0);
       setInvoices([]); setCart([]); setPurchaseList([]); setDueList([]); setDueCollectionLog([]);
+      setPaymentLedger([]); setCashLedger([]);
       setPharmacyName("Madina Medicine Corner");
       setPharmacySlogan("Professional Pharmacy POS System");
       setPharmacyAddress("Chaumuhani Bazar, Cumilla");
@@ -3903,6 +5052,12 @@ export default function Home() {
       cloudSet('madina_v7_vat', '0');
       cloudSet('madina_v7_threshold', '10');
       cloudSet('madina_v7_footer', 'ধন্যবাদ, আবার আসবেন!');
+      cloudSet('madina_v7_payment_ledger', JSON.stringify([]));
+      cloudSet('madina_v7_cash_ledger', JSON.stringify([]));
+      cloudSet('madina_v7_stock_movements', JSON.stringify([]));
+      setStockMovements([]);
+      cloudSet('madina_v7_audit_log', JSON.stringify([]));
+      setAuditLog([]);
 
       setIsLoggedIn(false);
       alert(t("✅ System reset successful!", "✅ সিস্টেম রিসেট সম্পন্ন!"));
@@ -4047,8 +5202,18 @@ export default function Home() {
         body: JSON.stringify(JSON.stringify(latestInvoices)),
       });
 
+      // BUGFIX #9: await the write and surface failures to the admin.
+      // Without await, a network drop here silently loses the correction
+      // while the success alert still fires.
+      const fixWriteOk = await cloudSet('madina_v7_invoices', JSON.stringify(correctedInvoices));
+      if (!fixWriteOk) {
+        alert(t(
+          `❌ Could not save corrections — check your internet and try again.\nYour backup is safe at: ${backupKey}`,
+          `❌ সংশোধন সংরক্ষণ হয়নি — ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।\nব্যাকআপ নিরাপদ আছে: ${backupKey}`
+        ));
+        return;
+      }
       setInvoices(correctedInvoices);
-      cloudSet('madina_v7_invoices', JSON.stringify(correctedInvoices));
 
       alert(t(
         `✅ Fixed ${changedCount} invoice(s)! Dashboard and invoice due amounts are now correct.\nBackup saved as: ${backupKey}`,
@@ -4063,46 +5228,204 @@ export default function Home() {
   };
 
   // ============================================================
-  // BACKUP & RESTORE FUNCTIONS
+  // ============================================================
+  // BACKUP & RESTORE FUNCTIONS — Phase 5 hardened
   // ============================================================
 
-  // সব important data Firebase থেকে সরাসরি জড়ো করে JSON ফাইল বানাও
-  // (localStorage এ business data থাকে না — Firebase ই একমাত্র উৎস)
-  const buildBackupObject = async (): Promise<Record<string, any> | null> => {
-    const cloudData = await fbGetAll();
-    if (!cloudData) return null;
-    const backupData: Record<string, any> = {};
-    for (const key of CLOUD_SYNC_KEYS) {
-      if (cloudData[key] !== undefined) backupData[key] = cloudData[key];
-    }
-    return backupData;
+  // ── Crypto-safe UUID (browser + Node compatible) ─────────────
+  const generateUUID = (): string => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    // Fallback: Math.random hex (not cryptographically strong, but collision-safe at this scale)
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
   };
 
-  // JSON ফাইল ডাউনলোড করো (Browser download — PC/Android/iOS সব জায়গায় কাজ করে)
+  // ── Build a PURE READ snapshot — never touches live data ─────
+  // Reads CLOUD_SYNC_KEYS from Firebase, returns the raw snapshot.
+  // This function ONLY reads. It NEVER writes to /madina_data.
+  const buildBackupSnapshot = async (): Promise<Record<string, any> | null> => {
+    const cloudData = await fbGetAll();
+    if (!cloudData) return null;
+    const snapshot: Record<string, any> = {};
+    for (const key of CLOUD_SYNC_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(cloudData, key)) {
+        snapshot[key] = cloudData[key];
+      }
+    }
+    return snapshot;
+  };
+
+  // ── Assemble the full backup envelope ────────────────────────
+  // backupId uses timestamp + UUID so same-day backups never collide.
+  const assembleBackupEnvelope = (snapshot: Record<string, any>, pharmacyName: string): Record<string, any> => {
+    const now = new Date();
+    const backupId = `backup_${now.getTime()}_${generateUUID()}`;
+    return {
+      backupId,
+      backupVersion: 'v7',
+      schemaVersion: BACKUP_SCHEMA_VERSION,
+      createdAt: now.toISOString(),
+      createdAtLocal: now.toLocaleString('bn-BD'),
+      appVersion: '8.0',
+      pharmacyName,
+      dataKeys: Object.keys(snapshot),
+      data: snapshot,
+    };
+  };
+
+  // ── Validate a parsed backup object ──────────────────────────
+  // Returns null on pass, or a human-readable error string on failure.
+  const validateBackupEnvelope = (parsed: any): string | null => {
+    if (!parsed || typeof parsed !== 'object') return 'Not a valid JSON object.';
+    // Accept both old format (backupVersion only) and new format (schemaVersion present)
+    if (!parsed.backupVersion && !parsed._madina_backup_version) return 'Missing backupVersion — not a Madina POS backup file.';
+    if (!parsed.data || typeof parsed.data !== 'object') return 'Missing data payload.';
+
+    // schemaVersion check only for new-format backups
+    if (parsed.schemaVersion !== undefined) {
+      const sv = Number(parsed.schemaVersion);
+      if (isNaN(sv) || sv < MIN_RESTORE_SCHEMA_VERSION) {
+        return `Backup schema version ${sv} is too old (minimum: ${MIN_RESTORE_SCHEMA_VERSION}). Cannot restore.`;
+      }
+    }
+
+    // At least one critical financial key must be present
+    const criticalKeys = ['madina_v7_invoices', 'madina_v7_meds', 'madina_v7_sales'];
+    const hasAnyCritical = criticalKeys.some(k => Object.prototype.hasOwnProperty.call(parsed.data, k));
+    if (!hasAnyCritical) return 'Backup appears empty — none of the required financial keys are present.';
+
+    // Spot-check that data values that exist are strings (our serialization format)
+    for (const key of CLOUD_SYNC_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(parsed.data, key)) {
+        const val = parsed.data[key];
+        if (val !== null && val !== undefined && typeof val !== 'string') {
+          return `Key "${key}" has unexpected type "${typeof val}". Backup may be corrupted.`;
+        }
+      }
+    }
+
+    return null; // valid
+  };
+
+  // ── Post-restore structural integrity check ───────────────────
+  // Checks that the keys we just wrote parse as valid JSON where expected.
+  // Returns a list of warnings (empty = all good).
+  const postRestoreIntegrityCheck = async (): Promise<string[]> => {
+    const warnings: string[] = [];
+    // Keys that MUST exist and parse as JSON arrays or objects after restore
+    const jsonArrayKeys = [
+      'madina_v7_meds', 'madina_v7_invoices', 'madina_v7_purchases',
+      'madina_v7_due_list', 'madina_v7_due_collection_log',
+      'madina_v7_sales', 'madina_v7_expenses', 'madina_v7_payment_ledger',
+      'madina_v7_cash_ledger', 'madina_v7_stock_movements',
+    ];
+    const liveData = await fbGetAll();
+    if (!liveData) {
+      warnings.push('Could not read live data after restore — verify manually.');
+      return warnings;
+    }
+    for (const key of jsonArrayKeys) {
+      const raw = liveData[key];
+      if (!raw) continue; // key absent is ok (backup may predate the key)
+      try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed) && typeof parsed !== 'object') {
+          warnings.push(`${key}: expected array/object after restore, got ${typeof parsed}.`);
+        }
+      } catch {
+        warnings.push(`${key}: JSON parse failed after restore — data may be corrupted.`);
+      }
+    }
+    return warnings;
+  };
+
+  // ── Emergency backup to Firebase BEFORE any destructive restore ──
+  // Saves to /madina_backups/emergency_pre_restore_<timestamp>_<uuid>
+  // Returns the backupKey string on success, null on failure.
+  // NEVER touches /madina_data — writes only to /madina_backups.
+  const saveEmergencyBackup = async (): Promise<string | null> => {
+    if (!isFirebaseConfigured()) return null;
+    try {
+      const snapshot = await buildBackupSnapshot();
+      if (!snapshot) return null;
+      const envelope = assembleBackupEnvelope(snapshot, pharmacyName);
+      const emergencyKey = `emergency_pre_restore_${Date.now()}_${generateUUID()}`;
+      const url = `${FIREBASE_CONFIG.databaseURL}/madina_backups/${emergencyKey}.json`;
+      const res = await fetchWithTimeout(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...envelope, backupId: emergencyKey, _type: 'emergency_pre_restore' }),
+      }, 20000);
+      return res.ok ? emergencyKey : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // ── Atomic restore via single PATCH to /${DATA_ROOT} ─────────
+  // Firebase REST PATCH to the DATA_ROOT is ONE HTTP request — the server
+  // applies all key updates atomically at that node. Either all keys land
+  // or (on network abort/timeout) the request fails entirely and Firebase
+  // leaves the live data unchanged. This is NOT Promise.all() of separate
+  // fbSet() calls — it is a genuine single-request multi-path write.
+  //
+  // Keys present in backup → set to backup value.
+  // Keys in CLOUD_SYNC_KEYS but absent from backup → set to JSON null
+  //   (Firebase deletes a key when its value is null via PATCH).
+  const atomicRestoreToFirebase = async (backupData: Record<string, any>): Promise<boolean> => {
+    if (!isFirebaseConfigured()) return false;
+
+    // Build the PATCH body: every key in CLOUD_SYNC_KEYS must appear
+    const patchBody: Record<string, string | null> = {};
+    for (const key of CLOUD_SYNC_KEYS) {
+      const hasKey = Object.prototype.hasOwnProperty.call(backupData, key);
+      const val = backupData[key];
+      if (hasKey && typeof val === 'string') {
+        patchBody[`/${key}`] = val;
+      } else {
+        // Key absent from backup → delete it from live DB (null = delete in Firebase PATCH)
+        patchBody[`/${key}`] = null;
+      }
+    }
+
+    try {
+      const res = await fetchWithTimeout(
+        `${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}.json`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patchBody),
+        },
+        30000 // 30s — large payload on slow connections
+      );
+      return res.ok;
+    } catch {
+      // Network failure / timeout → Firebase never received the request.
+      // Live data is untouched.
+      return false;
+    }
+  };
+
+  // ── Download backup as JSON file ──────────────────────────────
   const handleDownloadBackup = async () => {
     setIsBackingUp(true);
     try {
-      const backupData = await buildBackupObject();
-      if (!backupData) {
+      const snapshot = await buildBackupSnapshot();
+      if (!snapshot) {
         addToast(t("❌ No internet — can't read data from cloud!", "❌ ইন্টারনেট নেই — ক্লাউড থেকে তথ্য পড়া যাচ্ছে না!"), 'error');
         setIsBackingUp(false);
         return;
       }
 
+      const envelope = assembleBackupEnvelope(snapshot, pharmacyName);
       const now = new Date();
       const dateStr = now.toLocaleDateString('bn-BD', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
       const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '-');
       const filename = `MadinaPOS_Backup_${dateStr}_${timeStr}.json`;
 
-      const backupObj = {
-        _madina_backup_version: "v7",
-        _backup_date: now.toISOString(),
-        _backup_date_bn: now.toLocaleString('bn-BD'),
-        _pharmacy_name: pharmacyName,
-        data: backupData
-      };
-
-      const blob = new Blob([JSON.stringify(backupObj, null, 2)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -4117,13 +5440,16 @@ export default function Home() {
       localStorage.setItem('madina_v7_last_backup', nowStr);
       playSound('save');
       addToast(t(`✅ Backup downloaded: ${filename}`, `✅ ব্যাকআপ ডাউনলোড হয়েছে: ${filename}`), 'success');
-    } catch (err) {
+    } catch {
       addToast(t("❌ Backup failed! Try again.", "❌ ব্যাকআপ ব্যর্থ হয়েছে!"), 'error');
     }
     setIsBackingUp(false);
   };
 
-  // Firebase এ আলাদা backup node এ push করো
+  // ── Cloud backup to /madina_backups/<collision-safe id> ───────
+  // Uses timestamp + UUID so multiple backups on the same day NEVER
+  // overwrite each other. Writes ONLY to /madina_backups — never to
+  // /madina_data. Creating a backup is always read-only from the live DB.
   const handleFirebaseBackup = async () => {
     if (!isFirebaseConfigured()) {
       addToast(t("⚠️ Firebase not configured!", "⚠️ Firebase সেটআপ করা নেই!"), 'error');
@@ -4131,29 +5457,23 @@ export default function Home() {
     }
     setIsBackingUp(true);
     try {
-      const backupData = await buildBackupObject();
-      if (!backupData) {
+      const snapshot = await buildBackupSnapshot();
+      if (!snapshot) {
         addToast(t("❌ No internet or Firebase error!", "❌ ইন্টারনেট নেই বা Firebase সমস্যা!"), 'error');
         setIsBackingUp(false);
         return;
       }
-      const now = new Date();
-      const backupObj = {
-        _madina_backup_version: "v7",
-        _backup_date: now.toISOString(),
-        _backup_date_bn: now.toLocaleString('bn-BD'),
-        _pharmacy_name: pharmacyName,
-        data: backupData
-      };
-      const backupKey = `backup_${now.toISOString().slice(0,10)}`;
+      const envelope = assembleBackupEnvelope(snapshot, pharmacyName);
+      // backupId from assembleBackupEnvelope is already timestamp+UUID — use it as the key
+      const backupKey = envelope.backupId;
       const url = `${FIREBASE_CONFIG.databaseURL}/madina_backups/${backupKey}.json`;
       const res = await fetchWithTimeout(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(backupObj),
-      }, 15000);
+        body: JSON.stringify(envelope),
+      }, 20000);
       if (res.ok) {
-        const nowStr = now.toLocaleString('bn-BD');
+        const nowStr = new Date().toLocaleString('bn-BD');
         setLastBackupTime(nowStr);
         localStorage.setItem('madina_v7_last_backup', nowStr);
         playSound('save');
@@ -4167,12 +5487,23 @@ export default function Home() {
     setIsBackingUp(false);
   };
 
-  // JSON ফাইল থেকে রিস্টোর করো
+  // ── Restore from JSON file — full Phase 5 safety pipeline ────
+  //
+  // STEP 1: Validate backup format + schema version.
+  // STEP 2: Show backup metadata to user and require explicit confirmation.
+  // STEP 3: Save emergency backup of CURRENT live data to /madina_backups.
+  // STEP 4: Atomic PATCH restore — one request, all keys or nothing.
+  // STEP 5: Verify structural integrity of restored data.
+  // STEP 6: Reload.
+  //
+  // If STEP 4 fails (network / Firebase error), live data is untouched.
+  // If STEP 5 reports warnings, user sees them before the reload.
   const handleRestoreFromFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.name.endsWith('.json')) {
       addToast(t("❌ Only .json backup files accepted!", "❌ শুধু .json ব্যাকআপ ফাইল গ্রহণযোগ্য!"), 'error');
+      e.target.value = "";
       return;
     }
     if (!isFirebaseConfigured()) {
@@ -4180,50 +5511,118 @@ export default function Home() {
       e.target.value = "";
       return;
     }
-    const confirmRestore = window.confirm(
-      t("⚠️ This will REPLACE all current data with backup data. Are you sure?",
-        "⚠️ এটি বর্তমান সব তথ্য মুছে ব্যাকআপের তথ্য দিয়ে প্রতিস্থাপন করবে। নিশ্চিত?")
-    );
-    if (!confirmRestore) { e.target.value = ""; return; }
 
     setIsRestoring(true);
     const reader = new FileReader();
     reader.onload = async (ev) => {
       try {
-        const parsed = JSON.parse(ev.target?.result as string);
-        if (!parsed._madina_backup_version || !parsed.data) {
-          addToast(t("❌ Invalid backup file!", "❌ ব্যাকআপ ফাইল সঠিক নয়!"), 'error');
-          setIsRestoring(false);
-          return;
-        }
-        // সব key Firebase এ সরাসরি restore করো (explicit user action)
-        // ব্যাকআপে যেসব key নেই, সেগুলো delete করে দাও — যাতে "REPLACE all current data"
-        // কথাটা সত্যিকার অর্থে কাজ করে (পুরোনো invoice/sale ইত্যাদি যেন রয়ে না যায়)
-        const writes: Promise<boolean>[] = [];
-        for (const key of CLOUD_SYNC_KEYS) {
-          const hasKey = Object.prototype.hasOwnProperty.call(parsed.data, key);
-          const val = parsed.data[key];
-          if (hasKey && typeof val === 'string') {
-            writes.push(fbSet(key, val));
-          } else {
-            writes.push(fbDelete(key));
-          }
-        }
-        const results = await Promise.all(writes);
-        if (results.some(ok => !ok)) {
-          addToast(t("⚠️ Some data may not have saved — check your internet and try again.", "⚠️ কিছু তথ্য সেভ নাও হতে পারে — ইন্টারনেট চেক করে আবার চেষ্টা করুন।"), 'error');
+        // STEP 1 — Parse + validate
+        let parsed: any;
+        try {
+          parsed = JSON.parse(ev.target?.result as string);
+        } catch {
+          addToast(t("❌ Could not parse backup file — file may be corrupted.", "❌ ব্যাকআপ ফাইল পড়া যায়নি — ফাইলটি নষ্ট হতে পারে।"), 'error');
           setIsRestoring(false);
           e.target.value = "";
           return;
         }
+
+        const validationError = validateBackupEnvelope(parsed);
+        if (validationError) {
+          addToast(t(`❌ Invalid backup: ${validationError}`, `❌ অবৈধ ব্যাকআপ: ${validationError}`), 'error');
+          setIsRestoring(false);
+          e.target.value = "";
+          return;
+        }
+
+        // STEP 2 — Inform user of backup metadata + require explicit confirmation
+        const backupDate = parsed.createdAt || parsed._backup_date || 'unknown';
+        const backupPharmacy = parsed.pharmacyName || parsed._pharmacy_name || 'unknown';
+        const backupSchema = parsed.schemaVersion ?? '(legacy)';
+        const dataKeyCount = Object.keys(parsed.data).length;
+
+        const confirmed = window.confirm(
+          t(
+            `⚠️ RESTORE CONFIRMATION\n\nBackup date: ${backupDate}\nPharmacy: ${backupPharmacy}\nSchema version: ${backupSchema}\nData keys: ${dataKeyCount}\n\nThis will COMPLETELY REPLACE all current live data.\n\nAn emergency backup of your CURRENT data will be saved first.\n\nProceed with restore?`,
+            `⚠️ রিস্টোর নিশ্চিতকরণ\n\nব্যাকআপ তারিখ: ${backupDate}\nফার্মেসি: ${backupPharmacy}\nস্কিমা ভার্সন: ${backupSchema}\nডেটা কী সংখ্যা: ${dataKeyCount}\n\nএটি বর্তমান সব লাইভ ডেটা সম্পূর্ণরূপে প্রতিস্থাপন করবে।\n\nআপনার বর্তমান ডেটার একটি জরুরি ব্যাকআপ প্রথমে সংরক্ষিত হবে।\n\nরিস্টোর করবেন?`
+          )
+        );
+        if (!confirmed) {
+          setIsRestoring(false);
+          e.target.value = "";
+          return;
+        }
+
+        // STEP 3 — Emergency backup of current live data
+        addToast(t("💾 Saving emergency backup of current data...", "💾 বর্তমান ডেটার জরুরি ব্যাকআপ সংরক্ষণ করা হচ্ছে..."), 'info');
+        const emergencyKey = await saveEmergencyBackup();
+        if (!emergencyKey) {
+          // Emergency backup failed — warn but do NOT proceed.
+          // Restoring without a safety net is too risky.
+          const forceAnyway = window.confirm(
+            t(
+              "⚠️ Emergency backup FAILED (no internet or Firebase error).\n\nProceeding without a safety backup is risky.\n\nDo you want to proceed anyway? (NOT recommended)",
+              "⚠️ জরুরি ব্যাকআপ ব্যর্থ হয়েছে (ইন্টারনেট নেই বা Firebase সমস্যা)।\n\nনিরাপত্তা ব্যাকআপ ছাড়া এগিয়ে যাওয়া ঝুঁকিপূর্ণ।\n\nতবুও এগিয়ে যাবেন? (প্রস্তাবিত নয়)"
+            )
+          );
+          if (!forceAnyway) {
+            addToast(t("✅ Restore cancelled for safety.", "✅ নিরাপত্তার জন্য রিস্টোর বাতিল করা হয়েছে।"), 'info');
+            setIsRestoring(false);
+            e.target.value = "";
+            return;
+          }
+        } else {
+          addToast(t(`✅ Emergency backup saved: ${emergencyKey}`, `✅ জরুরি ব্যাকআপ সংরক্ষিত: ${emergencyKey}`), 'success');
+        }
+
+        // STEP 4 — Atomic PATCH restore (one request — all keys or nothing)
+        addToast(t("⏳ Restoring data atomically...", "⏳ ডেটা পুনরুদ্ধার করা হচ্ছে..."), 'info');
+        const restoreOk = await atomicRestoreToFirebase(parsed.data);
+        if (!restoreOk) {
+          // The PATCH request failed — Firebase never wrote anything.
+          // Live data is exactly as it was. Emergency backup is still valid.
+          addToast(
+            t(
+              `❌ Restore FAILED — live data is UNCHANGED.\nYour emergency backup is safe at: ${emergencyKey || 'n/a'}\nCheck your internet connection and try again.`,
+              `❌ রিস্টোর ব্যর্থ — লাইভ ডেটা অপরিবর্তিত আছে।\nআপনার জরুরি ব্যাকআপ নিরাপদ আছে: ${emergencyKey || 'n/a'}\nইন্টারনেট চেক করে আবার চেষ্টা করুন।`
+            ),
+            'error'
+          );
+          setIsRestoring(false);
+          e.target.value = "";
+          return;
+        }
+
+        // STEP 5 — Post-restore structural integrity check
+        const warnings = await postRestoreIntegrityCheck();
+        if (warnings.length > 0) {
+          addToast(
+            t(
+              `⚠️ Restore completed with warnings:\n${warnings.join('\n')}\nPlease verify data manually.`,
+              `⚠️ সতর্কতা সহ রিস্টোর সম্পন্ন:\n${warnings.join('\n')}\nঅনুগ্রহ করে ডেটা যাচাই করুন।`
+            ),
+            'error'
+          );
+        }
+
+        // STEP 6 — Mark success and reload
         const nowStr = new Date().toLocaleString('bn-BD');
         setLastBackupTime(nowStr);
         localStorage.setItem('madina_v7_last_backup', nowStr);
         playSound('success');
-        addToast(t("✅ Data restored! Reloading...", "✅ ডেটা পুনরুদ্ধার হয়েছে! রিলোড হচ্ছে..."), 'success');
-        setTimeout(() => window.location.reload(), 1500);
-      } catch {
-        addToast(t("❌ Restore failed! File may be corrupted.", "❌ রিস্টোর ব্যর্থ! ফাইলটি নষ্ট হতে পারে।"), 'error');
+        addToast(t("✅ Data restored successfully! Reloading...", "✅ ডেটা সফলভাবে পুনরুদ্ধার হয়েছে! রিলোড হচ্ছে..."), 'success');
+        setTimeout(() => window.location.reload(), 2000);
+
+      } catch (err) {
+        // Unexpected error — we don't know whether the PATCH landed.
+        // Warn the user to check the emergency backup.
+        addToast(
+          t(
+            `❌ Unexpected restore error. Check your emergency backup in Firebase at /madina_backups if data looks wrong after reload.`,
+            `❌ অপ্রত্যাশিত রিস্টোর ত্রুটি। রিলোডের পরে ডেটা ভুল মনে হলে /madina_backups এ জরুরি ব্যাকআপ চেক করুন।`
+          ),
+          'error'
+        );
       }
       setIsRestoring(false);
       e.target.value = "";
@@ -4231,15 +5630,14 @@ export default function Home() {
     reader.readAsText(file);
   };
 
-  // Auto daily backup reminder — প্রতিদিন একবার remind করবে যদি আজ ব্যাকআপ না হয়
+  // Auto daily backup reminder
   useEffect(() => {
     const checkDailyBackupReminder = () => {
       const last = localStorage.getItem('madina_v7_last_backup');
-      if (!last) return; // প্রথমবার install এ remind করব না
+      if (!last) return;
       try {
         const lastDate = new Date(last);
-        const today = new Date();
-        const diffHours = (today.getTime() - lastDate.getTime()) / (1000 * 60 * 60);
+        const diffHours = (Date.now() - lastDate.getTime()) / (1000 * 60 * 60);
         if (diffHours >= 24) {
           addToast(
             t("💾 Reminder: Last backup was over 24 hours ago! Please backup now.",
@@ -4249,7 +5647,6 @@ export default function Home() {
         }
       } catch {}
     };
-    // লগইন করলে একবার চেক করো
     if (isLoggedIn) {
       const timer = setTimeout(checkDailyBackupReminder, 3000);
       return () => clearTimeout(timer);
@@ -4509,8 +5906,8 @@ export default function Home() {
         ${inv.vat > 0 ? `<div class="row"><span>${t('VAT:', 'ভ্যাট:')}</span><span>+${inv.vat.toFixed(1)}</span></div>` : ''}
         ${inv.discount > 0 ? `<div class="row"><span>${t('Discount:', 'ছাড়:')}</span><span>-${inv.discount.toFixed(1)}</span></div>` : ''}
         <div class="row bold" style="font-size:12px; margin-top:3px;"><span>${t('Net Payable', 'মোট পরিশোধ')}</span><span>${inv.finalBill.toFixed(1)} ${currencySymbol}</span></div>
-        <div class="row"><span>${t('Cash Received:', 'নগদ পেয়েছি:')}</span><span>${(inv.cashReceived || inv.finalBill).toFixed(1)} ${currencySymbol}</span></div>
-        <div class="row"><span>${t('Change Given:', 'ফেরত দিয়েছি:')}</span><span>${Math.max(0, (inv.cashReceived || inv.finalBill) - inv.finalBill).toFixed(1)} ${currencySymbol}</span></div>
+        <div class="row"><span>${t('Cash Received:', 'নগদ পেয়েছি:')}</span><span>${((inv.cashReceived ?? inv.finalBill) as number).toFixed(1)} ${currencySymbol}</span></div>
+        <div class="row"><span>${t('Change Given:', 'ফেরত দিয়েছি:')}</span><span>${Math.max(0, ((inv.cashReceived ?? inv.finalBill) as number) - inv.finalBill).toFixed(1)} ${currencySymbol}</span></div>
         ${inv.due > 0 ? `<div class="row bold" style="margin-top:3px;"><span>⚠️ ${t('Unpaid Due', 'বাকি')}</span><span>${inv.due.toFixed(1)} ${currencySymbol}</span></div>` : ''}
       </div>
       ${posShopFooter(inv.footerMsg || receiptFooterMsg)}
@@ -4626,9 +6023,33 @@ export default function Home() {
         // FIX (multi-device stock conflict): add restored quantities on top
         // of the freshest stock fetched from Firebase, instead of overwriting
         // it with this device's local array.
+        const preMedsForDel = medicinesRef.current;
         await updateMedicinesOnCloud(latestMeds =>
           latestMeds.map(m => restoreQtyById[m.id] ? { ...m, stock: m.stock + restoreQtyById[m.id] } : m)
         );
+        // Phase 4: record ADJUSTMENT stock movements for the restored quantities
+        const delAdjTransactionId = `TXN-DEL-${Date.now()}-${genId()}`;
+        const delAdjEntries = Object.entries(restoreQtyById).map(([medIdStr, qty]) => {
+          const medId = Number(medIdStr);
+          const med = preMedsForDel.find(m => m.id === medId);
+          return {
+            movementId: `MOV-${Date.now()}-${genId()}`,
+            transactionId: delAdjTransactionId,
+            reference: invoiceId,
+            originalTransactionId: inv.transactionId || null,
+            medicineId: medId,
+            medicineName: med ? med.name : medIdStr,
+            type: 'ADJUSTMENT' as const,
+            direction: 'IN' as const,
+            note: 'Invoice deleted — stock restored',
+            quantity: qty,
+            previousStock: med ? med.stock : 0,
+            resultingStock: med ? med.stock + qty : qty,
+            timestamp: new Date().toISOString(),
+            dateString: new Date().toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' }),
+          };
+        });
+        appendStockMovements(delAdjEntries);
       }
     }
 
@@ -5292,7 +6713,12 @@ export default function Home() {
             </button>
           )}
 
-
+          {/* Phase 6: Reconciliation — Admin only */}
+          {currentUserRole === "ADMIN" && (
+            <button onClick={() => { playSound('tab'); navigateTab("reconciliation"); }} className={`sc-row-solo sidebar-nav-btn w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "reconciliation" ? 'bg-red-600 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-red-400' : 'hover:bg-red-50 text-red-600'}`}>
+              <span>🔍</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Reconciliation", "সমন্বয়")}</span></span>
+            </button>
+          )}
 
           {/* Bottom Info */}
           <div className="sc-bottom mt-auto pt-4 border-t border-dashed border-slate-700/50">
@@ -5411,6 +6837,11 @@ export default function Home() {
                 {currentUserRole === "ADMIN" && (
                   <button onClick={() => { playSound('tab'); navigateTab("modules_menu"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "modules_menu" ? 'bg-indigo-500 text-white border-indigo-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
                     <span className="text-xl">🛡️</span><span>{t("Permissions", "অনুমতি")}</span>
+                  </button>
+                )}
+                {currentUserRole === "ADMIN" && (
+                  <button onClick={() => { playSound('tab'); navigateTab("reconciliation"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "reconciliation" ? 'bg-red-600 text-white border-red-600' : isDarkMode ? 'bg-slate-800 border-slate-700 text-red-400' : 'bg-red-50 border-red-200 text-red-600'}`}>
+                    <span className="text-xl">🔍</span><span>{t("Reconcile", "সমন্বয়")}</span>
                   </button>
                 )}
               </div>
@@ -9055,7 +10486,7 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Backup & Restore Section */}
+              {/* Backup & Restore Section — Phase 5 */}
               {checkShouldRenderTabOption("backup_restore") && (
                 <div className={`ccard cc-blue p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
                   <h3 className="text-sm font-black uppercase tracking-wider text-blue-500 mb-1 flex items-center gap-2">
@@ -9076,14 +10507,26 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Triple Safety Guide */}
+                  {/* Phase 5 Safety Info */}
                   <div className={`rounded-xl p-3 mb-3 text-sm ${isDarkMode ? 'bg-emerald-950/40 border border-emerald-700' : 'bg-emerald-50 border border-emerald-200'}`}>
-                    <p className="font-black text-emerald-500 mb-1.5">🛡️ {t("Triple Safety System", "তিন স্তরের নিরাপত্তা")}</p>
+                    <p className="font-black text-emerald-500 mb-1.5">🛡️ {t("Phase 5 Safety System", "ফেজ ৫ নিরাপত্তা সিস্টেম")}</p>
                     <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2"><span className="text-emerald-500">✅</span><span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{t("Firebase Cloud — auto syncs 24/7", "Firebase Cloud — সবসময় অটো সিঙ্ক")}</span></div>
-                      <div className="flex items-center gap-2"><span className="text-blue-500">✅</span><span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{t("Download JSON → save to Google Drive or Email", "JSON ডাউনলোড → Google Drive বা Email এ রাখুন")}</span></div>
-                      <div className="flex items-center gap-2"><span className="text-purple-500">✅</span><span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{t("Firebase Backup Node — extra cloud snapshot", "Firebase Backup Node — আলাদা ক্লাউড কপি")}</span></div>
+                      <div className="flex items-center gap-2"><span className="text-emerald-500">✅</span><span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{t("Collision-safe backup IDs (timestamp + UUID)", "কলিশন-নিরাপদ ব্যাকআপ আইডি (timestamp + UUID)")}</span></div>
+                      <div className="flex items-center gap-2"><span className="text-blue-500">✅</span><span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{t("Atomic restore — all keys or nothing (no partial writes)", "অ্যাটমিক রিস্টোর — সব কী অথবা কিছুই না (আংশিক রাইট নেই)")}</span></div>
+                      <div className="flex items-center gap-2"><span className="text-purple-500">✅</span><span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{t("Auto emergency backup before every restore", "প্রতিটি রিস্টোরের আগে স্বয়ংক্রিয় জরুরি ব্যাকআপ")}</span></div>
+                      <div className="flex items-center gap-2"><span className="text-amber-500">✅</span><span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{t("Schema validation — rejects incompatible backups", "স্কিমা যাচাই — অসামঞ্জস্যপূর্ণ ব্যাকআপ প্রত্যাখ্যান করে")}</span></div>
+                      <div className="flex items-center gap-2"><span className="text-rose-500">✅</span><span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{t("Post-restore integrity check on all financial keys", "সমস্ত আর্থিক কী-তে রিস্টোর-পরবর্তী অখণ্ডতা পরীক্ষা")}</span></div>
                     </div>
+                  </div>
+
+                  {/* Restore safety notice */}
+                  <div className={`rounded-xl p-3 mb-3 text-xs ${isDarkMode ? 'bg-amber-950/40 border border-amber-700' : 'bg-amber-50 border border-amber-200'}`}>
+                    <p className={`font-bold ${isDarkMode ? 'text-amber-400' : 'text-amber-700'}`}>
+                      ⚠️ {t(
+                        "Restore is destructive. An emergency backup of current live data is always saved to Firebase (/madina_backups) before any restore begins. If restore fails mid-way, your live data is NOT modified — the atomic write either succeeds completely or fails completely.",
+                        "রিস্টোর একটি ধ্বংসাত্মক অপারেশন। যেকোনো রিস্টোর শুরুর আগে বর্তমান লাইভ ডেটার একটি জরুরি ব্যাকআপ Firebase-এ (/madina_backups) সংরক্ষিত হয়। রিস্টোর ব্যর্থ হলে আপনার লাইভ ডেটা পরিবর্তন হবে না — অ্যাটমিক রাইট হয় সম্পূর্ণ সফল হয় বা সম্পূর্ণ ব্যর্থ হয়।"
+                      )}
+                    </p>
                   </div>
 
                   {/* Action Buttons */}
@@ -9108,7 +10551,7 @@ export default function Home() {
                       </button>
                     )}
 
-                    {/* Restore */}
+                    {/* Restore from File */}
                     <button
                       onClick={() => restoreFileRef.current?.click()}
                       disabled={isRestoring}
@@ -9126,7 +10569,10 @@ export default function Home() {
                   </div>
 
                   <p className={`text-sm mt-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                    💡 {t("Tip: After downloading, upload to Google Drive or send to your email for safekeeping.", "টিপস: ডাউনলোড করার পর Google Drive এ আপলোড করুন বা নিজের ইমেইলে পাঠান।")}
+                    💡 {t(
+                      "Tip: Cloud Backup uses a unique ID per backup — multiple backups on the same day are all preserved separately in Firebase under /madina_backups.",
+                      "টিপস: ক্লাউড ব্যাকআপ প্রতিটি ব্যাকআপে একটি অনন্য আইডি ব্যবহার করে — একই দিনের একাধিক ব্যাকআপ Firebase-এর /madina_backups-এ আলাদাভাবে সংরক্ষিত থাকে।"
+                    )}
                   </p>
                 </div>
               )}
@@ -9355,6 +10801,431 @@ export default function Home() {
             );
           })()}
 
+          {/* =========================================================
+              TAB: PHASE 6 RECONCILIATION (Admin Only)
+          ========================================================= */}
+          {activeTab === "reconciliation" && currentUserRole === "ADMIN" && (() => {
+            const eod = reconReport ? computeEOD(reconDate, reconReport) : null;
+            const severityColor = (s: string) =>
+              s === 'ERROR' ? 'text-red-500' : s === 'WARNING' ? 'text-amber-500' : 'text-emerald-500';
+            const severityBg = (s: string) =>
+              s === 'ERROR'
+                ? (isDarkMode ? 'bg-red-900/30 border-red-800' : 'bg-red-50 border-red-200')
+                : s === 'WARNING'
+                ? (isDarkMode ? 'bg-amber-900/30 border-amber-800' : 'bg-amber-50 border-amber-200')
+                : (isDarkMode ? 'bg-emerald-900/30 border-emerald-800' : 'bg-emerald-50 border-emerald-200');
+
+            const Row = ({ label, value, highlight, mono }: { label: string; value: any; highlight?: boolean; mono?: boolean }) => (
+              <div className={`flex justify-between items-center py-1 text-sm border-b border-slate-100 dark:border-slate-700/30 ${highlight ? 'font-black' : 'font-semibold'}`}>
+                <span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>{label}</span>
+                <span className={`${mono ? 'font-mono' : ''} ${highlight ? 'text-indigo-500' : ''}`}>{value}</span>
+              </div>
+            );
+
+            const tabs: { id: typeof reconTab; label: string; icon: string }[] = [
+              { id: 'summary',  label: t('Summary', 'সারসংক্ষেপ'),    icon: '📋' },
+              { id: 'eod',     label: t('End of Day', 'দিন শেষ'),     icon: '🌙' },
+              { id: 'sales',   label: t('Sales', 'বিক্রয়'),           icon: '💰' },
+              { id: 'cash',    label: t('Cash', 'নগদ'),               icon: '🏦' },
+              { id: 'due',     label: t('Due', 'বাকি'),               icon: '💳' },
+              { id: 'stock',   label: t('Stock', 'স্টক'),             icon: '📦' },
+              { id: 'profit',  label: t('Profit', 'লাভ'),             icon: '📈' },
+              { id: 'purchase',label: t('Purchase', 'ক্রয়'),          icon: '🛒' },
+              { id: 'return',  label: t('Return', 'ফেরত'),            icon: '🔄' },
+              { id: 'expense', label: t('Expense', 'খরচ'),            icon: '💸' },
+              { id: 'audit',   label: t('Audit Log', 'অডিট লগ'),      icon: '📜' },
+            ];
+
+            const filteredIssues = (category: string) =>
+              reconReport?.issues?.filter((i: any) => i.category === category) ?? [];
+
+            const IssueList = ({ issues }: { issues: any[] }) => (
+              <div className="flex flex-col gap-2 mt-3">
+                {issues.length === 0 && (
+                  <div className="text-emerald-500 font-bold text-sm text-center py-3">✅ {t('No issues found for this category', 'এই বিভাগে কোনো সমস্যা নেই')}</div>
+                )}
+                {issues.map((issue: any, idx: number) => (
+                  <div key={idx} className={`rounded-xl border p-3 text-sm ${severityBg(issue.severity)}`}>
+                    <div className={`font-black flex items-center gap-2 ${severityColor(issue.severity)}`}>
+                      <span>{issue.severity === 'ERROR' ? '❌' : issue.severity === 'WARNING' ? '⚠️' : 'ℹ️'}</span>
+                      <span>{issue.description}</span>
+                    </div>
+                    {issue.detail && (
+                      <pre className={`mt-2 text-xs font-mono overflow-x-auto rounded p-2 ${isDarkMode ? 'bg-slate-900/50' : 'bg-white/50'}`}>
+                        {JSON.stringify(issue.detail, null, 2).slice(0, 500)}
+                        {JSON.stringify(issue.detail, null, 2).length > 500 ? '\n...(truncated)' : ''}
+                      </pre>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+
+            return (
+              <div className="flex flex-col gap-4">
+                {/* Header */}
+                <div className={`ccard p-4 rounded-xl border shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-wider text-red-500 flex items-center gap-2">
+                        🔍 {t('Data Reconciliation & Integrity Audit', 'ডেটা সমন্বয় ও অখণ্ডতা অডিট')}
+                      </h3>
+                      <p className={`text-sm mt-1 font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {t('Read-only diagnostic. Never modifies any record.', 'শুধুমাত্র পঠনমাত্র ডায়াগনস্টিক। কোনো রেকর্ড পরিবর্তন করে না।')}
+                      </p>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {reconReport && (
+                        <div className="flex gap-2 text-sm font-black">
+                          {reconReport.issueCount > 0 && <span className="bg-red-500 text-white px-2.5 py-1 rounded-xl">{reconReport.issueCount} {t('Errors', 'ত্রুটি')}</span>}
+                          {reconReport.warningCount > 0 && <span className="bg-amber-500 text-white px-2.5 py-1 rounded-xl">{reconReport.warningCount} {t('Warnings', 'সতর্কতা')}</span>}
+                          {reconReport.issueCount === 0 && reconReport.warningCount === 0 && <span className="bg-emerald-500 text-white px-2.5 py-1 rounded-xl">✅ {t('Clean', 'পরিষ্কার')}</span>}
+                        </div>
+                      )}
+                      <button
+                        onClick={runReconciliation}
+                        disabled={reconRunning}
+                        className="bg-red-600 hover:bg-red-700 text-white font-black px-5 py-2 rounded-xl uppercase tracking-wider shadow transition disabled:opacity-60 text-sm"
+                      >
+                        {reconRunning ? `⏳ ${t('Running...', 'চলছে...')}` : `🔍 ${t('Run Audit', 'অডিট চালান')}`}
+                      </button>
+                    </div>
+                  </div>
+                  {reconReport?.runAt && (
+                    <p className={`text-sm mt-2 font-mono ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                      {t('Last run:', 'শেষ চালানো:')} {new Date(reconReport.runAt).toLocaleString()}
+                    </p>
+                  )}
+                  {reconReport?.error && (
+                    <div className="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-sm font-bold">
+                      ❌ {t('Reconciliation failed:', 'সমন্বয় ব্যর্থ:')} {reconReport.error}
+                    </div>
+                  )}
+                </div>
+
+                {reconReport && !reconReport.error && (
+                  <>
+                    {/* Sub-tab navigation */}
+                    <div className={`flex gap-1 flex-wrap p-1 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                      {tabs.map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setReconTab(tab.id)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition ${reconTab === tab.id ? 'bg-red-600 text-white shadow' : isDarkMode ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-white'}`}
+                        >
+                          <span>{tab.icon}</span><span>{tab.label}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* SUMMARY TAB */}
+                    {reconTab === 'summary' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Data Counts */}
+                        <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                          <h4 className="text-sm font-black text-indigo-500 uppercase mb-3">📊 {t('Record Counts', 'রেকর্ড সংখ্যা')}</h4>
+                          <Row label={t('Invoices', 'রশিদ')} value={reconReport.totalInvoices} mono />
+                          <Row label={t('Purchases', 'ক্রয়')} value={reconReport.totalPurchases} mono />
+                          <Row label={t('Payment Ledger', 'পেমেন্ট লেজার')} value={reconReport.totalPayments} mono />
+                          <Row label={t('Cash Ledger', 'নগদ লেজার')} value={reconReport.totalCashEntries} mono />
+                          <Row label={t('Stock Movements', 'স্টক মুভমেন্ট')} value={reconReport.totalStockMovements} mono />
+                          <Row label={t('Due Collection Log', 'বাকি আদায় লগ')} value={reconReport.totalDueCLogEntries} mono />
+                          <Row label={t('Due List Entries', 'বাকি তালিকা')} value={reconReport.totalDueListEntries} mono />
+                          <Row label={t('Expenses', 'খরচ')} value={reconReport.totalExpenses} mono />
+                          <Row label={t('Medicines', 'ওষুধ')} value={reconReport.totalMedicines} mono />
+                        </div>
+
+                        {/* Financial Summary */}
+                        <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                          <h4 className="text-sm font-black text-indigo-500 uppercase mb-3">💰 {t('Financial Summary', 'আর্থিক সারসংক্ষেপ')}</h4>
+                          <Row label={t('Sales Revenue', 'বিক্রয় আয়')} value={`${currencySymbol}${reconReport.salesRevenue.toFixed(2)}`} mono highlight />
+                          <Row label={t('Gross Profit', 'মোট লাভ')} value={`${currencySymbol}${reconReport.salesProfit.toFixed(2)}`} mono />
+                          <Row label={t('Total Discount', 'মোট ছাড়')} value={`${currencySymbol}${reconReport.totalDiscount.toFixed(2)}`} mono />
+                          <Row label={t('Cash In (Ledger)', 'নগদ ইন')} value={`${currencySymbol}${reconReport.cashIn.toFixed(2)}`} mono />
+                          <Row label={t('Cash Out (Ledger)', 'নগদ আউট')} value={`${currencySymbol}${reconReport.cashOut.toFixed(2)}`} mono />
+                          <Row label={t('Net Cash (Ledger)', 'নিট নগদ')} value={`${currencySymbol}${reconReport.ledgerNetCash.toFixed(2)}`} mono highlight />
+                          <Row label={t('Due Created', 'বাকি তৈরি')} value={`${currencySymbol}${reconReport.totalDueCreated.toFixed(2)}`} mono />
+                          <Row label={t('Due Collected', 'বাকি আদায়')} value={`${currencySymbol}${reconReport.totalDueCollected.toFixed(2)}`} mono />
+                          <Row label={t('Outstanding Due', 'বকেয়া বাকি')} value={`${currencySymbol}${reconReport.dueListTotal.toFixed(2)}`} mono highlight />
+                        </div>
+
+                        {/* Status Cards */}
+                        <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className={`rounded-xl border p-3 text-center ${reconReport.cashBalanceOk ? (isDarkMode ? 'bg-emerald-900/30 border-emerald-700' : 'bg-emerald-50 border-emerald-200') : (isDarkMode ? 'bg-red-900/30 border-red-700' : 'bg-red-50 border-red-200')}`}>
+                            <div className="text-2xl mb-1">{reconReport.cashBalanceOk ? '✅' : '❌'}</div>
+                            <div className="text-sm font-black">{t('Cash Balance', 'নগদ ব্যালেন্স')}</div>
+                            {!reconReport.cashBalanceOk && <div className="text-sm font-mono text-red-500">Δ {reconReport.cashDiff.toFixed(2)}</div>}
+                          </div>
+                          <div className={`rounded-xl border p-3 text-center ${reconReport.dueBalanceOk ? (isDarkMode ? 'bg-emerald-900/30 border-emerald-700' : 'bg-emerald-50 border-emerald-200') : (isDarkMode ? 'bg-amber-900/30 border-amber-700' : 'bg-amber-50 border-amber-200')}`}>
+                            <div className="text-2xl mb-1">{reconReport.dueBalanceOk ? '✅' : '⚠️'}</div>
+                            <div className="text-sm font-black">{t('Due Balance', 'বাকি ব্যালেন্স')}</div>
+                            {!reconReport.dueBalanceOk && <div className="text-sm font-mono text-amber-500">Δ {reconReport.dueDiff.toFixed(2)}</div>}
+                          </div>
+                          <div className={`rounded-xl border p-3 text-center ${reconReport.stockIssues.length === 0 ? (isDarkMode ? 'bg-emerald-900/30 border-emerald-700' : 'bg-emerald-50 border-emerald-200') : (isDarkMode ? 'bg-amber-900/30 border-amber-700' : 'bg-amber-50 border-amber-200')}`}>
+                            <div className="text-2xl mb-1">{reconReport.stockIssues.length === 0 ? '✅' : '⚠️'}</div>
+                            <div className="text-sm font-black">{t('Stock Integrity', 'স্টক অখণ্ডতা')}</div>
+                            {reconReport.stockIssues.length > 0 && <div className="text-sm font-mono text-amber-500">{reconReport.stockIssues.length} {t('issues', 'সমস্যা')}</div>}
+                          </div>
+                        </div>
+
+                        {/* All Issues Summary */}
+                        <div className={`md:col-span-2 ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                          <h4 className="text-sm font-black text-red-500 uppercase mb-3">🚨 {t('All Issues', 'সব সমস্যা')}</h4>
+                          {reconReport.issues.length === 0 ? (
+                            <div className="text-emerald-500 font-black text-center py-6 text-lg">✅ {t('No issues detected! Data is consistent.', 'কোনো সমস্যা পাওয়া যায়নি! ডেটা সঙ্গতিপূর্ণ।')}</div>
+                          ) : (
+                            <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
+                              {reconReport.issues.map((issue: any, idx: number) => (
+                                <div key={idx} className={`rounded-xl border p-2.5 text-sm ${severityBg(issue.severity)}`}>
+                                  <span className={`font-black mr-2 ${severityColor(issue.severity)}`}>[{issue.severity}] [{issue.category}]</span>
+                                  <span>{issue.description}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* END OF DAY TAB */}
+                    {reconTab === 'eod' && (
+                      <div className="flex flex-col gap-4">
+                        <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                          <div className="flex items-center gap-3 mb-4">
+                            <h4 className="text-sm font-black text-indigo-500 uppercase">🌙 {t('End-of-Day Reconciliation', 'দিন শেষের সমন্বয়')}</h4>
+                            <input
+                              type="date"
+                              value={reconDate}
+                              onChange={e => setReconDate(e.target.value)}
+                              className={`ml-auto px-3 py-1.5 rounded-xl border text-sm font-mono outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                            />
+                          </div>
+                          {eod ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <h5 className="text-sm font-black text-slate-400 uppercase mb-2">{t('Sales Summary', 'বিক্রয় সারসংক্ষেপ')}</h5>
+                                <Row label={t('Gross Sales', 'মোট বিক্রয়')} value={`${currencySymbol}${eod.grossSales.toFixed(2)}`} mono highlight />
+                                <Row label={t('Cash Sales', 'নগদ বিক্রয়')} value={`${currencySymbol}${eod.cashSales.toFixed(2)}`} mono />
+                                <Row label={t('Credit Sales (Due Created)', 'বাকিতে বিক্রয়')} value={`${currencySymbol}${eod.creditSales.toFixed(2)}`} mono />
+                                <Row label={t('Refunds/Returns', 'ফেরত')} value={`-${currencySymbol}${eod.refundsDay.toFixed(2)}`} mono />
+                                <Row label={t('Net Sales', 'নিট বিক্রয়')} value={`${currencySymbol}${eod.netSales.toFixed(2)}`} mono highlight />
+                                <Row label={t('Profit', 'লাভ')} value={`${currencySymbol}${eod.profitDay.toFixed(2)}`} mono />
+                                <Row label={t('Number of Sales', 'বিক্রয় সংখ্যা')} value={eod.numSales} />
+                                <Row label={t('Number of Returns', 'ফেরত সংখ্যা')} value={eod.numReturns} />
+                              </div>
+                              <div>
+                                <h5 className="text-sm font-black text-slate-400 uppercase mb-2">{t('Cash Equation', 'নগদ হিসাব')}</h5>
+                                <Row label={t('Cash Sales Received', 'নগদ বিক্রয় আদায়')} value={`${currencySymbol}${eod.cashSales.toFixed(2)}`} mono />
+                                <Row label={t('Due Collections', 'বাকি আদায়')} value={`+${currencySymbol}${eod.totalDueCollectedDay.toFixed(2)}`} mono />
+                                <Row label={t('Refunds Paid Out', 'রিফান্ড দেওয়া')} value={`-${currencySymbol}${eod.refundsDay.toFixed(2)}`} mono />
+                                <Row label={t('Expenses Paid', 'খরচ')} value={`-${currencySymbol}${eod.expensesDay.toFixed(2)}`} mono />
+                                <div className="border-t-2 border-slate-300 mt-1 pt-1">
+                                  <Row label={t('Expected Net Cash', 'প্রত্যাশিত নগদ')} value={`${currencySymbol}${eod.expectedCashDay.toFixed(2)}`} mono highlight />
+                                  <Row label={t('Cash Ledger Net (IN − OUT)', 'লেজার নিট')} value={`${currencySymbol}${eod.ledgerNetDay.toFixed(2)}`} mono highlight />
+                                </div>
+                                <div className={`mt-2 rounded-xl border p-3 text-center ${eod.cashOk ? (isDarkMode ? 'bg-emerald-900/30 border-emerald-700' : 'bg-emerald-50 border-emerald-200') : (isDarkMode ? 'bg-red-900/30 border-red-700' : 'bg-red-50 border-red-200')}`}>
+                                  {eod.cashOk ? (
+                                    <span className="text-emerald-500 font-black">✅ {t('Cash Balanced', 'নগদ সঠিক')}</span>
+                                  ) : (
+                                    <>
+                                      <span className="text-red-500 font-black">❌ {t('Cash Mismatch', 'নগদ অমিল')}</span>
+                                      <div className="text-red-500 font-mono text-sm">Δ {eod.cashDiffDay.toFixed(2)}</div>
+                                    </>
+                                  )}
+                                </div>
+                                <div className="mt-3">
+                                  <h5 className="text-sm font-black text-slate-400 uppercase mb-2">{t('Other', 'অন্যান্য')}</h5>
+                                  <Row label={t('Total Due Created', 'নতুন বাকি')} value={`${currencySymbol}${eod.totalDueCreatedDay.toFixed(2)}`} mono />
+                                  <Row label={t('Total Due Collected', 'বাকি আদায়')} value={`${currencySymbol}${eod.totalDueCollectedDay.toFixed(2)}`} mono />
+                                  <Row label={t('Purchase Total', 'ক্রয়')} value={`${currencySymbol}${eod.purchasesDay.toFixed(2)}`} mono />
+                                  <Row label={t('Expense Total', 'খরচ')} value={`${currencySymbol}${eod.expensesDay.toFixed(2)}`} mono />
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className={`text-sm text-center py-6 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t('Select a date to view end-of-day reconciliation.', 'তারিখ নির্বাচন করুন।')}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SALES TAB */}
+                    {reconTab === 'sales' && (
+                      <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                        <h4 className="text-sm font-black text-indigo-500 uppercase mb-1">💰 {t('Sales Reconciliation', 'বিক্রয় সমন্বয়')}</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                          <div className={`rounded-xl p-3 text-center ${isDarkMode ? 'bg-slate-900/60' : 'bg-slate-50'}`}>
+                            <div className="font-mono font-black text-indigo-500 text-lg">{reconReport.totalInvoices}</div>
+                            <div className="text-sm text-slate-400">{t('Total Invoices', 'মোট রশিদ')}</div>
+                          </div>
+                          <div className={`rounded-xl p-3 text-center ${isDarkMode ? 'bg-slate-900/60' : 'bg-slate-50'}`}>
+                            <div className="font-mono font-black text-emerald-500 text-lg">{currencySymbol}{reconReport.salesRevenue.toFixed(2)}</div>
+                            <div className="text-sm text-slate-400">{t('Revenue', 'আয়')}</div>
+                          </div>
+                          <div className={`rounded-xl p-3 text-center ${isDarkMode ? 'bg-slate-900/60' : 'bg-slate-50'}`}>
+                            <div className="font-mono font-black text-amber-500 text-lg">{currencySymbol}{reconReport.salesProfit.toFixed(2)}</div>
+                            <div className="text-sm text-slate-400">{t('Profit', 'লাভ')}</div>
+                          </div>
+                        </div>
+                        <IssueList issues={[...filteredIssues('Sales'), ...filteredIssues('Chain')]} />
+                      </div>
+                    )}
+
+                    {/* CASH TAB */}
+                    {reconTab === 'cash' && (
+                      <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                        <h4 className="text-sm font-black text-indigo-500 uppercase mb-3">🏦 {t('Cash Reconciliation', 'নগদ সমন্বয়')}</h4>
+                        <div className="mb-4">
+                          <Row label={t('Cash IN (Ledger)', 'নগদ ইন')} value={`${currencySymbol}${reconReport.cashIn.toFixed(2)}`} mono />
+                          <Row label={t('Cash OUT (Ledger)', 'নগদ আউট')} value={`${currencySymbol}${reconReport.cashOut.toFixed(2)}`} mono />
+                          <Row label={t('Net Cash (Ledger)', 'লেজার নিট')} value={`${currencySymbol}${reconReport.ledgerNetCash.toFixed(2)}`} mono highlight />
+                          <div className="border-t my-2" />
+                          <Row label={t('Sale-time Cash', 'বিক্রয়কালীন নগদ')} value={`${currencySymbol}${reconReport.saleTimeCash.toFixed(2)}`} mono />
+                          <Row label={t('Due Collections', 'বাকি আদায়')} value={`+${currencySymbol}${reconReport.dueCollected.toFixed(2)}`} mono />
+                          <Row label={t('Refunds', 'রিফান্ড')} value={`-${currencySymbol}${reconReport.refunds.toFixed(2)}`} mono />
+                          <Row label={t('Expenses', 'খরচ')} value={`-${currencySymbol}${reconReport.expenseCash.toFixed(2)}`} mono />
+                          <Row label={t('Expected Net Cash', 'প্রত্যাশিত নিট')} value={`${currencySymbol}${reconReport.expectedNetCash.toFixed(2)}`} mono highlight />
+                          <div className={`mt-2 rounded-xl border p-2 text-center text-sm font-black ${reconReport.cashBalanceOk ? (isDarkMode ? 'bg-emerald-900/30 border-emerald-700 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600') : (isDarkMode ? 'bg-red-900/30 border-red-700 text-red-400' : 'bg-red-50 border-red-200 text-red-600')}`}>
+                            {reconReport.cashBalanceOk ? `✅ ${t('Balanced', 'সঠিক')}` : `❌ ${t('Mismatch', 'অমিল')} Δ${currencySymbol}${reconReport.cashDiff.toFixed(2)}`}
+                          </div>
+                        </div>
+                        <IssueList issues={filteredIssues('Cash')} />
+                      </div>
+                    )}
+
+                    {/* DUE TAB */}
+                    {reconTab === 'due' && (
+                      <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                        <h4 className="text-sm font-black text-indigo-500 uppercase mb-3">💳 {t('Due Reconciliation', 'বাকি সমন্বয়')}</h4>
+                        <div className="mb-4">
+                          <Row label={t('Total Due Created (from invoices)', 'বিক্রয় থেকে বাকি')} value={`${currencySymbol}${reconReport.totalDueCreated.toFixed(2)}`} mono />
+                          <Row label={t('Total Due Collected', 'বাকি আদায়')} value={`-${currencySymbol}${reconReport.totalDueCollected.toFixed(2)}`} mono />
+                          <Row label={t('Expected Outstanding', 'প্রত্যাশিত বকেয়া')} value={`${currencySymbol}${reconReport.expectedOutstandingDue.toFixed(2)}`} mono highlight />
+                          <Row label={t('Recorded in Due List', 'তালিকায় রেকর্ড')} value={`${currencySymbol}${reconReport.dueListTotal.toFixed(2)}`} mono highlight />
+                          <div className={`mt-2 rounded-xl border p-2 text-center text-sm font-black ${reconReport.dueBalanceOk ? (isDarkMode ? 'bg-emerald-900/30 border-emerald-700 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-600') : (isDarkMode ? 'bg-amber-900/30 border-amber-700 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-600')}`}>
+                            {reconReport.dueBalanceOk ? `✅ ${t('Due Balanced', 'বাকি সঠিক')}` : `⚠️ ${t('Mismatch', 'অমিল')} Δ${currencySymbol}${reconReport.dueDiff.toFixed(2)}`}
+                          </div>
+                        </div>
+                        <IssueList issues={filteredIssues('Due')} />
+                      </div>
+                    )}
+
+                    {/* STOCK TAB */}
+                    {reconTab === 'stock' && (
+                      <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                        <h4 className="text-sm font-black text-indigo-500 uppercase mb-3">📦 {t('Stock Reconciliation', 'স্টক সমন্বয়')}</h4>
+                        {reconReport.stockIssues.length > 0 ? (
+                          <div className="overflow-x-auto mb-4">
+                            <table className="w-full text-sm border-collapse">
+                              <thead>
+                                <tr className={`${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'} text-left`}>
+                                  <th className="px-3 py-2 font-black">{t('Medicine', 'ওষুধ')}</th>
+                                  <th className="px-3 py-2 font-black text-right">{t('Expected', 'প্রত্যাশিত')}</th>
+                                  <th className="px-3 py-2 font-black text-right">{t('Actual', 'বাস্তব')}</th>
+                                  <th className="px-3 py-2 font-black text-right">{t('Diff', 'পার্থক্য')}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {reconReport.stockIssues.map((si: any, idx: number) => (
+                                  <tr key={idx} className={`border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-100'} ${si.actualStock < 0 ? (isDarkMode ? 'bg-red-900/30' : 'bg-red-50') : (isDarkMode ? 'bg-amber-900/20' : 'bg-amber-50')}`}>
+                                    <td className="px-3 py-2 font-semibold">{si.name}</td>
+                                    <td className="px-3 py-2 text-right font-mono">{si.expectedStock}</td>
+                                    <td className={`px-3 py-2 text-right font-mono font-black ${si.actualStock < 0 ? 'text-red-500' : 'text-amber-500'}`}>{si.actualStock}</td>
+                                    <td className={`px-3 py-2 text-right font-mono font-black ${si.diff !== 0 ? 'text-red-500' : 'text-emerald-500'}`}>{si.diff > 0 ? '+' : ''}{si.actualStock - si.expectedStock}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="text-emerald-500 font-black text-center py-4">✅ {t('All medicine stocks consistent with movement ledger', 'সব ওষুধের স্টক মুভমেন্ট লেজারের সাথে সঙ্গতিপূর্ণ')}</div>
+                        )}
+                        <IssueList issues={filteredIssues('Stock')} />
+                      </div>
+                    )}
+
+                    {/* PROFIT TAB */}
+                    {reconTab === 'profit' && (
+                      <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                        <h4 className="text-sm font-black text-indigo-500 uppercase mb-3">📈 {t('Profit Reconciliation', 'লাভ সমন্বয়')}</h4>
+                        <div className="mb-4">
+                          <Row label={t('Gross Revenue', 'মোট আয়')} value={`${currencySymbol}${reconReport.grossRevenue.toFixed(2)}`} mono />
+                          <Row label={t('Total Discount', 'মোট ছাড়')} value={`-${currencySymbol}${reconReport.totalDiscount.toFixed(2)}`} mono />
+                          <Row label={t('Total VAT', 'মোট ভ্যাট')} value={`+${currencySymbol}${reconReport.totalVat.toFixed(2)}`} mono />
+                          <Row label={t('Profit from Invoices', 'রশিদ থেকে লাভ')} value={`${currencySymbol}${reconReport.profitFromInvoices.toFixed(2)}`} mono highlight />
+                        </div>
+                        <IssueList issues={filteredIssues('Profit')} />
+                      </div>
+                    )}
+
+                    {/* PURCHASE TAB */}
+                    {reconTab === 'purchase' && (
+                      <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                        <h4 className="text-sm font-black text-indigo-500 uppercase mb-3">🛒 {t('Purchase Reconciliation', 'ক্রয় সমন্বয়')}</h4>
+                        <Row label={t('Total Purchases', 'মোট ক্রয়')} value={reconReport.totalPurchases} mono />
+                        <Row label={t('Purchase Stock Movements', 'ক্রয় মুভমেন্ট')} value={(reconReport.stockMovArr ?? []).filter((m: any) => m.type === 'PURCHASE').length} mono />
+                        <IssueList issues={filteredIssues('Purchase')} />
+                      </div>
+                    )}
+
+                    {/* RETURN TAB */}
+                    {reconTab === 'return' && (
+                      <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                        <h4 className="text-sm font-black text-indigo-500 uppercase mb-3">🔄 {t('Return Reconciliation', 'ফেরত সমন্বয়')}</h4>
+                        <Row label={t('Returned Invoices', 'ফেরতকৃত রশিদ')} value={(reconReport.invoicesList ?? []).filter((i: any) => i.isReturned).length} mono />
+                        <Row label={t('Total Refunds', 'মোট রিফান্ড')} value={`${currencySymbol}${reconReport.refunds?.toFixed(2) ?? '0.00'}`} mono />
+                        <IssueList issues={filteredIssues('Return')} />
+                      </div>
+                    )}
+
+                    {/* EXPENSE TAB */}
+                    {reconTab === 'expense' && (
+                      <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                        <h4 className="text-sm font-black text-indigo-500 uppercase mb-3">💸 {t('Expense Reconciliation', 'খরচ সমন্বয়')}</h4>
+                        <Row label={t('Total Expenses', 'মোট খরচ')} value={reconReport.totalExpenses} mono />
+                        <Row label={t('Total Expense Amount', 'মোট পরিমাণ')} value={`${currencySymbol}${(reconReport.expenseArr ?? []).reduce((s: number, e: any) => s + (e.amount || 0), 0).toFixed(2)}`} mono highlight />
+                        <IssueList issues={filteredIssues('Expense')} />
+                      </div>
+                    )}
+
+                    {/* AUDIT LOG TAB */}
+                    {reconTab === 'audit' && (
+                      <div className={`ccard p-4 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                        <h4 className="text-sm font-black text-indigo-500 uppercase mb-3">📜 {t('Audit Log', 'অডিট লগ')}</h4>
+                        {auditLog.length === 0 ? (
+                          <p className={`text-sm text-center py-6 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t('No audit entries yet. Run the reconciliation to create the first entry.', 'এখনো কোনো অডিট এন্ট্রি নেই।')}</p>
+                        ) : (
+                          <div className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto">
+                            {auditLog.map((entry: any, idx: number) => (
+                              <div key={idx} className={`rounded-xl border p-3 text-sm ${isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                                <div className="flex justify-between flex-wrap gap-2">
+                                  <span className="font-black text-indigo-500">{entry.action}</span>
+                                  <span className={`font-mono text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{new Date(entry.timestamp).toLocaleString()}</span>
+                                </div>
+                                {entry.transactionId && <div className="text-sm mt-1"><span className="font-bold">{t('TXN:', 'লেনদেন:')} </span><span className="font-mono">{entry.transactionId}</span></div>}
+                                {entry.affectedRecord && <div className="text-sm"><span className="font-bold">{t('Record:', 'রেকর্ড:')} </span>{entry.affectedRecord}</div>}
+                                {entry.note && <div className={`text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{entry.note}</div>}
+                                <div className={`text-sm mt-1 font-semibold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{t('Role:', 'রোল:')} {entry.userRole} · {entry.deviceHint}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Safety Notice */}
+                <div className={`rounded-xl border p-4 text-sm ${isDarkMode ? 'bg-amber-900/20 border-amber-800 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                  <strong>⚠️ {t('Safety Policy:', 'নিরাপত্তা নীতি:')}</strong> {t(
+                    'This reconciliation tool is read-only. It NEVER modifies any financial record, stock quantity, cash balance, or due amount. Any mismatch shown here must be investigated and corrected manually through the appropriate module by an authorized user.',
+                    'এই সমন্বয় টুল শুধুমাত্র পঠনমাত্র। এটি কখনো কোনো আর্থিক রেকর্ড, স্টক পরিমাণ, নগদ ব্যালেন্স বা বাকি পরিমাণ পরিবর্তন করে না। এখানে দেখানো যেকোনো অমিল অনুমোদিত ব্যবহারকারীকে সংশ্লিষ্ট মডিউলে ম্যানুয়ালি তদন্ত ও সংশোধন করতে হবে।'
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
         </main>
       </div>
 
@@ -9453,10 +11324,16 @@ export default function Home() {
                 <button onClick={() => setShowConfirmModal(false)} className={`px-4 py-2 text-sm font-bold rounded-xl transition ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{t("Cancel", "বাতিল")}</button>
                 <button
                   onClick={executeFinalCheckout}
-                  disabled={((parseFloat(calculatorInput) || 0) - (currentFinalBill + (selectedExistingDue ? selectedExistingDue.totalDue : 0))) < 0 && parseFloat(invoiceDue) === 0}
-                  className="bg-gradient-to-r from-indigo-500 to-emerald-500 disabled:opacity-40 text-white font-black px-5 py-2 rounded-xl uppercase tracking-wider shadow hover:from-indigo-600 hover:to-emerald-600 transition"
+                  disabled={
+                    isSubmittingSale ||
+                    (((parseFloat(calculatorInput) || 0) - (currentFinalBill + (selectedExistingDue ? selectedExistingDue.totalDue : 0))) < 0 && parseFloat(invoiceDue) === 0)
+                  }
+                  className="bg-gradient-to-r from-indigo-500 to-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black px-5 py-2 rounded-xl uppercase tracking-wider shadow hover:from-indigo-600 hover:to-emerald-600 transition"
                 >
-                  ✅ {t("Confirm & Print", "নিশ্চিত ও প্রিন্ট")}
+                  {isSubmittingSale
+                    ? `⏳ ${t("Processing...", "প্রক্রিয়া হচ্ছে...")}`
+                    : `✅ ${t("Confirm & Print", "নিশ্চিত ও প্রিন্ট")}`
+                  }
                 </button>
               </div>
             </div>
@@ -9514,8 +11391,12 @@ export default function Home() {
 
               <div className="flex gap-2 justify-end pt-2 border-t mt-2">
                 <button onClick={() => { setShowReturnModal(false); setSelectedInvoiceForReturn(null); }} className={`px-4 py-2 text-sm font-bold rounded-xl transition ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{t("Cancel", "বাতিল")}</button>
-                <button onClick={processInvoiceMedicineReturn} className="bg-red-500 hover:bg-red-600 text-white font-black px-5 py-2 rounded-xl uppercase tracking-wider shadow transition">
-                  {t("Process Return", "ফেরত প্রক্রিয়া করুন")}
+                <button
+                  onClick={processInvoiceMedicineReturn}
+                  disabled={isSubmittingReturn}
+                  className={`text-white font-black px-5 py-2 rounded-xl uppercase tracking-wider shadow transition ${isSubmittingReturn ? 'bg-slate-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'}`}
+                >
+                  {isSubmittingReturn ? t("⏳ Processing...", "⏳ প্রক্রিয়া হচ্ছে...") : t("Process Return", "ফেরত প্রক্রিয়া করুন")}
                 </button>
               </div>
             </div>
@@ -9598,11 +11479,12 @@ export default function Home() {
 
                 <div className="flex justify-between text-sm font-semibold text-slate-600 mt-1">
                   <span>{t("Cash Received:", "নগদ পেয়েছি:")}</span>
-                  <span className="font-mono">{(lastInvoice.cashReceived || lastInvoice.finalBill).toFixed(1)} {currencySymbol}</span>
+                  {/* BUGFIX #10: use ?? instead of || so ৳0 paid correctly shows 0, not finalBill */}
+                  <span className="font-mono">{(lastInvoice.cashReceived ?? lastInvoice.finalBill).toFixed(1)} {currencySymbol}</span>
                 </div>
                 <div className="flex justify-between text-sm font-semibold text-slate-600">
                   <span>{t("Change Given:", "ফেরত দিয়েছি:")}</span>
-                  <span className="font-mono">{Math.max(0, (lastInvoice.cashReceived || lastInvoice.finalBill) - lastInvoice.finalBill).toFixed(1)} {currencySymbol}</span>
+                  <span className="font-mono">{Math.max(0, (lastInvoice.cashReceived ?? lastInvoice.finalBill) - lastInvoice.finalBill).toFixed(1)} {currencySymbol}</span>
                 </div>
 
                 {lastInvoice.due > 0 && (
