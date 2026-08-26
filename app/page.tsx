@@ -246,7 +246,10 @@ const fbGetWithETag = async (key: string): Promise<{ data: string | null; etag: 
   if (!isFirebaseConfigured()) return { data: null, etag: null };
   try {
     const res = await fetchWithTimeout(fbUrl(key), {
-      headers: { Accept: 'application/json' },
+      // X-Firebase-ETag: true is REQUIRED — without it Firebase Realtime Database
+      // does not include an ETag in the response header and the conditional PUT
+      // will always fail (If-Match: null → rejected → "no internet" error).
+      headers: { Accept: 'application/json', 'X-Firebase-ETag': 'true' },
     }, 10000);
     if (!res.ok) return { data: null, etag: null };
     const etag = res.headers.get('ETag');
@@ -263,7 +266,6 @@ const fbConditionalPut = async (key: string, value: string, etag: string): Promi
       headers: {
         'Content-Type': 'application/json',
         'If-Match': etag,
-        'X-HTTP-Method-Override': 'PUT', // some proxies need this
       },
       body: JSON.stringify(value),
     }, 10000);
