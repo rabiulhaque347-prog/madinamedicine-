@@ -185,7 +185,7 @@ const fbMultiSet = async (updates: Record<string, string>): Promise<boolean> => 
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    }, 15000); // slightly longer timeout — this call now carries the whole sale
+    }, 12000); // carries the whole sale — keep generous but not excessive
     return res.ok;
   } catch {
     return false;
@@ -250,7 +250,7 @@ const fbGetWithETag = async (key: string): Promise<{ data: string | null; etag: 
       // does not include an ETag in the response header and the conditional PUT
       // will always fail (If-Match: null → rejected → "no internet" error).
       headers: { Accept: 'application/json', 'X-Firebase-ETag': 'true' },
-    }, 10000);
+    }, 7000); // 7 s — fast enough to surface network issues without hanging the UI
     if (!res.ok) return { data: null, etag: null };
     const etag = res.headers.get('ETag');
     const data = await res.json();
@@ -268,7 +268,7 @@ const fbConditionalPut = async (key: string, value: string, etag: string): Promi
         'If-Match': etag,
       },
       body: JSON.stringify(value),
-    }, 10000);
+    }, 8000); // 8 s write timeout — quicker failure detection
     if (res.status === 412) return 'conflict'; // another device changed it
     if (res.ok) return 'ok';
     return 'error';
@@ -3943,7 +3943,23 @@ export default function Home() {
       //   • Negative stock (stock is clamped AND validated before write)
       //   • Stale local state overwriting newer Firebase stock
       addToast(t("⏳ Validating stock...", "⏳ স্টক যাচাই হচ্ছে..."), 'info');
-      const stockResult = await deductStockAtomically(soldQtyByMedId, t);
+
+      // ── SPEED OPTIMISATION: fire all independent Firebase reads in parallel ──
+      // Previously these were sequential: stock ETag read → 3x fetchLatestList →
+      // 2x fetchLatestList → 1x fetchLatestList = 6 round-trips one after another.
+      // Now we fire all 6 reads at the same time (Promise.all). The stock write
+      // (conditional PUT with If-Match) still happens after — it depends on the
+      // ETag from the stock read — but every other list fetch runs concurrently
+      // with the stock read instead of waiting behind it.
+      const [stockResult, invoices, dueList, dueCollectionLog, preFetchPaymentLedger, preFetchCashLedger, preFetchStockMovements] = await Promise.all([
+        deductStockAtomically(soldQtyByMedId, t),
+        fetchLatestList('madina_v7_invoices', invoicesRef.current),
+        fetchLatestList('madina_v7_due_list', dueListRef.current),
+        fetchLatestList('madina_v7_due_collection_log', dueCollectionLogRef.current),
+        fetchLatestList('madina_v7_payment_ledger', paymentLedgerRef.current),
+        fetchLatestList('madina_v7_cash_ledger', cashLedgerRef.current),
+        fetchLatestList('madina_v7_stock_movements', stockMovementsRef.current),
+      ]);
 
       if (!stockResult.ok) {
         playSound('error');
@@ -3983,15 +3999,8 @@ export default function Home() {
         new Date().toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' }),
       );
 
-      // ── STEP 3: Fetch fresh invoice/due data ─────────────────
-      // Done AFTER the stock write so we don't hold a stale ETag across
-      // unrelated I/O. Invoices + due list conflict separately from stock
-      // and are handled by fetchLatestList (read-merge-write).
-      const [invoices, dueList, dueCollectionLog] = await Promise.all([
-        fetchLatestList('madina_v7_invoices', invoicesRef.current),
-        fetchLatestList('madina_v7_due_list', dueListRef.current),
-        fetchLatestList('madina_v7_due_collection_log', dueCollectionLogRef.current),
-      ]);
+      // ── STEP 3: Invoice/due data already fetched in parallel above ───────
+      // (invoices, dueList, dueCollectionLog are ready — no extra await needed)
 
       // ── STEP 4: Compute all derived values ───────────────────
       const totalCost = cart.reduce((sum, item) => sum + (item.buyPrice * (parseInt(item.qty) || 0)), 0);
@@ -4127,8 +4136,10 @@ export default function Home() {
       // Idempotency: skip if this transactionId already recorded
       // (handles retry after a partial failure where stock deducted but
       // invoice write failed — the retry re-runs Step 4 correctly).
-      const freshPaymentLedger = await fetchLatestList('madina_v7_payment_ledger', paymentLedgerRef.current);
-      const freshCashLedger    = await fetchLatestList('madina_v7_cash_ledger', cashLedgerRef.current);
+      // NOTE: freshPaymentLedger / freshCashLedger were pre-fetched in
+      // parallel with the stock read above — no extra round-trip needed.
+      const freshPaymentLedger = preFetchPaymentLedger;
+      const freshCashLedger    = preFetchCashLedger;
 
       const txnAlreadyInPaymentLedger = freshPaymentLedger.some((p: any) => p.transactionId === transactionId);
       let updatedPaymentLedger = freshPaymentLedger;
@@ -4197,9 +4208,9 @@ export default function Home() {
         }
       }
 
-      // Phase 4: Fetch fresh stock movements and prepend this sale's entries
-      const freshStockMovements = await fetchLatestList('madina_v7_stock_movements', stockMovementsRef.current);
-      const updatedStockMovements = [...finalSaleMovements, ...freshStockMovements];
+      // Phase 4: Prepend this sale's movement entries to the pre-fetched list
+      // (preFetchStockMovements was loaded in parallel with the stock read above)
+      const updatedStockMovements = [...finalSaleMovements, ...preFetchStockMovements];
 
       addToast(t("⏳ Saving invoice...", "⏳ ইনভয়েস সংরক্ষণ হচ্ছে..."), 'info');
       const invoiceWriteOk = await cloudMultiSet({
