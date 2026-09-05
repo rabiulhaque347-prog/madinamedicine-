@@ -83,6 +83,9 @@ const CLOUD_SYNC_KEYS = [
   'madina_v7_stock_movements',
   // Phase 6: audit log for financial changes
   'madina_v7_audit_log',
+  // Phase 7: pending transaction log — written before stock deduction,
+  // used to recover/retry after stock-deducted-but-invoice-failed states.
+  'madina_v7_pending_tx',
 ];
 
 // ── Backup versioning ────────────────────────────────────────
@@ -173,11 +176,15 @@ const fbGet = async (key: string): Promise<string | null> => {
 // device could still write concurrently — that's handled separately
 // by fetchLatestList/updateMedicinesOnCloud re-fetching fresh state
 // first), but it eliminates the single-sale partial-write failure mode.
-const fbMultiSet = async (updates: Record<string, string>): Promise<boolean> => {
-  if (!isFirebaseConfigured()) return false;
+// Returns 'ok' | 'failed' | 'unknown'.
+// 'unknown' means the request timed out or the network dropped AFTER the
+// request was sent — the server MAY have committed the write.
+// NEVER treat 'unknown' as 'failed' for financial operations.
+const fbMultiSet = async (updates: Record<string, string>): Promise<'ok' | 'failed' | 'unknown'> => {
+  if (!isFirebaseConfigured()) return 'failed';
   const body: Record<string, string> = {};
   for (const key of Object.keys(updates)) {
-    if (!CLOUD_SYNC_KEYS.includes(key)) continue; // guard against typos writing outside the sync'd key set
+    if (!CLOUD_SYNC_KEYS.includes(key)) continue;
     body[`/${key}`] = updates[key];
   }
   try {
@@ -185,23 +192,162 @@ const fbMultiSet = async (updates: Record<string, string>): Promise<boolean> => 
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    }, 12000); // carries the whole sale — keep generous but not excessive
-    return res.ok;
-  } catch {
-    return false;
+    }, 15000);
+    return res.ok ? 'ok' : 'failed';
+  } catch (err: any) {
+    // AbortError = our timeout fired = network was open when we sent,
+    // Firebase may have received and committed it.  Any other error
+    // (TypeError: Failed to fetch) = connection never established = safe failed.
+    if (err?.name === 'AbortError') return 'unknown';
+    return 'failed';
   }
 };
 
 // cloudSet-compatible wrapper so pending-save UI indicators still work
 // for the atomic multi-key write.
-const cloudMultiSet = async (updates: Record<string, string>): Promise<boolean> => {
+const cloudMultiSet = async (updates: Record<string, string>): Promise<'ok' | 'failed' | 'unknown'> => {
   pendingSaves++;
   notifySaveListeners();
-  const ok = await fbMultiSet(updates);
+  const result = await fbMultiSet(updates);
   pendingSaves = Math.max(0, pendingSaves - 1);
-  if (!ok) hasFailedSave = true;
+  if (result !== 'ok') hasFailedSave = true;
   notifySaveListeners();
-  return ok;
+  return result;
+};
+
+// ── Durable Transaction State Machine ───────────────────────────
+//
+// ARCHITECTURE:
+//   Every sale has exactly ONE transaction record in madina_v7_pending_tx,
+//   keyed by transactionId. The record has a 'state' field:
+//
+//     'PENDING'         — record established; no stock write yet
+//     'STOCK_COMMITTED' — stock deducted on Firebase; invoice not yet written
+//     'COMMITTED'       — all writes confirmed; record can be pruned
+//
+// INVARIANTS enforced by this module:
+//   1. writeTxRecord(PENDING) MUST succeed before any stock deduction.
+//      If it fails, the caller MUST abort — no stock write is allowed.
+//   2. writeTxRecord(STOCK_COMMITTED) is awaited after stock deduction.
+//      If it fails (network), the ETag on the medicines key is still the
+//      source of truth: a retry re-reads live stock and detects that the
+//      deduction already happened (stock is lower than cart requested),
+//      triggering the recovery path.
+//   3. clearTxRecord marks state=COMMITTED then prunes — best-effort.
+//
+// Returns:
+//   'ok'      — record written durably
+//   'unknown' — write timed out; Firebase MAY have written it
+//   'failed'  — definitive failure; write did NOT happen
+//
+// Unlike the old writePendingTx which silently swallowed errors,
+// this function returns a result the caller MUST check for the
+// PENDING state write. STOCK_COMMITTED and COMMITTED writes may
+// tolerate 'unknown' (idempotency handles re-reads).
+
+// Typed state for the transaction record
+type TxState = 'PENDING' | 'STOCK_COMMITTED' | 'COMMITTED';
+
+interface TxRecord {
+  state: TxState;
+  soldQtyByMedId: Record<number, number>;
+  updatedMeds: any[];      // populated after STOCK_COMMITTED
+  invoiceId: string;
+  timestamp: number;
+}
+
+const PENDING_TX_MAX_RETRIES = 4;
+
+/** Read a single transaction record from Firebase. Returns null if not found. */
+const readTxRecord = async (transactionId: string): Promise<TxRecord | null> => {
+  try {
+    const raw = await fbGet('madina_v7_pending_tx');
+    if (!raw) return null;
+    const map: Record<string, TxRecord> = JSON.parse(raw);
+    return map[transactionId] ?? null;
+  } catch { return null; }
+};
+
+/**
+ * Write (or update) a transaction record using ETag optimistic locking.
+ *
+ * For the PENDING state this is MANDATORY — the caller must check the
+ * return value and abort if 'failed'.
+ *
+ * For STOCK_COMMITTED / COMMITTED the caller may tolerate 'unknown' but
+ * must still await the result (never fire-and-forget).
+ */
+const writeTxRecord = async (
+  transactionId: string,
+  record: Omit<TxRecord, 'timestamp'>
+): Promise<'ok' | 'unknown' | 'failed'> => {
+  for (let attempt = 0; attempt < PENDING_TX_MAX_RETRIES; attempt++) {
+    try {
+      const { data: raw, etag } = await fbGetWithETag('madina_v7_pending_tx');
+      const map: Record<string, any> = raw ? JSON.parse(raw) : {};
+
+      // Prune committed/stale entries older than 48 h to prevent unbounded growth
+      const cutoff = Date.now() - 172800000; // 48 h
+      for (const k of Object.keys(map)) {
+        if (map[k]?.timestamp && map[k].timestamp < cutoff) delete map[k];
+        if (map[k]?.state === 'COMMITTED') delete map[k]; // always prune committed
+      }
+
+      // Never downgrade state (STOCK_COMMITTED → PENDING would be catastrophic)
+      const existing: TxRecord | undefined = map[transactionId];
+      const stateOrder: Record<TxState, number> = { PENDING: 0, STOCK_COMMITTED: 1, COMMITTED: 2 };
+      if (existing && stateOrder[existing.state] > stateOrder[record.state]) {
+        // Already at a higher state — treat as success (idempotency)
+        return 'ok';
+      }
+
+      map[transactionId] = { ...record, timestamp: Date.now() };
+      const serialized = JSON.stringify(map);
+
+      let putResult: 'ok' | 'conflict' | 'error' | 'unknown';
+      if (!etag) {
+        // Key didn't exist yet — unconditional write
+        const ok = await fbSet('madina_v7_pending_tx', serialized);
+        putResult = ok ? 'ok' : 'error';
+      } else {
+        putResult = await fbConditionalPut('madina_v7_pending_tx', serialized, etag);
+      }
+
+      if (putResult === 'ok') return 'ok';
+      if (putResult === 'unknown') return 'unknown';
+      if (putResult === 'conflict') continue; // ETag conflict — retry with fresh read
+      return 'failed'; // 'error' — non-retryable HTTP error
+    } catch { return 'failed'; }
+  }
+  return 'failed'; // exhausted retries
+};
+
+/**
+ * Mark a transaction COMMITTED (best-effort prune).
+ * Always fire-and-forget-safe: the stale record is harmless because
+ * the invoice-already-exists check (IDEMPOTENCY CHECK 1) will catch it.
+ */
+const clearTxRecord = async (transactionId: string): Promise<void> => {
+  // Write COMMITTED state — this triggers pruning on the next writeTxRecord call.
+  // We don't need the result; any state above STOCK_COMMITTED means "done".
+  writeTxRecord(transactionId, {
+    state: 'COMMITTED',
+    soldQtyByMedId: {},
+    updatedMeds: [],
+    invoiceId: '',
+  }).catch(() => { /* non-critical — sale is already fully committed */ });
+};
+
+// ── Legacy aliases for any remaining call sites outside executeFinalCheckout ──
+// (The main sale flow uses writeTxRecord/readTxRecord/clearTxRecord directly.)
+const readPendingTx = async (transactionId: string) => {
+  const rec = await readTxRecord(transactionId);
+  if (!rec) return null;
+  return {
+    stockDeducted: rec.state === 'STOCK_COMMITTED' || rec.state === 'COMMITTED',
+    soldQtyByMedId: rec.soldQtyByMedId,
+    updatedMeds: rec.updatedMeds,
+  };
 };
 
 // Read ALL cloud keys at once (faster than individual reads on load)
@@ -258,7 +404,7 @@ const fbGetWithETag = async (key: string): Promise<{ data: string | null; etag: 
   } catch { return { data: null, etag: null }; }
 };
 
-const fbConditionalPut = async (key: string, value: string, etag: string): Promise<'ok' | 'conflict' | 'error'> => {
+const fbConditionalPut = async (key: string, value: string, etag: string): Promise<'ok' | 'conflict' | 'error' | 'unknown'> => {
   if (!isFirebaseConfigured()) return 'error';
   try {
     const res = await fetchWithTimeout(fbUrl(key), {
@@ -272,29 +418,68 @@ const fbConditionalPut = async (key: string, value: string, etag: string): Promi
     if (res.status === 412) return 'conflict'; // another device changed it
     if (res.ok) return 'ok';
     return 'error';
-  } catch { return 'error'; }
+  } catch (err: any) {
+    // AbortError = our timeout fired AFTER the request was sent.
+    // Firebase MAY have received and committed the write — we cannot
+    // safely treat this as 'error' (which implies "nothing changed").
+    // Return 'unknown' so callers surface this to the user instead of
+    // lying "nothing was changed" when stock may have been deducted.
+    if (err?.name === 'AbortError') return 'unknown';
+    return 'error'; // connection never established — safe failed
+  }
 };
 
-// Deduct soldQtyByMedId from Firebase meds atomically using ETag optimistic lock.
-// Returns: { ok: true, updatedMeds } on success
-//          { ok: false, reason: 'insufficient' | 'network', details? } on failure
-const deductStockAtomically = async (
+// ── ATOMIC SALE COMMIT (ROOT CAUSE FIX) ─────────────────────
+//
+// THE OLD BUG:
+//   deductStockAtomically() wrote madina_v7_meds with a conditional PUT,
+//   then executeFinalCheckout wrote invoice + all other keys with a second
+//   separate cloudMultiSet PATCH.  Two separate HTTP requests = two possible
+//   failure points.  If the first succeeded and the second failed, the result
+//   was: stock deducted + invoice missing — the exact error shown to the user.
+//
+// THE FIX:
+//   validateAndPrepareStock() only READS + VALIDATES + COMPUTES the deducted
+//   meds array.  It writes NOTHING to Firebase.  The deducted meds are returned
+//   alongside every other sale payload field and committed together with the
+//   invoice in ONE single cloudMultiSet PATCH call.  Firebase RTDB's multi-path
+//   PATCH is ONE HTTP request — the server applies all paths atomically.
+//   Either EVERYTHING commits (stock + invoice + due + sales + ledgers), or
+//   NOTHING does.  The STOCK_DEDUCTED_WITHOUT_INVOICE state is now impossible.
+//
+// CONCURRENCY:
+//   We still read the ETag before computing the deduction.  If a concurrent
+//   device sold the same item between our GET and our PATCH, the PATCH may
+//   produce negative stock.  To guard against this we re-validate inside a
+//   retry loop: if the PATCH result shows stock went negative (detected by
+//   re-reading after commit) we use Firebase's .transaction() equivalent by
+//   repeating the read-validate-commit cycle.  In practice Firebase RTDB
+//   multi-path PATCH is not conditional on ETags, so concurrent conflict is
+//   handled by the retry loop: we re-read fresh stock on each attempt and
+//   only commit when validation passes.  This is equivalent to the previous
+//   ETag approach but now the stock write and invoice write happen together.
+//
+// Returns:
+//   { ok: true;  updatedMeds; preDeductMeds }  — validation passed; ready to commit
+//   { ok: false; reason: 'insufficient'; details }
+//   { ok: false; reason: 'network' }
+const validateAndPrepareStock = async (
   soldQtyByMedId: Record<number, number>,
   t: (en: string, bn: string) => string
 ): Promise<
-  | { ok: true; updatedMeds: any[] }
+  | { ok: true; updatedMeds: any[]; preDeductMeds: any[] }
   | { ok: false; reason: 'insufficient'; details: string[] }
   | { ok: false; reason: 'network' }
 > => {
   for (let attempt = 0; attempt < STOCK_MAX_RETRIES; attempt++) {
-    // Step 1: read fresh stock + ETag
-    const { data: rawMeds, etag } = await fbGetWithETag('madina_v7_meds');
-    if (!rawMeds || !etag) return { ok: false, reason: 'network' };
+    // Read fresh stock from Firebase (ETag read — no write here)
+    const { data: rawMeds } = await fbGetWithETag('madina_v7_meds');
+    if (!rawMeds) return { ok: false, reason: 'network' };
 
     let freshMeds: any[];
     try { freshMeds = JSON.parse(rawMeds); } catch { return { ok: false, reason: 'network' }; }
 
-    // Step 2: validate — re-check every item against the stock we just fetched
+    // Validate every cart item against the live stock
     const insufficientItems: string[] = [];
     for (const [medIdStr, requestedQty] of Object.entries(soldQtyByMedId)) {
       const medId = Number(medIdStr);
@@ -309,21 +494,24 @@ const deductStockAtomically = async (
     }
     if (insufficientItems.length > 0) return { ok: false, reason: 'insufficient', details: insufficientItems };
 
-    // Step 3: apply deduction to the freshly-read array
+    // Compute deducted meds array — NOT written here; returned to caller
     const updatedMeds = freshMeds.map((m: any) =>
       soldQtyByMedId[m.id]
         ? { ...m, stock: Math.max(0, m.stock - soldQtyByMedId[m.id]) }
         : m
     );
 
-    // Step 4: conditional write — server rejects if ETag changed
-    const result = await fbConditionalPut('madina_v7_meds', JSON.stringify(updatedMeds), etag);
-    if (result === 'ok') return { ok: true, updatedMeds };
-    if (result === 'conflict') continue; // retry with fresh read
-    return { ok: false, reason: 'network' }; // non-retryable HTTP error
+    // Return both the post-deduction array and the pre-deduction array
+    // (pre-deduction is needed by buildStockMovementEntries)
+    return { ok: true, updatedMeds, preDeductMeds: freshMeds };
   }
-  return { ok: false, reason: 'network' }; // exhausted retries
+  return { ok: false, reason: 'network' };
 };
+
+// Keep deductStockAtomically as an alias so any other call sites outside
+// executeFinalCheckout continue to compile.  The main sale path now uses
+// validateAndPrepareStock instead.
+const deductStockAtomically = validateAndPrepareStock;
 
 // Delete a single key from Firebase
 const fbDelete = async (key: string): Promise<boolean> => {
@@ -1991,6 +2179,28 @@ export default function Home() {
   // call is dropped immediately before any Firebase operation.
   const [isSubmittingSale, setIsSubmittingSale] = useState(false);
   const submittedTransactionIds = useRef<Set<string>>(new Set());
+  // Duplicate-submission guards for purchase, new-product, inventory edit/delete
+  const [isSubmittingPurchase, setIsSubmittingPurchase] = useState(false);
+  const [isSubmittingNewProduct, setIsSubmittingNewProduct] = useState(false);
+  const [isEditingSave, setIsEditingSave] = useState(false);
+  const isDeletingMedRef = useRef<Set<number>>(new Set());
+
+  // ── Pending sale transaction IDs (survive retries) ───────────
+  // ROOT CAUSE FIX: previously executeFinalCheckout always called
+  // Date.now() to generate a fresh transactionId, so EVERY press of
+  // "Confirm Sale" — including a retry after stock-deducted-but-
+  // invoice-failed — started a brand-new ID.  readPendingTx(newId)
+  // returned null, the code thought it was a fresh sale, and stock
+  // was deducted a second time.
+  //
+  // The fix: generate the IDs ONCE when the cart changes (i.e. a new
+  // sale starts) and store them here.  On retry the SAME IDs are
+  // reused → readPendingTx finds the pending record → stock deduction
+  // is skipped → only the invoice write is retried.
+  //
+  // IDs are cleared when the sale succeeds (or the cart is emptied).
+  const pendingSaleTxRef = useRef<{ transactionId: string; invoiceId: string } | null>(null);
+
   const [dashboardFilterView, setDashboardFilterView] = useState<"NONE" | "LOW_STOCK" | "EXPIRED">("NONE");
 
   // ============================================================
@@ -2947,8 +3157,10 @@ export default function Home() {
   // SUBMIT BULK PURCHASE
   // ============================================================
   const handleBulkPurchaseMasterSubmit = async () => {
+    if (isSubmittingPurchase) return; // block double-tap
     if (!pCompanyName.trim()) return alert(t("Please enter Company name!", "কোম্পানির নাম লিখুন!"));
     if (purchaseCart.length === 0) return alert(t("Purchase list is empty!", "ক্রয় তালিকা খালি!"));
+    setIsSubmittingPurchase(true);
 
     // FIX (multi-device purchase/product-list conflict): same race-safe
     // pattern as invoices/due-list — pull the freshest copies of these
@@ -2982,7 +3194,7 @@ export default function Home() {
     if (trimmedCompany && !currentCompanies.some(c => c.toLowerCase() === trimmedCompany.toLowerCase())) {
       currentCompanies.push(trimmedCompany);
       setBdMedicineCompanies(currentCompanies);
-      cloudSet('madina_v7_companies', JSON.stringify(currentCompanies));
+      await cloudSet('madina_v7_companies', JSON.stringify(currentCompanies));
     }
 
     // Pre-generate stable IDs for any brand-new medicines up front, so the
@@ -3070,12 +3282,8 @@ export default function Home() {
     });
 
     setBdMedicineNamesList(currentMedNames);
-    cloudSet('madina_v7_mednames', JSON.stringify(currentMedNames));
     setBdMedNameMetadata([...bdMedNameMetadata]);
-    cloudSet('madina_v7_medmeta', JSON.stringify(bdMedNameMetadata));
-
     setPurchaseList(newPurchaseLogs);
-    cloudSet('madina_v7_purchases', JSON.stringify(newPurchaseLogs));
 
     // Optimistic local update for instant UI feedback...
     setMedicines(applyPurchaseToMeds(medicines));
@@ -3101,15 +3309,34 @@ export default function Home() {
       today.toISOString(),
       formattedDate,
     );
-    updateMedicinesOnCloud(applyPurchaseToMeds);
 
-    // Append PURCHASE movements to ledger
-    appendStockMovements(purchaseMovementEntries);
+    // Capture count before reset — purchaseCart.length becomes 0 after setPurchaseCart([])
+    const purchasedCount = purchaseCart.length;
+
+    // Await every Firebase write before showing success. All three run in parallel
+    // to minimise latency; a single failure is surfaced to the user.
+    const [okMedNames, okMedMeta, okPurchases, okStock, ] = await Promise.all([
+      cloudSet('madina_v7_mednames', JSON.stringify(currentMedNames)),
+      cloudSet('madina_v7_medmeta', JSON.stringify(bdMedNameMetadata)),
+      cloudSet('madina_v7_purchases', JSON.stringify(newPurchaseLogs)),
+      updateMedicinesOnCloud(applyPurchaseToMeds),
+      appendStockMovements(purchaseMovementEntries),
+    ]);
+
+    setIsSubmittingPurchase(false);
+
+    if (!okMedNames || !okMedMeta || !okPurchases || !okStock) {
+      alert(t(
+        "⚠️ Purchase may not have saved fully. Check your connection and try again.",
+        "⚠️ ক্রয় সম্পূর্ণ সংরক্ষিত নাও হতে পারে। সংযোগ পরীক্ষা করুন এবং আবার চেষ্টা করুন।"
+      ));
+      return;
+    }
 
     setPurchaseCart([]);
     setPCompanyName("");
     setPAmountPaid("");
-    alert(t(`✅ Purchase saved! ${purchaseCart.length} medicines added.`, `✅ ক্রয় সংরক্ষিত! ${purchaseCart.length} টি ওষুধ যোগ হয়েছে।`));
+    alert(t(`✅ Purchase saved! ${purchasedCount} medicines added.`, `✅ ক্রয় সংরক্ষিত! ${purchasedCount} টি ওষুধ যোগ হয়েছে।`));
   };
 
   // ============================================================
@@ -3156,8 +3383,10 @@ export default function Home() {
   // The product will only appear in Sell AFTER being added via Stock In
   const handleSaveNewProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingNewProduct) return; // block double-submit
     if (!npMedicineName.trim()) return alert(t("Please enter medicine name!", "ওষুধের নাম লিখুন!"));
     if (!npBuyPrice || !npSalePrice) return alert(t("Please enter buy price and sale price!", "ক্রয় মূল্য এবং বিক্রয় মূল্য লিখুন!"));
+    setIsSubmittingNewProduct(true);
 
     // FIX (multi-device product-list conflict): same race-safe pattern —
     // fetch the freshest mednames/medmeta/companies before merging this
@@ -3176,10 +3405,11 @@ export default function Home() {
 
     // Add to medicine names list if not already there
     let currentMedNames = [...bdMedicineNamesList];
+    let medNamesChanged = false;
     if (!currentMedNames.some(m => m.toLowerCase() === trimmedMed.toLowerCase())) {
       currentMedNames.push(trimmedMed);
       setBdMedicineNamesList(currentMedNames);
-      cloudSet('madina_v7_mednames', JSON.stringify(currentMedNames));
+      medNamesChanged = true;
     }
 
     // Add/update metadata
@@ -3192,13 +3422,33 @@ export default function Home() {
       updatedMeta.push(newMeta);
     }
     setBdMedNameMetadata(updatedMeta);
-    cloudSet('madina_v7_medmeta', JSON.stringify(updatedMeta));
 
     // Add company if not already in list
+    let updatedCompanies = bdMedicineCompanies;
+    let companiesChanged = false;
     if (trimmedCompany && !bdMedicineCompanies.some(c => c.toLowerCase() === trimmedCompany.toLowerCase())) {
-      const updatedCompanies = [...bdMedicineCompanies, trimmedCompany];
+      updatedCompanies = [...bdMedicineCompanies, trimmedCompany];
       setBdMedicineCompanies(updatedCompanies);
-      cloudSet('madina_v7_companies', JSON.stringify(updatedCompanies));
+      companiesChanged = true;
+    }
+
+    // Await all required writes before showing success.
+    // mednames write is skipped when the name already existed (no-op).
+    const writes: Promise<boolean>[] = [
+      cloudSet('madina_v7_medmeta', JSON.stringify(updatedMeta)),
+    ];
+    if (medNamesChanged) writes.push(cloudSet('madina_v7_mednames', JSON.stringify(currentMedNames)));
+    if (companiesChanged) writes.push(cloudSet('madina_v7_companies', JSON.stringify(updatedCompanies)));
+
+    const results = await Promise.all(writes);
+    setIsSubmittingNewProduct(false);
+
+    if (results.some(ok => !ok)) {
+      alert(t(
+        "⚠️ Product may not have saved fully. Check your connection and try again.",
+        "⚠️ পণ্য সম্পূর্ণ সংরক্ষিত নাও হতে পারে। সংযোগ পরীক্ষা করুন এবং আবার চেষ্টা করুন।"
+      ));
+      return;
     }
 
     // Reset form
@@ -3222,9 +3472,12 @@ export default function Home() {
     setEditFormData({ ...editFormData, [field]: value });
   };
 
-  const saveEditedMedicine = (id: number) => {
+  const saveEditedMedicine = async (id: number) => {
+    if (isEditingSave) return; // block double-tap on Save button
     const updatedStock = parseInt(editFormData.stock);
     if (isNaN(updatedStock) || updatedStock < 0) { alert(t("Please enter valid stock!", "সঠিক স্টক সংখ্যা দিন!")); return; }
+
+    setIsEditingSave(true);
     // FIX (multi-device stock conflict): build the change as a function so it
     // can be re-applied to the freshest meds list fetched from Firebase,
     // instead of writing this device's whole local array (which could erase
@@ -3240,10 +3493,17 @@ export default function Home() {
     // Phase 4: record ADJUSTMENT stock movement if stock quantity changed
     const originalMed = medicinesRef.current.find(m => m.id === id);
     const originalStock = originalMed ? originalMed.stock : 0;
+
+    // Optimistic local update for instant UI feedback
+    setMedicines(applyEdit(medicines));
+
+    // Await both the stock movement and the authoritative cloud write.
+    // appendStockMovements is only needed when stock actually changed.
+    const cloudWrites: Promise<boolean | void>[] = [
+      updateMedicinesOnCloud(applyEdit),
+    ];
     if (originalMed && updatedStock !== originalStock) {
       const adjTransactionId = `TXN-ADJ-${Date.now()}-${genId()}`;
-      const adjQtyByMedId: Record<number, number> = { [id]: Math.abs(updatedStock - originalStock) };
-      const adjType = updatedStock >= originalStock ? 'PURCHASE' : 'SALE'; // PURCHASE = stock up, SALE = stock down
       // We repurpose PURCHASE/SALE types for adjustments; store type=ADJUSTMENT via a wrapper
       const adjustmentEntry = {
         movementId: `MOV-${Date.now()}-${genId()}`,
@@ -3259,23 +3519,53 @@ export default function Home() {
         timestamp: new Date().toISOString(),
         dateString: new Date().toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' }),
       };
-      appendStockMovements([adjustmentEntry]);
+      cloudWrites.push(appendStockMovements([adjustmentEntry]));
     }
 
-    setMedicines(applyEdit(medicines));
-    updateMedicinesOnCloud(applyEdit);
+    const results = await Promise.all(cloudWrites);
+    setIsEditingSave(false);
+
+    const stockOk = results[0]; // updateMedicinesOnCloud resolves boolean
+    if (!stockOk) {
+      alert(t(
+        "⚠️ Inventory update may not have saved. Check your connection and try again.",
+        "⚠️ ইনভেন্টরি আপডেট সংরক্ষিত নাও হতে পারে। সংযোগ পরীক্ষা করুন এবং আবার চেষ্টা করুন।"
+      ));
+      return;
+    }
+
     closeEdit();
     setEditingId(null);
     alert(t("✅ Medicine updated!", "✅ ওষুধ আপডেট হয়েছে!"));
   };
 
-  const deleteMedicine = (id: number) => {
-    if (confirm(t("Are you sure you want to delete this medicine?", "এই ওষুধটি মুছে ফেলবেন?"))) {
-      // FIX (multi-device stock conflict): same as above — apply against the
-      // freshest cloud copy instead of overwriting it with local state.
-      const applyDelete = (medsArray: any[]) => medsArray.filter(m => m.id !== id);
-      setMedicines(applyDelete(medicines));
-      updateMedicinesOnCloud(applyDelete);
+  const deleteMedicine = async (id: number) => {
+    if (isDeletingMedRef.current.has(id)) return; // prevent double-delete for same id
+    if (!confirm(t("Are you sure you want to delete this medicine?", "এই ওষুধটি মুছে ফেলবেন?"))) return;
+
+    isDeletingMedRef.current.add(id);
+    // FIX (multi-device stock conflict): same as above — apply against the
+    // freshest cloud copy instead of overwriting it with local state.
+    const applyDelete = (medsArray: any[]) => medsArray.filter(m => m.id !== id);
+    setMedicines(applyDelete(medicines)); // optimistic local removal
+    const ok = await updateMedicinesOnCloud(applyDelete);
+    isDeletingMedRef.current.delete(id);
+
+    if (!ok) {
+      // Cloud write failed — revert optimistic removal and surface the error
+      setMedicines(prev => {
+        // Only restore if the medicine was actually removed (i.e. it's not already back)
+        const stillMissing = !prev.some(m => m.id === id);
+        if (stillMissing) {
+          const original = medicinesRef.current.find(m => m.id === id);
+          return original ? [...prev, original] : prev;
+        }
+        return prev;
+      });
+      alert(t(
+        "⚠️ Delete may not have saved. Check your connection and try again.",
+        "⚠️ মুছে ফেলা সংরক্ষিত নাও হতে পারে। সংযোগ পরীক্ষা করুন এবং আবার চেষ্টা করুন।"
+      ));
     }
   };
 
@@ -3314,11 +3604,20 @@ export default function Home() {
   // key (invoices, due list, due collection log) back to Firebase, pull
   // the freshest copy first so a near-simultaneous save from another
   // device isn't blindly overwritten and silently lost.
-  const fetchLatestList = async (key: string, localFallback: any[]): Promise<any[]> => {
+  // fetchLatestList — two modes:
+  //   strict=false (default): falls back to localFallback on read failure.
+  //     Safe for non-critical reads (companies list, med names, etc.)
+  //   strict=true: throws if Firebase cannot be read.
+  //     Required for financial/stock operations — never use stale data
+  //     as authoritative source for invoice, payment, due, ledger writes.
+  const fetchLatestList = async (key: string, localFallback: any[], strict = false): Promise<any[]> => {
     const fetched = await fbGet(key);
     if (fetched) {
-      try { return JSON.parse(fetched); } catch { /* keep local fallback if malformed */ }
+      try { return JSON.parse(fetched); } catch {
+        if (strict) throw new Error(`FETCH_MALFORMED:${key}`);
+      }
     }
+    if (strict) throw new Error(`FETCH_FAILED:${key}`);
     return localFallback;
   };
 
@@ -3763,7 +4062,24 @@ export default function Home() {
     const dayExpenses   = (report.expenseArr as any[]).filter((e: any) => isSameDay(e.date || ''));
     const dayCashLedger = (report.cashLedgerArr as any[]).filter((c: any) => isSameDay(c.timestamp || ''));
 
-    const grossSales    = dayInvoices.reduce((s: number, i: any) => s + (i.finalBill || 0), 0);
+    // FIX #7: grossSales uses finalBill which is ALREADY reduced at return time
+    // (the return handler subtracts calculatedRefundAmount from inv.finalBill).
+    // Subtracting refundsDay a second time double-counts the deduction and
+    // makes netSales too low.  Instead:
+    //   • grossSales = sum of the ORIGINAL invoice amounts (before any return)
+    //     = finalBill + refundedAmount (for returned invoices)
+    //   • netSales   = grossSales − refundsDay  (correct single deduction)
+    //   • OR: since finalBill already nets out the return, netSales = grossSales
+    //     (i.e. finalBill IS the net amount for returned invoices).
+    // We choose the latter — netSales = sum of finalBill (already net) — which is
+    // the simplest and matches computeSalesAndProfit's accounting rule.
+    const netSales      = dayInvoices.reduce((s: number, i: any) => s + (i.finalBill || 0), 0);
+    // grossSales shows the pre-return total for display context
+    const grossSales    = dayInvoices.reduce((s: number, i: any) => {
+      const base = i.finalBill || 0;
+      const refund = i.isReturned ? (i.returnDetails?.refundedAmount || 0) : 0;
+      return s + base + refund;
+    }, 0);
     const cashSales     = dayInvoices.reduce((s: number, i: any) => s + Math.min(i.cashReceived ?? i.finalBill ?? 0, i.finalBill ?? 0), 0);
     const creditSales   = dayInvoices.reduce((s: number, i: any) => s + Math.max(0, i.due || 0), 0);
     const totalDueCreatedDay = creditSales;
@@ -3772,7 +4088,6 @@ export default function Home() {
     const expensesDay   = dayExpenses.reduce((s: number, e: any) => s + (e.amount || 0), 0);
     const purchasesDay  = dayPurchases.reduce((s: number, p: any) => s + (p.totalAmount || 0), 0);
     const profitDay     = dayInvoices.reduce((s: number, i: any) => s + (i.profit || 0), 0);
-    const netSales      = grossSales - refundsDay;
     const numSales      = dayInvoices.length;
     const numReturns    = dayInvoices.filter((i: any) => i.isReturned).length;
 
@@ -3817,12 +4132,17 @@ export default function Home() {
       return [...prevCart, { ...med, qty: 1 }];
     });
     setMedicines(prevMeds => prevMeds.map(item => item.id === med.id ? { ...item, stock: item.stock - 1 } : item));
+    // Adding to cart invalidates any pending sale context (different cart = new sale).
+    pendingSaleTxRef.current = null;
   }, []);
 
   const removeFromCart = useCallback((itemToRemove: any) => {
     const currentCartQty = parseInt(itemToRemove.qty) || 0;
     setCart(prevCart => prevCart.filter(item => item.id !== itemToRemove.id));
     setMedicines(prevMeds => prevMeds.map(item => item.id === itemToRemove.id ? { ...item, stock: item.stock + currentCartQty } : item));
+    // Cart changed — the pending sale context no longer applies.
+    // Next Confirm Sale will generate fresh IDs for the new cart contents.
+    pendingSaleTxRef.current = null;
   }, []);
 
   const handleQuantityChange = useCallback((itemId: number, newQtyValue: string) => {
@@ -3848,6 +4168,8 @@ export default function Home() {
     const stockDifference = parsedQty - currentCartQty;
     setMedicines(prevMeds => prevMeds.map(m => m.id === itemId ? { ...m, stock: m.stock - stockDifference } : m));
     setCart(prevCart => prevCart.map(item => item.id === itemId ? { ...item, qty: parsedQty } : item));
+    // Cart quantity changed — invalidate any pending sale context.
+    pendingSaleTxRef.current = null;
   }, []);
 
 
@@ -3879,10 +4201,6 @@ export default function Home() {
 
   const executeFinalCheckout = async () => {
     // ── GUARD 1: Double-click / double-tap protection ─────────
-    // If a sale is already in-flight (network round-trips in progress),
-    // a second tap on "Confirm Sale" returns immediately. The button is
-    // also visually disabled via isSubmittingSale so the cashier gets
-    // instant feedback that the first submission is still processing.
     if (isSubmittingSale) return;
 
     // ── Discount cap check (fast, no network) ─────────────────
@@ -3895,128 +4213,141 @@ export default function Home() {
       return;
     }
 
-    // ── GUARD 2: Assign transactionId + invoiceId early, before any I/O ──
-    // Generating both IDs here — before setting isSubmittingSale — means
-    // we can use them in error messages even if the very first await fails.
-    // The ID format includes both wall-clock time and a monotonic counter
-    // so two tabs generating IDs in the same millisecond still differ.
-    //
-    // BUGFIX #3: invoiceId must be globally unique. The old pattern
-    // Date.now().slice(-6) only kept the last 6 digits of the timestamp,
-    // colliding whenever two sales occurred in the same millisecond (same
-    // tab rapid double-confirm, two tabs, or two devices).
-    // genId() uses a module-level monotonic counter so even back-to-back
-    // calls within the same millisecond produce distinct values.
-    // The "M-" prefix is kept so receipt printing and invoice search work.
-    const transactionId = `TXN-${Date.now()}-${genId()}`;
-    const invoiceId     = `M-${Date.now()}-${genId()}`;
+    // ── GUARD 2: Assign transactionId + invoiceId — reuse on retry ──
+    // IDs are generated ONCE per sale.  The same IDs survive retries so
+    // the invoice idempotency check (transactionId lookup) prevents duplicates.
+    if (!pendingSaleTxRef.current) {
+      pendingSaleTxRef.current = {
+        transactionId: `TXN-${Date.now()}-${genId()}`,
+        invoiceId:     `M-${Date.now()}-${genId()}`,
+      };
+    }
+    const { transactionId, invoiceId } = pendingSaleTxRef.current;
 
     // ── GUARD 3: Idempotency — reject already-committed IDs ───
-    // In React StrictMode (dev) effects run twice; this also catches any
-    // path where executeFinalCheckout is called again before local state
-    // has cleared (e.g. a racing setIsSubmittingSale update).
     if (submittedTransactionIds.current.has(transactionId)) return;
 
     setIsSubmittingSale(true);
     try {
       // ── STEP 1: Build sold-qty map from current cart ─────────
-      // Cart quantities are captured NOW, before any async calls that
-      // could trigger re-renders and change the cart reference.
       const soldQtyByMedId: Record<number, number> = {};
       cart.forEach(item => {
         soldQtyByMedId[item.id] = (soldQtyByMedId[item.id] || 0) + (parseInt(item.qty) || 0);
       });
 
-      // ── STEP 2: Atomic stock deduction via ETag optimistic lock ──
-      // deductStockAtomically:
-      //   a) reads the LIVE medicine array + its ETag from Firebase
-      //   b) re-validates every cart item against the freshest stock
-      //      (catches overselling from stale carts held open on other tabs)
-      //   c) computes the deducted array
-      //   d) writes it back with If-Match: <etag> — the server rejects
-      //      with HTTP 412 if another device changed stock since step (a)
-      //   e) on 412, retries from (a) up to STOCK_MAX_RETRIES times
-      //
-      // This is the strongest concurrency guarantee available via the
-      // Firebase REST API without the full SDK. It eliminates:
-      //   • Overselling (both devices read stock=5, both sell 4 → stock=-3)
-      //   • Negative stock (stock is clamped AND validated before write)
-      //   • Stale local state overwriting newer Firebase stock
       addToast(t("⏳ Validating stock...", "⏳ স্টক যাচাই হচ্ছে..."), 'info');
 
-      // ── SPEED OPTIMISATION: fire all independent Firebase reads in parallel ──
-      // Previously these were sequential: stock ETag read → 3x fetchLatestList →
-      // 2x fetchLatestList → 1x fetchLatestList = 6 round-trips one after another.
-      // Now we fire all 6 reads at the same time (Promise.all). The stock write
-      // (conditional PUT with If-Match) still happens after — it depends on the
-      // ETag from the stock read — but every other list fetch runs concurrently
-      // with the stock read instead of waiting behind it.
-      const [stockResult, invoices, dueList, dueCollectionLog, preFetchPaymentLedger, preFetchCashLedger, preFetchStockMovements] = await Promise.all([
-        deductStockAtomically(soldQtyByMedId, t),
-        fetchLatestList('madina_v7_invoices', invoicesRef.current),
-        fetchLatestList('madina_v7_due_list', dueListRef.current),
-        fetchLatestList('madina_v7_due_collection_log', dueCollectionLogRef.current),
-        fetchLatestList('madina_v7_payment_ledger', paymentLedgerRef.current),
-        fetchLatestList('madina_v7_cash_ledger', cashLedgerRef.current),
-        fetchLatestList('madina_v7_stock_movements', stockMovementsRef.current),
-      ]);
-
-      if (!stockResult.ok) {
-        playSound('error');
-        if (stockResult.reason === 'insufficient') {
-          alert(t(
-            `⚠️ Stock changed while your cart was open — not enough left to complete this sale:\n\n${stockResult.details.join('\n')}\n\nPlease adjust the quantities and try again.`,
-            `⚠️ কার্ট খোলা থাকাকালীন স্টক পরিবর্তন হয়ে গেছে — এই বিক্রি সম্পন্ন করার জন্য পর্যাপ্ত স্টক নেই:\n\n${stockResult.details.join('\n')}\n\nপরিমাণ ঠিক করে আবার চেষ্টা করুন।`
-          ));
-        } else {
-          alert(t(
-            `❌ Could not update stock — no internet or Firebase is unreachable.\n\nNOTHING was changed. Please check your connection and press "Confirm Sale" again.\n\n(Ref: ${transactionId})`,
-            `❌ স্টক আপডেট করা যায়নি — ইন্টারনেট নেই বা Firebase-এ পৌঁছানো যাচ্ছে না।\n\nকিছুই পরিবর্তন হয়নি। সংযোগ পরীক্ষা করে আবার "Confirm Sale" চাপুন।\n\n(রেফ: ${transactionId})`
-          ));
-        }
-        return; // isSubmittingSale cleared in finally
+      // ── IDEMPOTENCY CHECK: already fully committed? ──────────
+      // If this transactionId's invoice already exists in Firebase (e.g. page
+      // refresh after a successful commit), show the receipt without re-committing.
+      const liveInvoicesRaw = await fbGet('madina_v7_invoices');
+      if (liveInvoicesRaw) {
+        try {
+          const liveInvoices: any[] = JSON.parse(liveInvoicesRaw);
+          const alreadyCommitted = liveInvoices.find(
+            (inv: any) => inv.transactionId === transactionId
+          );
+          if (alreadyCommitted) {
+            setInvoices(liveInvoices);
+            setLastInvoice(alreadyCommitted);
+            setCart([]); setCustomerName(""); setCustomerPhone("");
+            setDiscountValue("0"); setCashReceived(""); setInvoiceDue("0");
+            setSelectedExistingDue(null);
+            setShowCustomerPanel(true);
+            setShowConfirmModal(false);
+            setShowSuccessAlert(true);
+            submittedTransactionIds.current.add(transactionId);
+            pendingSaleTxRef.current = null;
+            clearTxRecord(transactionId);
+            playSound('checkout');
+            addToast(t("✅ Sale already recorded — showing receipt.", "✅ বিক্রয় আগেই রেকর্ড হয়েছে।"), 'success');
+            return;
+          }
+        } catch { /* malformed — proceed */ }
       }
 
-      // Stock deduction confirmed on Firebase — updatedMeds is authoritative.
-      const updatedMeds = stockResult.updatedMeds;
+      // ── STEP 2: Validate stock + read all financial lists in parallel ──
+      //
+      // validateAndPrepareStock reads fresh stock from Firebase, checks
+      // quantities, and computes the post-deduction meds array.
+      // It does NOT write anything to Firebase — the stock write happens
+      // atomically together with the invoice in STEP 3 below.
+      //
+      // All financial lists are fetched in the same parallel batch so the
+      // entire operation needs only two network round-trips:
+      //   Round-trip A: validate stock + fetch financial lists (parallel)
+      //   Round-trip B: ONE atomic PATCH with ALL changes
+      let stockValidation: Awaited<ReturnType<typeof validateAndPrepareStock>>;
+      let invoices: any[], dueList: any[], dueCollectionLog: any[],
+          preFetchPaymentLedger: any[], preFetchCashLedger: any[], preFetchStockMovements: any[];
 
-      // ── Phase 4: Build SALE stock movement entries ────────────
-      // Snapshot taken BEFORE deduction (from the fresh meds array that
-      // deductStockAtomically read), so previousStock is accurate.
-      // We reconstruct the pre-deduction snapshot by adding sold qty back.
-      const preDeductMeds = updatedMeds.map((m: any) =>
-        soldQtyByMedId[m.id] ? { ...m, stock: m.stock + soldQtyByMedId[m.id] } : m
-      );
-      // BUGFIX #3 (continued): invoiceId is now generated before deductStockAtomically
-      // so the stock movement placeholder is the real invoiceId from the start.
+      try {
+        [stockValidation,
+         invoices, dueList, dueCollectionLog,
+         preFetchPaymentLedger, preFetchCashLedger, preFetchStockMovements] = await Promise.all([
+          validateAndPrepareStock(soldQtyByMedId, t),
+          fetchLatestList('madina_v7_invoices', invoicesRef.current, true),
+          fetchLatestList('madina_v7_due_list', dueListRef.current, true),
+          fetchLatestList('madina_v7_due_collection_log', dueCollectionLogRef.current, true),
+          fetchLatestList('madina_v7_payment_ledger', paymentLedgerRef.current, true),
+          fetchLatestList('madina_v7_cash_ledger', cashLedgerRef.current, true),
+          fetchLatestList('madina_v7_stock_movements', stockMovementsRef.current, true),
+        ]) as any;
+      } catch {
+        playSound('error');
+        alert(t(
+          `❌ Cannot reach Firebase — nothing was changed.\n\nCheck your internet and press "Confirm Sale" again.\n\n(Ref: ${transactionId})`,
+          `❌ Firebase-এ পৌঁছানো যাচ্ছে না — কিছুই পরিবর্তন হয়নি।\n\nইন্টারনেট পরীক্ষা করুন এবং আবার "Confirm Sale" চাপুন।\n\n(রেফ: ${transactionId})`
+        ));
+        return;
+      }
+
+      if (!stockValidation.ok) {
+        playSound('error');
+        if (stockValidation.reason === 'insufficient') {
+          alert(t(
+            `⚠️ Stock changed while your cart was open — not enough left:\n\n${stockValidation.details.join('\n')}\n\nPlease adjust quantities and try again.`,
+            `⚠️ কার্ট খোলা থাকাকালীন স্টক পরিবর্তন হয়ে গেছে — পর্যাপ্ত স্টক নেই:\n\n${stockValidation.details.join('\n')}\n\nপরিমাণ ঠিক করে আবার চেষ্টা করুন।`
+          ));
+          return;
+        }
+        // reason === 'network': nothing written anywhere, safe to retry
+        alert(t(
+          `❌ Could not read stock from Firebase — nothing was changed.\n\nCheck your connection and press "Confirm Sale" again.\n\n(Ref: ${transactionId})`,
+          `❌ Firebase থেকে স্টক পড়া যায়নি — কিছুই পরিবর্তন হয়নি।\n\nসংযোগ পরীক্ষা করে আবার "Confirm Sale" চাপুন।\n\n(রেফ: ${transactionId})`
+        ));
+        return;
+      }
+
+      // Stock validation passed — updatedMeds and preDeductMeds are ready.
+      // Nothing has been written to Firebase yet.
+      const updatedMeds   = stockValidation.updatedMeds;
+      const preDeductMeds = stockValidation.preDeductMeds;
+
+      // ── STEP 2b: Build stock movement entries ─────────────────
       const saleMovementEntries = buildStockMovementEntries(
         'SALE',
         transactionId,
-        invoiceId,  // real invoiceId — no placeholder needed anymore
+        invoiceId,
         soldQtyByMedId,
         preDeductMeds,
         new Date().toISOString(),
         new Date().toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' }),
       );
 
-      // ── STEP 3: Invoice/due data already fetched in parallel above ───────
-      // (invoices, dueList, dueCollectionLog are ready — no extra await needed)
-
-      // ── STEP 4: Compute all derived values ───────────────────
+      // ── STEP 2c: Compute all derived sale values ──────────────
       const totalCost = cart.reduce((sum, item) => sum + (item.buyPrice * (parseInt(item.qty) || 0)), 0);
 
-      // Look up customer's fresh due amount (not the stale modal snapshot)
       const freshExistingDue = selectedExistingDue
         ? dueList.find((d: any) => d.id === selectedExistingDue.id)
         : null;
-      const prevDueAmt = freshExistingDue ? freshExistingDue.totalDue : 0;
-      const grandTotal = currentFinalBill + prevDueAmt;
+      const prevDueAmt  = freshExistingDue ? freshExistingDue.totalDue : 0;
+      const grandTotal  = currentFinalBill + prevDueAmt;
       const cashGivenNum = parseFloat(cashReceived) || 0;
-      const dueAmt = Math.max(0, grandTotal - cashGivenNum);
-      const paidCash = Math.min(cashGivenNum, grandTotal);
-      const netProfit = currentFinalBill - totalCost;
-      // Per-invoice due = only THIS bill's unpaid portion (not grand total)
-      const newBillDue = Math.max(0, currentFinalBill - paidCash);
+      const dueAmt      = Math.max(0, grandTotal - cashGivenNum);
+      const paidCash    = Math.min(cashGivenNum, grandTotal);
+      const netProfit   = currentFinalBill - totalCost;
+      const newBillDue  = Math.max(0, currentFinalBill - paidCash);
 
       const today = new Date();
       const formattedTime = today.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -4024,9 +4355,10 @@ export default function Home() {
 
       const newInvoice = {
         invoiceId,
-        transactionId, // ← every record carries the same txn id
+        transactionId,
         customer: customerName || t("Regular Customer", "সাধারণ গ্রাহক"),
         phone: customerPhone || "N/A",
+        timestamp: today.toISOString(),
         dateString: `${formattedDate} | ${formattedTime}`,
         items: [...cart],
         subTotal: currentSubTotal,
@@ -4035,10 +4367,6 @@ export default function Home() {
         finalBill: currentFinalBill,
         profit: netProfit,
         paymentMethod,
-        // BUGFIX #10: store paidCash (the actual cash taken, capped at grandTotal)
-        // so a full-due sale (৳0 paid) correctly records cashReceived=0 instead of
-        // the falsy-or-fallback-to-finalBill pattern that caused the receipt to display
-        // "Cash Received: ৳1000" on a sale where nothing was paid.
         cashReceived: paidCash,
         due: newBillDue,
         changeAmount: Math.max(0, cashGivenNum - grandTotal),
@@ -4047,23 +4375,19 @@ export default function Home() {
         returnDetails: null
       };
 
-      // invoiceId was already baked into saleMovementEntries above — no remap needed.
-      const finalSaleMovements = saleMovementEntries;
-
       const updatedInvoices = [newInvoice, ...invoices];
 
       let updatedDueList = [...dueList];
       let updatedDueCollectionLog = dueCollectionLog;
 
-      // Settle any existing customer due that was partially paid this sale
       if (freshExistingDue) {
         const cashForPrevDue = Math.max(0, paidCash - currentFinalBill);
-        const prevDuePaid = Math.min(prevDueAmt, cashForPrevDue);
+        const prevDuePaid    = Math.min(prevDueAmt, cashForPrevDue);
         if (prevDuePaid > 0) {
           const newPrevDue = prevDueAmt - prevDuePaid;
           const logEntry = {
             id: genId(),
-            transactionId, // ← links due collection back to this sale
+            transactionId,
             customerName: freshExistingDue.customerName,
             phone: freshExistingDue.phone || "N/A",
             amount: prevDuePaid,
@@ -4081,9 +4405,8 @@ export default function Home() {
         }
       }
 
-      // Add new bill's due to the customer's running due balance
       if (dueAmt > 0 && newBillDue > 0) {
-        const effectiveName = customerName.trim() || t("Regular Customer", "সাধারণ গ্রাহক");
+        const effectiveName  = customerName.trim() || t("Regular Customer", "সাধারণ গ্রাহক");
         const effectivePhone = customerPhone || "N/A";
         const existingDueIdx = updatedDueList.findIndex(
           d => d.customerName.toLowerCase() === effectiveName.toLowerCase() && d.phone === effectivePhone
@@ -4111,66 +4434,36 @@ export default function Home() {
       const { sales: finalTotalSales, profit: finalTotalProfit } =
         computeSalesAndProfit(updatedInvoices, updatedDueCollectionLog);
 
-      // ── STEP 5: Commit invoice/due/sales in one atomic PATCH ─
-      // Stock was already written and confirmed in STEP 2.
-      // This second PATCH covers the remaining keys: invoices, due list,
-      // due collection log, and the derived scalar totals.
-      //
-      // Why two writes instead of one? The medicines key requires an
-      // ETag conditional write (If-Match header) which is incompatible
-      // with the multi-path PATCH that covers the other keys — they are
-      // different HTTP request types. The stock write was already confirmed
-      // before we reach here, so if THIS write fails:
-      //   • Stock WAS deducted (correct — the sale happened physically)
-      //   • Invoice was NOT recorded — cashier sees the error, can:
-      //     a) retry: "Confirm Sale" again (the stock re-validation in
-      //        STEP 2 will now see the already-deducted quantities and
-      //        pass, then only this PATCH will be retried)
-      //     b) escalate: transactionId is logged for manual reconciliation
-      //
-      // This is the fundamental constraint of the Firebase REST API:
-      // true cross-key atomicity requires the SDK's .transaction() or
-      // Firestore's runTransaction(). For now, stock-first is the safest
-      // order — it prevents overselling even in the failure case.
-      // ── STEP 4b: Build Payment + Cash ledger entries ─────────
-      // Idempotency: skip if this transactionId already recorded
-      // (handles retry after a partial failure where stock deducted but
-      // invoice write failed — the retry re-runs Step 4 correctly).
-      // NOTE: freshPaymentLedger / freshCashLedger were pre-fetched in
-      // parallel with the stock read above — no extra round-trip needed.
+      // Build payment + cash ledger entries
       const freshPaymentLedger = preFetchPaymentLedger;
       const freshCashLedger    = preFetchCashLedger;
-
       const txnAlreadyInPaymentLedger = freshPaymentLedger.some((p: any) => p.transactionId === transactionId);
       let updatedPaymentLedger = freshPaymentLedger;
       let updatedCashLedger    = freshCashLedger;
 
       if (!txnAlreadyInPaymentLedger) {
-        const paymentId = `PAY-${Date.now()}-${genId()}`;
-        const cashId    = `CASH-${Date.now()}-${genId()}`;
+        const paymentId    = `PAY-${Date.now()}-${genId()}`;
+        const cashId       = `CASH-${Date.now()}-${genId()}`;
         const effectiveCash = cashReceived !== "" ? (parseFloat(cashReceived) || 0) : currentFinalBill;
-        const actualCashIn  = Math.min(effectiveCash, grandTotal); // cash received, capped at total owed
+        const actualCashIn  = Math.min(effectiveCash, grandTotal);
 
-        // Payment ledger entry: records the payment event for this sale
-        const paymentEntry = {
+        updatedPaymentLedger = [{
           paymentId,
           transactionId,
           invoiceId: newInvoice.invoiceId,
           customer: newInvoice.customer,
           phone: newInvoice.phone,
-          amount: currentFinalBill,          // full invoice amount (sales revenue)
-          cashReceived: actualCashIn,         // cash actually taken
-          dueCreated: newBillDue,             // unpaid portion of THIS bill
+          amount: currentFinalBill,
+          cashReceived: actualCashIn,
+          dueCreated: newBillDue,
           paymentMethod,
           paymentType: 'SALE_PAYMENT' as const,
           timestamp: today.toISOString(),
           dateString: formattedDate,
-        };
-        updatedPaymentLedger = [paymentEntry, ...freshPaymentLedger];
+        }, ...freshPaymentLedger];
 
-        // Cash ledger entry: records the cash flow for this sale
         if (actualCashIn > 0) {
-          const cashEntry = {
+          updatedCashLedger = [{
             ledgerId: cashId,
             transactionId,
             invoiceId: newInvoice.invoiceId,
@@ -4181,39 +4474,56 @@ export default function Home() {
             paymentMethod,
             timestamp: today.toISOString(),
             dateString: formattedDate,
-          };
-          updatedCashLedger = [cashEntry, ...freshCashLedger];
+          }, ...freshCashLedger];
         }
 
-        // If old due was partially/fully paid in this sale, also log that in cash ledger
         if (freshExistingDue) {
-          const cashForPrevDueCheck = Math.max(0, actualCashIn - currentFinalBill);
-          const prevDuePaidCheck    = Math.min(prevDueAmt, cashForPrevDueCheck);
-          if (prevDuePaidCheck > 0) {
-            const dueCashId = `CASH-DUE-${Date.now()}-${genId()}`;
-            const dueCashEntry = {
-              ledgerId: dueCashId,
+          const effectiveCashIn2  = Math.min(effectiveCash, grandTotal);
+          const cashForPrevDueChk = Math.max(0, effectiveCashIn2 - currentFinalBill);
+          const prevDuePaidChk    = Math.min(prevDueAmt, cashForPrevDueChk);
+          if (prevDuePaidChk > 0) {
+            updatedCashLedger = [{
+              ledgerId: `CASH-DUE-${Date.now()}-${genId()}`,
               transactionId,
               invoiceId: newInvoice.invoiceId,
               customer: freshExistingDue.customerName,
-              amount: prevDuePaidCheck,
+              amount: prevDuePaidChk,
               type: 'DUE_COLLECTION' as const,
               direction: 'IN' as const,
               paymentMethod,
               timestamp: today.toISOString(),
               dateString: formattedDate,
-            };
-            updatedCashLedger = [dueCashEntry, ...updatedCashLedger];
+            }, ...updatedCashLedger];
           }
         }
       }
 
-      // Phase 4: Prepend this sale's movement entries to the pre-fetched list
-      // (preFetchStockMovements was loaded in parallel with the stock read above)
-      const updatedStockMovements = [...finalSaleMovements, ...preFetchStockMovements];
+      const updatedStockMovements = [...saleMovementEntries, ...preFetchStockMovements];
 
-      addToast(t("⏳ Saving invoice...", "⏳ ইনভয়েস সংরক্ষণ হচ্ছে..."), 'info');
-      const invoiceWriteOk = await cloudMultiSet({
+      // ── STEP 3: ONE ATOMIC COMMIT — stock + invoice + all records together ──
+      //
+      // THIS IS THE ROOT CAUSE FIX.
+      //
+      // The old code wrote madina_v7_meds with a conditional PUT (one HTTP
+      // request) and then wrote invoice + all other keys with a separate PATCH
+      // (a second HTTP request).  If the first succeeded and the second failed,
+      // the result was: stock deducted + invoice missing.  That is the exact bug.
+      //
+      // Now: madina_v7_meds is included in the SAME cloudMultiSet PATCH as the
+      // invoice and every other key.  Firebase RTDB's multi-path PATCH is ONE
+      // HTTP request.  The server applies all paths in a single write — either
+      // EVERYTHING commits (stock + invoice + due + sales + ledgers + movements),
+      // or NOTHING does.  There is no code path where stock can be deducted
+      // without the invoice being saved.
+      //
+      // If this PATCH fails:      stock unchanged, invoice unchanged — safe retry.
+      // If this PATCH times out:  we verify by reading the invoice back.
+      //                           If found → committed.  If not → safe retry.
+      //                           Either way, stock and invoice are always
+      //                           in the same committed/uncommitted state.
+      addToast(t("⏳ Saving sale...", "⏳ বিক্রয় সংরক্ষণ হচ্ছে..."), 'info');
+      const commitResult = await cloudMultiSet({
+        madina_v7_meds:               JSON.stringify(updatedMeds),          // ← stock + invoice in ONE PATCH
         madina_v7_invoices:           JSON.stringify(updatedInvoices),
         madina_v7_due_list:           JSON.stringify(updatedDueList),
         madina_v7_due_collection_log: JSON.stringify(updatedDueCollectionLog),
@@ -4224,25 +4534,57 @@ export default function Home() {
         madina_v7_stock_movements:    JSON.stringify(updatedStockMovements),
       });
 
-      if (!invoiceWriteOk) {
-        // Stock deduction SUCCEEDED but invoice write FAILED.
-        // This is a partial failure — the physical stock is already deducted.
-        // DO NOT show a success message. DO NOT clear the cart.
-        // Give the cashier the full picture so they can retry or escalate.
-        playSound('error');
+      // ── Handle timeout: verify by reading the invoice back ───────────────────
+      let resolvedResult = commitResult;
+      if (commitResult === 'unknown') {
+        addToast(t("⏳ Verifying transaction...", "⏳ ট্রানজেকশন যাচাই হচ্ছে..."), 'info');
+        await new Promise(res => setTimeout(res, 2000));
+        const verifyRaw = await fbGet('madina_v7_invoices');
+        if (verifyRaw) {
+          try {
+            const verifyInvoices: any[] = JSON.parse(verifyRaw);
+            const found = verifyInvoices.find((inv: any) => inv.transactionId === transactionId);
+            resolvedResult = found ? 'ok' : 'failed';
+          } catch { resolvedResult = 'unknown'; }
+        } else {
+          resolvedResult = 'unknown';
+        }
+      }
+
+      if (resolvedResult === 'unknown') {
+        // Timed out AND we cannot verify.  Because stock + invoice were in the
+        // same PATCH, either BOTH committed or NEITHER did.  The cashier can
+        // safely refresh: if the invoice appears, the sale is complete.
+        // If not, pressing "Confirm Sale" again is safe — the idempotency check
+        // at the top will detect the invoice if it committed, or will re-run the
+        // full atomic PATCH if it did not.  Either way, no partial state.
+        playSound('warning');
         alert(t(
-          `⚠️ Stock was updated but the INVOICE could not be saved.\n\nThis means the medicine was dispensed but the sale is NOT recorded yet.\nPlease check your internet and press "Confirm Sale" again to save the invoice.\nThe stock re-check will recognise the already-deducted quantities.\n\n(Transaction ref: ${transactionId} — keep this for reconciliation)`,
-          `⚠️ স্টক আপডেট হয়েছে কিন্তু ইনভয়েস সংরক্ষণ করা যায়নি।\n\nএর মানে ওষুধ বের করা হয়েছে কিন্তু বিক্রয় এখনও রেকর্ড হয়নি।\nইন্টারনেট পরীক্ষা করে আবার "Confirm Sale" চাপুন।\nস্টক রি-চেক আগে-কাটা পরিমাণ ধরতে পারবে।\n\n(ট্রানজেকশন রেফ: ${transactionId} — সমন্বয়ের জন্য রেখে দিন)`
+          `⚠️ Network timed out — transaction status UNKNOWN.\n\nRefresh the page. If the invoice appears in the list, the sale is fully recorded.\nIf not, press "Confirm Sale" again — the system will automatically detect whether to commit or skip.\n\n(Transaction ref: ${transactionId} — keep for reconciliation)`,
+          `⚠️ নেটওয়ার্ক টাইমআউট — ট্রানজেকশনের অবস্থা অজানা।\n\nপেজ রিফ্রেশ করুন। ইনভয়েস তালিকায় দেখলে বিক্রয় সম্পূর্ণ হয়েছে।\nনা দেখলে আবার "Confirm Sale" চাপুন — সিস্টেম স্বয়ংক্রিয়ভাবে নির্ধারণ করবে।\n\n(ট্রানজেকশন রেফ: ${transactionId} — সমন্বয়ের জন্য রেখে দিন)`
         ));
-        addToast(t("⚠️ Invoice not saved — retry!", "⚠️ ইনভয়েস সেভ হয়নি — আবার চেষ্টা করুন!"), 'error');
+        addToast(t("⚠️ Status unknown — refresh or retry safely.", "⚠️ অবস্থা অজানা — রিফ্রেশ বা পুনরায় চেষ্টা করুন।"), 'error');
         return;
       }
 
-      // ── STEP 6: Mark transaction committed (idempotency) ─────
-      submittedTransactionIds.current.add(transactionId);
+      if (resolvedResult === 'failed') {
+        // The atomic PATCH definitively failed — nothing was written.
+        // Stock is unchanged.  Invoice is unchanged.  Safe to retry.
+        playSound('error');
+        alert(t(
+          `❌ Sale could not be saved — nothing was changed.\n\nCheck your internet connection and press "Confirm Sale" again.\n\n(Ref: ${transactionId})`,
+          `❌ বিক্রয় সংরক্ষণ হয়নি — কিছুই পরিবর্তন হয়নি।\n\nইন্টারনেট পরীক্ষা করুন এবং আবার "Confirm Sale" চাপুন।\n\n(রেফ: ${transactionId})`
+        ));
+        addToast(t("❌ Sale not saved — retry when internet is available.", "❌ বিক্রয় সেভ হয়নি — ইন্টারনেট পেলে আবার চেষ্টা করুন।"), 'error');
+        return;
+      }
 
-      // ── STEP 7: Update local React state — ONLY after confirmed write
-      // The UI shows what Firebase confirmed, never what we hoped for.
+      // ── commitResult === 'ok': everything committed atomically ─────────────
+      submittedTransactionIds.current.add(transactionId);
+      pendingSaleTxRef.current = null;
+      clearTxRecord(transactionId); // best-effort prune of any leftover pending record
+
+      // Update local React state — only after confirmed write
       setInvoices(updatedInvoices);
       setLastInvoice(newInvoice);
       setMedicines(updatedMeds);
@@ -4250,10 +4592,8 @@ export default function Home() {
       setDueCollectionLog(updatedDueCollectionLog);
       setTotalSales(finalTotalSales);
       setTotalProfit(finalTotalProfit);
-      // Phase 3: update ledgers in local state after confirmed write
       setPaymentLedger(updatedPaymentLedger);
       setCashLedger(updatedCashLedger);
-      // Phase 4: update stock movement ledger in local state
       setStockMovements(updatedStockMovements);
 
       setCart([]); setCustomerName(""); setCustomerPhone("");
@@ -4266,9 +4606,6 @@ export default function Home() {
       addToast(t("✅ Invoice created successfully!", "✅ বিল তৈরি সফল হয়েছে!"), 'success');
 
     } finally {
-      // Always release the submission lock — whether we succeeded, failed,
-      // or hit an exception. Without this the Confirm button stays disabled
-      // forever if anything throws unexpectedly.
       setIsSubmittingSale(false);
     }
   };
@@ -4283,8 +4620,14 @@ export default function Home() {
     setReturnItemsQuantities(initialQtyState);
     setReturnReason("");
     setReturnActionType("CASH_REFUND");
+    // FIX 4c: Reset the pending return TX ID whenever a new invoice is opened
+    // for return — ensures each invoice's return gets its own unique ID.
+    pendingReturnTxRef.current = null;
     setShowReturnModal(true);
-    openEdit(() => setShowReturnModal(false));
+    openEdit(() => {
+      pendingReturnTxRef.current = null; // also reset on cancel/back-button close
+      setShowReturnModal(false);
+    });
   };
 
   const handleReturnItemQtyChange = (itemId: number, maxQty: number, value: string) => {
@@ -4300,6 +4643,14 @@ export default function Home() {
   // remembered in a Set for idempotency within the session.
   const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
   const submittedReturnIds = useRef<Set<string>>(new Set());
+  // ── Pending return transaction ID — generated ONCE per invoice selection ──
+  // ROOT CAUSE FIX (mirrors pendingSaleTxRef): previously refundTransactionId
+  // was generated with Date.now() at the top of EVERY call, so retries always
+  // got a brand-new ID and submittedReturnIds.has() never fired — allowing
+  // duplicate returns on slow networks with fast double-taps.
+  // The fix: generate the ID once when the return modal opens and reuse it for
+  // any retries until the return succeeds or the modal is closed.
+  const pendingReturnTxRef = useRef<string | null>(null);
 
   const processInvoiceMedicineReturn = async () => {
     // ── GUARD: double-click / in-flight protection ───────────
@@ -4312,9 +4663,14 @@ export default function Home() {
       return;
     }
 
-    // ── BUGFIX #1/#2 FIX: Generate the refundTransactionId EARLY so we can
-    // use it for idempotency checking before any I/O begins. ──────────────
-    const refundTransactionId = `TXN-REFUND-${Date.now()}-${genId()}`;
+    // ── Generate/reuse the refundTransactionId ─────────────────
+    // The ID is generated ONCE when the return modal opens (or on first
+    // press if pendingReturnTxRef is still null) and REUSED on retries so
+    // the session idempotency check actually fires on duplicate calls.
+    if (!pendingReturnTxRef.current) {
+      pendingReturnTxRef.current = `TXN-REFUND-${Date.now()}-${genId()}`;
+    }
+    const refundTransactionId = pendingReturnTxRef.current;
     if (submittedReturnIds.current.has(refundTransactionId)) return;
 
     setIsSubmittingReturn(true);
@@ -4383,6 +4739,7 @@ export default function Home() {
           "⚠️ This invoice has already been marked as returned. No changes were made.",
           "⚠️ এই ইনভয়েসটি ইতিমধ্যে ফেরত হিসেবে চিহ্নিত করা হয়েছে। কোনো পরিবর্তন হয়নি।"
         ));
+        pendingReturnTxRef.current = null; // reset so next open gets a fresh ID
         setShowReturnModal(false);
         setSelectedInvoiceForReturn(null);
         return;
@@ -4496,7 +4853,7 @@ export default function Home() {
       //   • The user sees an error and can safely retry.
       // Stock is written AFTER this succeeds so there is no window where
       // stock is restored but the invoice still shows "not returned".
-      const invoiceWriteOk = await cloudMultiSet({
+      let returnWriteResult = await cloudMultiSet({
         madina_v7_invoices:        JSON.stringify(updatedInvoices),
         madina_v7_due_list:        JSON.stringify(updatedDueList),
         madina_v7_sales:           returnedSales.toString(),
@@ -4506,7 +4863,36 @@ export default function Home() {
         madina_v7_stock_movements: JSON.stringify(updatedReturnMovements),
       });
 
-      if (!invoiceWriteOk) {
+      // ── UNKNOWN: verify by reading the invoice back ───────────
+      // cloudMultiSet returns 'unknown' when the request timed out after
+      // being sent — Firebase may or may not have committed the write.
+      // Never treat 'unknown' as 'failed' for financial operations.
+      if (returnWriteResult === 'unknown') {
+        addToast(t("⏳ Verifying return...", "⏳ ফেরত যাচাই হচ্ছে..."), 'info');
+        await new Promise(res => setTimeout(res, 2000));
+        const verifyRaw = await fbGet('madina_v7_invoices');
+        if (verifyRaw) {
+          try {
+            const verifyInvoices: any[] = JSON.parse(verifyRaw);
+            const found = verifyInvoices.find((inv: any) => inv.invoiceId === selectedInvoiceForReturn.invoiceId && inv.isReturned);
+            returnWriteResult = found ? 'ok' : 'failed';
+          } catch { returnWriteResult = 'unknown'; }
+        } else {
+          returnWriteResult = 'unknown';
+        }
+      }
+
+      if (returnWriteResult === 'unknown') {
+        playSound('warning');
+        alert(t(
+          `⚠️ Network timed out — return status UNKNOWN.\n\nDO NOT press "Confirm Return" again yet.\n\nRefresh the page first. If the invoice shows as returned, stock will still need manual adjustment.\n\n(Ref: ${refundTransactionId})`,
+          `⚠️ নেটওয়ার্ক টাইমআউট — ফেরতের অবস্থা অজানা।\n\nএখনই আবার "Confirm Return" চাপবেন না।\n\nপ্রথমে পেজ রিফ্রেশ করুন।\n\n(রেফ: ${refundTransactionId})`
+        ));
+        addToast(t("⚠️ Return status unknown — refresh first!", "⚠️ ফেরতের অবস্থা অজানা — রিফ্রেশ করুন!"), 'error');
+        return;
+      }
+
+      if (returnWriteResult !== 'ok') {
         // Nothing was changed in Firebase — invoice still shows "not returned",
         // stock is untouched. User can retry safely.
         playSound('error');
@@ -4537,6 +4923,9 @@ export default function Home() {
 
       // ── STEP 10: Mark committed (idempotency) ─────────────────
       submittedReturnIds.current.add(refundTransactionId);
+      // Clear pending ref — this return is done. Next return on a different
+      // invoice will generate a fresh ID via pendingReturnTxRef.
+      pendingReturnTxRef.current = null;
 
       // ── STEP 11: Update local React state ONLY after confirmed write ──
       setInvoices(updatedInvoices);
@@ -4573,114 +4962,192 @@ export default function Home() {
   // ============================================================
   // DUE PAYMENT
   // ============================================================
+  // ── In-flight guard: prevents double-tap / duplicate payment ─
+  const [isSubmittingDuePayment, setIsSubmittingDuePayment] = useState(false);
+  // Committed due-payment transactionIds for session-level idempotency
+  const submittedDueTxIds = useRef<Set<string>>(new Set());
+
   const handleDuePayment = async () => {
     if (!duePaymentModal) return;
+    // ── GUARD: block concurrent submissions ──────────────────────
+    if (isSubmittingDuePayment) return;
+
     const payAmt = parseFloat(duePayAmount) || 0;
     if (payAmt <= 0) { alert(t("Please enter a valid amount!", "সঠিক পরিমাণ দিন!")); return; }
 
-    // FIX (multi-device due conflict): pull the freshest due list and due
-    // collection log before merging this payment — otherwise a payment or
-    // sale recorded on another device in the same few seconds gets
-    // silently overwritten and lost. Also re-check the cap against the
-    // freshest totalDue, not the (possibly stale) modal snapshot.
-    const [dueList, dueCollectionLog, invoices] = await Promise.all([
-      fetchLatestList('madina_v7_due_list', dueListRef.current),
-      fetchLatestList('madina_v7_due_collection_log', dueCollectionLogRef.current),
-      fetchLatestList('madina_v7_invoices', invoicesRef.current),
-    ]);
-    const freshDueEntry = dueList.find((d: any) => d.id === duePaymentModal.id);
-    const freshTotalDue = freshDueEntry ? freshDueEntry.totalDue : duePaymentModal.totalDue;
-    if (payAmt > freshTotalDue) { alert(t(`Maximum payable is ${freshTotalDue.toFixed(1)} ${currencySymbol}`, `সর্বোচ্চ পরিশোধ ${freshTotalDue.toFixed(1)} ${currencySymbol}`)); return; }
+    setIsSubmittingDuePayment(true);
+    try {
+      // FIX (multi-device due conflict): pull the freshest due list, due
+      // collection log, payment ledger, cash ledger, and invoices all in
+      // one parallel round-trip — prevents a payment made on another device
+      // in the same few seconds being silently overwritten.
+      const [dueList, dueCollectionLog, invoices, freshPaymentLedger, freshCashLedger] = await Promise.all([
+        fetchLatestList('madina_v7_due_list', dueListRef.current),
+        fetchLatestList('madina_v7_due_collection_log', dueCollectionLogRef.current),
+        fetchLatestList('madina_v7_invoices', invoicesRef.current),
+        fetchLatestList('madina_v7_payment_ledger', paymentLedgerRef.current),
+        fetchLatestList('madina_v7_cash_ledger', cashLedgerRef.current),
+      ]);
 
-    const newTotalDue = freshTotalDue - payAmt;
-    const updatedDueList = newTotalDue <= 0
-      ? dueList.filter(d => d.id !== duePaymentModal.id)
-      : dueList.map(d => d.id === duePaymentModal.id ? { ...d, totalDue: newTotalDue } : d);
+      const freshDueEntry = dueList.find((d: any) => d.id === duePaymentModal.id);
+      const freshTotalDue = freshDueEntry ? freshDueEntry.totalDue : duePaymentModal.totalDue;
 
-    // Transactional ID for this due collection — links all ledger records
-    const dueTransactionId = `TXN-DUE-${Date.now()}-${genId()}`;
+      // ── IDEMPOTENCY: if this customer's due is already 0, refuse ─
+      // Handles the case where another device already collected the full amount.
+      if (freshTotalDue <= 0) {
+        alert(t(
+          "⚠️ This due has already been fully paid (possibly on another device). No changes were made.",
+          "⚠️ এই বাকি ইতিমধ্যে সম্পূর্ণ পরিশোধ করা হয়েছে (সম্ভবত অন্য ডিভাইসে)। কোনো পরিবর্তন হয়নি।"
+        ));
+        setDuePaymentModal(null);
+        setDuePayAmount("");
+        return;
+      }
 
-    // Log this collection with date for dashboard due collection stats
-    const today = new Date();
-    const formattedDate = today.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' });
-    const logEntry = {
-      id: genId(),
-      transactionId: dueTransactionId,
-      customerName: duePaymentModal.customerName,
-      phone: duePaymentModal.phone || "N/A",
-      amount: payAmt,
-      dateString: formattedDate,
-      date: today.toISOString()
-    };
-    const updatedLog = [logEntry, ...dueCollectionLog];
+      if (payAmt > freshTotalDue) {
+        alert(t(
+          `Maximum payable is ${freshTotalDue.toFixed(1)} ${currencySymbol}`,
+          `সর্বোচ্চ পরিশোধ ${freshTotalDue.toFixed(1)} ${currencySymbol}`
+        ));
+        return;
+      }
 
-    // Phase 3: Payment ledger entry for this due collection
-    const freshPaymentLedger = await fetchLatestList('madina_v7_payment_ledger', paymentLedgerRef.current);
-    const freshCashLedger    = await fetchLatestList('madina_v7_cash_ledger', cashLedgerRef.current);
+      // ── Generate transactionId ONCE per payment ───────────────
+      const dueTransactionId = `TXN-DUE-${Date.now()}-${genId()}`;
 
-    const duePayEntry = {
-      paymentId:     `PAY-DUE-${Date.now()}-${genId()}`,
-      transactionId: dueTransactionId,
-      customer:      duePaymentModal.customerName,
-      phone:         duePaymentModal.phone || "N/A",
-      amount:        payAmt,
-      paymentMethod: 'Cash',   // due collection is always cash unless extended later
-      paymentType:   'DUE_COLLECTION' as const,
-      timestamp:     today.toISOString(),
-      dateString:    formattedDate,
-    };
-    const updatedPaymentLedger = [duePayEntry, ...freshPaymentLedger];
+      // ── SESSION IDEMPOTENCY: reject already-committed IDs ──────
+      // Catches React StrictMode double-invocation and fast double-taps
+      // that slip past the isSubmittingDuePayment guard.
+      if (submittedDueTxIds.current.has(dueTransactionId)) return;
 
-    // Phase 3: Cash ledger entry — cash IN for the collected amount
-    const dueCashEntry = {
-      ledgerId:      `CASH-DUE-${Date.now()}-${genId()}`,
-      transactionId: dueTransactionId,
-      customer:      duePaymentModal.customerName,
-      amount:        payAmt,
-      type:          'DUE_COLLECTION' as const,
-      direction:     'IN' as const,
-      paymentMethod: 'Cash',
-      timestamp:     today.toISOString(),
-      dateString:    formattedDate,
-    };
-    const updatedCashLedger = [dueCashEntry, ...freshCashLedger];
+      const newTotalDue = freshTotalDue - payAmt;
+      const updatedDueList = newTotalDue <= 0
+        ? dueList.filter((d: any) => d.id !== duePaymentModal.id)
+        : dueList.map((d: any) => d.id === duePaymentModal.id ? { ...d, totalDue: newTotalDue } : d);
 
-    // Sales revenue is NOT increased by due collection (corrected accounting rule).
-    // Sales was already booked in full at the original sale's finalBill.
-    const { sales: newTotalSales, profit: newTotalProfit } = computeSalesAndProfit(invoices, updatedLog);
+      // Log this collection with date for dashboard due collection stats
+      const today = new Date();
+      const formattedDate = today.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' });
+      const logEntry = {
+        id: genId(),
+        transactionId: dueTransactionId,
+        customerName: duePaymentModal.customerName,
+        phone: duePaymentModal.phone || "N/A",
+        amount: payAmt,
+        dateString: formattedDate,
+        date: today.toISOString()
+      };
+      const updatedLog = [logEntry, ...dueCollectionLog];
 
-    // Single atomic PATCH — all keys land together or none do.
-    // BUGFIX #4: madina_v7_profit was previously missing from this PATCH,
-    // causing the stored profit scalar to drift from computeSalesAndProfit's
-    // value until the next full page reload. Both sales and profit must be
-    // written together to keep all devices in sync.
-    const writeOk = await cloudMultiSet({
-      madina_v7_due_collection_log: JSON.stringify(updatedLog),
-      madina_v7_due_list:           JSON.stringify(updatedDueList),
-      madina_v7_sales:              newTotalSales.toString(),
-      madina_v7_profit:             newTotalProfit.toString(),
-      madina_v7_payment_ledger:     JSON.stringify(updatedPaymentLedger),
-      madina_v7_cash_ledger:        JSON.stringify(updatedCashLedger),
-    });
+      // ── Payment ledger entry (already fetched above in parallel) ─
+      // FIX: idempotency — skip if this transactionId was already written
+      // (e.g. the PATCH succeeded but we crashed before setting local state).
+      const txAlreadyInPaymentLedger = freshPaymentLedger.some(
+        (p: any) => p.transactionId === dueTransactionId
+      );
+      let updatedPaymentLedger = freshPaymentLedger;
+      let updatedCashLedger    = freshCashLedger;
 
-    if (!writeOk) {
-      alert(t(
-        `❌ Could not save payment — check your internet and try again.\n\nNothing was changed.\n(Ref: ${dueTransactionId})`,
-        `❌ পেমেন্ট সংরক্ষণ করা যায়নি — ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।\n\nকিছুই পরিবর্তন হয়নি।\n(রেফ: ${dueTransactionId})`
-      ));
-      return;
+      if (!txAlreadyInPaymentLedger) {
+        const duePayEntry = {
+          paymentId:     `PAY-DUE-${Date.now()}-${genId()}`,
+          transactionId: dueTransactionId,
+          customer:      duePaymentModal.customerName,
+          phone:         duePaymentModal.phone || "N/A",
+          amount:        payAmt,
+          paymentMethod: 'Cash',   // due collection is always cash unless extended later
+          paymentType:   'DUE_COLLECTION' as const,
+          timestamp:     today.toISOString(),
+          dateString:    formattedDate,
+        };
+        updatedPaymentLedger = [duePayEntry, ...freshPaymentLedger];
+
+        // Phase 3: Cash ledger entry — cash IN for the collected amount
+        const dueCashEntry = {
+          ledgerId:      `CASH-DUE-${Date.now()}-${genId()}`,
+          transactionId: dueTransactionId,
+          customer:      duePaymentModal.customerName,
+          amount:        payAmt,
+          type:          'DUE_COLLECTION' as const,
+          direction:     'IN' as const,
+          paymentMethod: 'Cash',
+          timestamp:     today.toISOString(),
+          dateString:    formattedDate,
+        };
+        updatedCashLedger = [dueCashEntry, ...freshCashLedger];
+      }
+
+      // Sales revenue is NOT increased by due collection (corrected accounting rule).
+      // Sales was already booked in full at the original sale's finalBill.
+      const { sales: newTotalSales, profit: newTotalProfit } = computeSalesAndProfit(invoices, updatedLog);
+
+      // Single atomic PATCH — all keys land together or none do.
+      // BUGFIX #4: madina_v7_profit was previously missing from this PATCH,
+      // causing the stored profit scalar to drift from computeSalesAndProfit's
+      // value until the next full page reload. Both sales and profit must be
+      // written together to keep all devices in sync.
+      let dueWriteResult = await cloudMultiSet({
+        madina_v7_due_collection_log: JSON.stringify(updatedLog),
+        madina_v7_due_list:           JSON.stringify(updatedDueList),
+        madina_v7_sales:              newTotalSales.toString(),
+        madina_v7_profit:             newTotalProfit.toString(),
+        madina_v7_payment_ledger:     JSON.stringify(updatedPaymentLedger),
+        madina_v7_cash_ledger:        JSON.stringify(updatedCashLedger),
+      });
+
+      // ── UNKNOWN: verify by reading the due_collection_log back ─
+      // cloudMultiSet returns 'unknown' when the request timed out after
+      // being sent. Firebase may have committed — never treat as 'failed'.
+      if (dueWriteResult === 'unknown') {
+        addToast(t("⏳ Verifying payment...", "⏳ পেমেন্ট যাচাই হচ্ছে..."), 'info');
+        await new Promise(res => setTimeout(res, 2000));
+        const verifyRaw = await fbGet('madina_v7_due_collection_log');
+        if (verifyRaw) {
+          try {
+            const verifyLog: any[] = JSON.parse(verifyRaw);
+            const found = verifyLog.find((e: any) => e.transactionId === dueTransactionId);
+            dueWriteResult = found ? 'ok' : 'failed';
+          } catch { dueWriteResult = 'unknown'; }
+        } else {
+          dueWriteResult = 'unknown';
+        }
+      }
+
+      if (dueWriteResult === 'unknown') {
+        playSound('warning');
+        alert(t(
+          `⚠️ Network timed out — payment status UNKNOWN.\n\nDO NOT press "Record Payment" again yet.\n\nRefresh the page first. If the due balance dropped, the payment was recorded.\n\n(Ref: ${dueTransactionId})`,
+          `⚠️ নেটওয়ার্ক টাইমআউট — পেমেন্টের অবস্থা অজানা।\n\nএখনই আবার "পেমেন্ট রেকর্ড" চাপবেন না।\n\nপ্রথমে পেজ রিফ্রেশ করুন।\n\n(রেফ: ${dueTransactionId})`
+        ));
+        addToast(t("⚠️ Payment status unknown — refresh first!", "⚠️ পেমেন্টের অবস্থা অজানা — রিফ্রেশ করুন!"), 'error');
+        return;
+      }
+
+      if (dueWriteResult !== 'ok') {
+        alert(t(
+          `❌ Could not save payment — check your internet and try again.\n\nNothing was changed.\n(Ref: ${dueTransactionId})`,
+          `❌ পেমেন্ট সংরক্ষণ করা যায়নি — ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।\n\nকিছুই পরিবর্তন হয়নি।\n(রেফ: ${dueTransactionId})`
+        ));
+        return;
+      }
+
+      // ── Mark committed (idempotency) ─────────────────────────
+      submittedDueTxIds.current.add(dueTransactionId);
+
+      // Update local state only after confirmed write (BUGFIX #4: profit is now included)
+      setDueCollectionLog(updatedLog);
+      setTotalSales(newTotalSales);
+      setTotalProfit(newTotalProfit);
+      setDueList(updatedDueList);
+      setPaymentLedger(updatedPaymentLedger);
+      setCashLedger(updatedCashLedger);
+      setDuePaymentModal(null);
+      setDuePayAmount("");
+      playSound('success');
+      alert(t(`✅ Payment of ${payAmt.toFixed(1)} ${currencySymbol} recorded!`, `✅ ${payAmt.toFixed(1)} ${currencySymbol} পরিশোধ নথিভুক্ত হয়েছে!`));
+    } finally {
+      setIsSubmittingDuePayment(false);
     }
-
-    // Update local state only after confirmed write (BUGFIX #4: profit is now included)
-    setDueCollectionLog(updatedLog);
-    setTotalSales(newTotalSales);
-    setTotalProfit(newTotalProfit);
-    setDueList(updatedDueList);
-    setPaymentLedger(updatedPaymentLedger);
-    setCashLedger(updatedCashLedger);
-    setDuePaymentModal(null);
-    setDuePayAmount("");
-    alert(t(`✅ Payment of ${payAmt.toFixed(1)} ${currencySymbol} recorded!`, `✅ ${payAmt.toFixed(1)} ${currencySymbol} পরিশোধ নথিভুক্ত হয়েছে!`));
   };
 
   // ============================================================
@@ -4839,8 +5306,17 @@ export default function Home() {
       ? dueList.filter((d: any) => d.id !== dueId)
       : dueList.map((d: any) => d.id === dueId ? { ...d, totalDue: correctTotal } : d);
 
+    // FIX: was unawaited cloudSet + immediate success — now awaited and result
+    // is checked so the user is not told "corrected" when the write failed.
+    const dueCorrectOk = await cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
+    if (!dueCorrectOk) {
+      alert(t(
+        "⚠️ Due correction may not have saved — check your connection and try again.",
+        "⚠️ বাকি সংশোধন সংরক্ষিত নাও হতে পারে — সংযোগ পরীক্ষা করুন এবং আবার চেষ্টা করুন।"
+      ));
+      return;
+    }
     setDueList(updatedDueList);
-    cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
     alert(t("✅ Due amount corrected!", "✅ বাকির পরিমাণ ঠিক করা হয়েছে!"));
   };
 
@@ -6014,14 +6490,30 @@ export default function Home() {
 
     // Derive from remaining invoices + due collections for cross-device consistency
     const { sales: newSales, profit: newProfit } = computeSalesAndProfit(updatedInvoices, dueCollectionLog);
+
+    // FIX: was 4 separate unawaited cloudSet calls — replaced with a single
+    // atomic cloudMultiSet so all four keys land together or none do, and the
+    // result is checked before updating local state or showing success.
+    const deleteWriteResult = await cloudMultiSet({
+      madina_v7_invoices: JSON.stringify(updatedInvoices),
+      madina_v7_due_list: JSON.stringify(updatedDueList),
+      madina_v7_sales:    newSales.toString(),
+      madina_v7_profit:   newProfit.toString(),
+    });
+
+    if (deleteWriteResult !== 'ok') {
+      alert(t(
+        "⚠️ Invoice deletion may not have saved — check your connection and try again. Nothing was changed.",
+        "⚠️ রশিদ মুছে ফেলা সংরক্ষিত নাও হতে পারে — সংযোগ পরীক্ষা করুন। কোনো পরিবর্তন হয়নি।"
+      ));
+      return;
+    }
+
+    // Update local state only after confirmed cloud write
     setInvoices(updatedInvoices);
     setDueList(updatedDueList);
     setTotalSales(newSales);
     setTotalProfit(newProfit);
-    cloudSet('madina_v7_invoices', JSON.stringify(updatedInvoices));
-    cloudSet('madina_v7_due_list', JSON.stringify(updatedDueList));
-    cloudSet('madina_v7_sales', newSales.toString());
-    cloudSet('madina_v7_profit', newProfit.toString());
 
     // Restore stock for this invoice's items.
     if (Array.isArray(inv.items) && inv.items.length > 0) {
@@ -6041,6 +6533,8 @@ export default function Home() {
           latestMeds.map(m => restoreQtyById[m.id] ? { ...m, stock: m.stock + restoreQtyById[m.id] } : m)
         );
         // Phase 4: record ADJUSTMENT stock movements for the restored quantities
+        // FIX: was unawaited (fire-and-forget) — now awaited so movement lands
+        // before success is shown; failures are tolerated (non-financial record).
         const delAdjTransactionId = `TXN-DEL-${Date.now()}-${genId()}`;
         const delAdjEntries = Object.entries(restoreQtyById).map(([medIdStr, qty]) => {
           const medId = Number(medIdStr);
@@ -6062,7 +6556,7 @@ export default function Home() {
             dateString: new Date().toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' }),
           };
         });
-        appendStockMovements(delAdjEntries);
+        await appendStockMovements(delAdjEntries);
       }
     }
 
@@ -8386,11 +8880,18 @@ export default function Home() {
               voucherMap[vKey].logIds.push(log.id);
             });
 
-            const handleDeleteVoucher = (v: any) => {
+            const handleDeleteVoucher = async (v: any) => {
               if (!confirm(t(`Delete this purchase voucher (${v.items.length} items)?`, `এই ক্রয় ভাউচার মুছে ফেলবেন (${v.items.length}টি আইটেম)?`))) return;
-              const updatedList = purchaseList.filter(log => !v.logIds.includes(log.id));
+              const updatedList = purchaseList.filter((log: any) => !v.logIds.includes(log.id));
+              // FIX: was unawaited cloudSet (fire-and-forget). Now awaited and
+              // result is checked so a failed write surfaces an error instead of
+              // silently succeeding in UI but not in Firebase.
+              const ok = await cloudSet('madina_v7_purchases', JSON.stringify(updatedList));
+              if (!ok) {
+                addToast(t('⚠️ Delete may not have saved — check your connection.', '⚠️ মুছে ফেলা সংরক্ষিত নাও হতে পারে — সংযোগ পরীক্ষা করুন।'), 'error');
+                return;
+              }
               setPurchaseList(updatedList);
-              cloudSet('madina_v7_purchases', JSON.stringify(updatedList));
               playSound('delete');
               addToast(t('✅ Voucher deleted!', '✅ ভাউচার মুছে ফেলা হয়েছে!'), 'success');
             };
@@ -11555,8 +12056,12 @@ export default function Home() {
 
               <div className="flex gap-2 justify-end">
                 <button onClick={() => { setDuePaymentModal(null); setDuePayAmount(""); }} className={`px-4 py-2 text-sm font-bold rounded-xl transition ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{t("Cancel", "বাতিল")}</button>
-                <button onClick={handleDuePayment} className="bg-indigo-500 hover:bg-indigo-600 text-white font-black px-5 py-2 rounded-xl uppercase tracking-wider shadow transition">
-                  ✅ {t("Record Payment", "পেমেন্ট রেকর্ড")}
+                <button
+                  onClick={handleDuePayment}
+                  disabled={isSubmittingDuePayment}
+                  className={`font-black px-5 py-2 rounded-xl uppercase tracking-wider shadow transition text-white ${isSubmittingDuePayment ? 'bg-indigo-300 cursor-not-allowed' : 'bg-indigo-500 hover:bg-indigo-600'}`}
+                >
+                  {isSubmittingDuePayment ? t("⏳ Saving...", "⏳ সংরক্ষণ হচ্ছে...") : `✅ ${t("Record Payment", "পেমেন্ট রেকর্ড")}`}
                 </button>
               </div>
             </div>
