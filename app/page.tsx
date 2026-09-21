@@ -71,7 +71,13 @@ const CLOUD_SYNC_KEYS = [
   'madina_v7_name',
   'madina_v7_slogan',
   'madina_v7_address',
-  'madina_v7_logo',
+  // 'madina_v7_logo' is intentionally excluded from cloud sync.
+  // Logo is a base64 image that can be 50-300 KB. Storing it in
+  // Firebase Realtime DB causes rapid storage exhaustion because every
+  // cloudSet/PATCH rewrites the full node including the image blob.
+  // Logo is now stored only in localStorage (device-local, like theme/sound).
+  // It never leaves the device — this is fine because logo is purely visual
+  // (receipts, header) and carries no business data.
   'madina_v7_currency',
   'madina_v7_vat',
   'madina_v7_threshold',
@@ -118,6 +124,14 @@ const DATA_ROOT = (() => {
   }
   return 'madina_data';
 })();
+
+// Local dev bypass — on localhost, skip login entirely and drop straight
+// into the app as ADMIN. On any live domain this constant is false and
+// the full auth flow runs exactly as before.
+const DEV_BYPASS_LOGIN = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+   window.location.hostname === '127.0.0.1' ||
+   window.location.hostname === '0.0.0.0');
 
 const fbUrl = (key: string) =>
   `${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}/${key}.json`;
@@ -1593,7 +1607,7 @@ export default function Home() {
   // ============================================================
   // LOGIN STATE
   // ============================================================
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(DEV_BYPASS_LOGIN);
   const [loginRole, setLoginRole] = useState<"admin" | "staff">("admin");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -2351,20 +2365,24 @@ export default function Home() {
   useEffect(() => {
     setLastBackupTime(localStorage.getItem('madina_v7_last_backup') || "");
 
-    // Session is always device-local (login expires at midnight)
-    const savedSession = localStorage.getItem('madina_v7_session');
-    if (savedSession) {
-      try {
-        const sess = JSON.parse(savedSession);
-        const today = new Date().toDateString();
-        if (sess.date === today && sess.role) {
-          setIsLoggedIn(true);
-          setCurrentUserRole(sess.role);
-        } else {
+    // Session is always device-local (login expires at midnight).
+    // On localhost the DEV_BYPASS_LOGIN constant already sets isLoggedIn=true
+    // and currentUserRole defaults to ADMIN, so skip the restore entirely.
+    if (!DEV_BYPASS_LOGIN) {
+      const savedSession = localStorage.getItem('madina_v7_session');
+      if (savedSession) {
+        try {
+          const sess = JSON.parse(savedSession);
+          const today = new Date().toDateString();
+          if (sess.date === today && sess.role) {
+            setIsLoggedIn(true);
+            setCurrentUserRole(sess.role);
+          } else {
+            localStorage.removeItem('madina_v7_session');
+          }
+        } catch {
           localStorage.removeItem('madina_v7_session');
         }
-      } catch {
-        localStorage.removeItem('madina_v7_session');
       }
     }
 
@@ -2480,7 +2498,9 @@ export default function Home() {
       if (savedAddress) { setPharmacyAddress(savedAddress); setSettingsAddress(savedAddress); }
       else setSettingsAddress("Chaumuhani Bazar, Cumilla");
 
-      const savedLogo = g('madina_v7_logo');
+      // Logo is device-local (localStorage only — not in Firebase).
+      // This prevents base64 image data from consuming Realtime DB storage.
+      const savedLogo = typeof window !== 'undefined' ? localStorage.getItem('madina_v7_logo') : null;
       if (savedLogo) { setPharmacyLogo(savedLogo); setSettingsLogo(savedLogo); }
       else setSettingsLogo("M+");
 
@@ -2690,7 +2710,7 @@ export default function Home() {
       apply('madina_v7_name', (v: string) => { setPharmacyName(v); setSettingsName(v); }, (s: string) => s);
       apply('madina_v7_slogan', (v: string) => { setPharmacySlogan(v); setSettingsSlogan(v); }, (s: string) => s);
       apply('madina_v7_address', (v: string) => { setPharmacyAddress(v); setSettingsAddress(v); }, (s: string) => s);
-      apply('madina_v7_logo', (v: string) => { setPharmacyLogo(v); setSettingsLogo(v); }, (s: string) => s);
+      // madina_v7_logo is intentionally not applied here — logo is localStorage-only.
       apply('madina_v7_currency', setCurrencySymbol, (s: string) => s);
       apply('madina_v7_vat', setVatPercentage, (s: string) => s);
       apply('madina_v7_threshold', setLowStockThreshold, (s: string) => s);
@@ -2779,9 +2799,12 @@ export default function Home() {
       timer = setTimeout(() => {
         // Update todayKey → triggers re-render → computedDailyXxx recalculates with new date
         setTodayKey(new Date().toDateString());
-        // New day — expire the session so user must login again
-        localStorage.removeItem('madina_v7_session');
-        setIsLoggedIn(false);
+        // New day — expire the session so user must login again.
+        // On localhost DEV_BYPASS_LOGIN keeps the user in — no logout.
+        if (!DEV_BYPASS_LOGIN) {
+          localStorage.removeItem('madina_v7_session');
+          setIsLoggedIn(false);
+        }
         // Schedule the next day's midnight reset
         scheduleNextMidnight();
       }, msUntilMidnight);
@@ -5440,10 +5463,18 @@ export default function Home() {
     setPharmacySlogan(settingsSlogan);
     setPharmacyAddress(settingsAddress);
     setPharmacyLogo(settingsLogo);
+    // Name, slogan, address → Firebase (small strings, fine to sync)
     cloudSet('madina_v7_name', settingsName);
     cloudSet('madina_v7_slogan', settingsSlogan);
     cloudSet('madina_v7_address', settingsAddress);
-    cloudSet('madina_v7_logo', settingsLogo);
+    // Logo → localStorage ONLY (never Firebase).
+    // base64 image data (50–300 KB) in Realtime DB exhausts the 1 GB free
+    // tier quickly because every PATCH rewrites the full node including the
+    // blob. localStorage is per-device and persists across sessions — the
+    // logo only needs to be set once per device.
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('madina_v7_logo', settingsLogo);
+    }
     alert(t("✅ Website info saved!", "✅ ওয়েবসাইট তথ্য সংরক্ষিত!"));
   };
 
@@ -5536,7 +5567,8 @@ export default function Home() {
       cloudSet('madina_v7_name', 'Madina Medicine Corner');
       cloudSet('madina_v7_slogan', 'Professional Pharmacy POS System');
       cloudSet('madina_v7_address', 'Chaumuhani Bazar, Cumilla');
-      cloudSet('madina_v7_logo', 'M+');
+      // Logo is device-local — reset it in localStorage, not Firebase.
+      localStorage.setItem('madina_v7_logo', 'M+');
       cloudSet('madina_v7_currency', '৳');
       cloudSet('madina_v7_vat', '0');
       cloudSet('madina_v7_threshold', '10');
