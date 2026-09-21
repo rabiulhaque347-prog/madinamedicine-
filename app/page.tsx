@@ -38,8 +38,8 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 // ============================================================
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDP3TKZA9gBCkQeM5pu7Lg9K56kmvvtRpw",
-  databaseURL: "https://madinamedicine2-b742b-default-rtdb.asia-southeast1.firebasedatabase.app",
+  apiKey: "AIzaSyC9TgypoGr6azUxA_yHJe4SAVNp7TninaA",
+  databaseURL: "https://madinamedicine3-default-rtdb.asia-southeast1.firebasedatabase.app",
 };
 
 // Keys that sync to cloud (business data). Session/theme/sound are device-local only.
