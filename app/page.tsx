@@ -1892,6 +1892,8 @@ export default function Home() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string,boolean>>({ inventory: false, purchases: false, sales: false, reports: false, admin: false });
+  const toggleGroup = (g: string) => setOpenGroups(prev => ({ ...prev, [g]: !prev[g] }));
   const [toastQueue, setToastQueue] = useState<{id:number,msg:string,type:'success'|'error'|'info'}[]>([]);
   const toastIdRef = useRef(0);
 
@@ -7131,155 +7133,293 @@ export default function Home() {
       {/* MAIN LAYOUT */}
       <div className="flex-1 flex print:block">
 
-        {/* SIDEBAR — hidden on mobile, visible on md+ */}
-        <nav className={`sidebar-collapse hidden md:flex border-r p-3 flex-col gap-1.5 shrink-0 print:hidden ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg2'], borderRightColor: (activeThemeStyle as any)['--theme-border'] } : {}}>
-          <span className="sc-heading text-sm font-black text-slate-400 uppercase tracking-widest px-2 mb-1.5 block whitespace-nowrap">{t("Menu", "মেনু")}</span>
-
-          {checkShouldRenderTabOption("pos") && (
-            <button onClick={() => { playSound('tab'); navigateTab("pos"); }} className={`sc-row sidebar-nav-btn snav-pos w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "pos" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="sc-icons flex items-center gap-2"><span>🛒</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Sell", "বিক্রয়")}</span></span></div>
-              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "pos" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{cart.length}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("analytics") && (
-            <button onClick={() => { playSound('tab'); navigateTab("analytics"); }} className={`sc-row-solo sidebar-nav-btn snav-dash w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "analytics" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>📊</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Dashboard", "ড্যাশবোর্ড")}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("inventory") && (
-            <button onClick={() => { playSound('tab'); navigateTab("inventory"); }} className={`sc-row sidebar-nav-btn snav-stock w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "inventory" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="sc-icons flex items-center gap-2"><span>📦</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Stock", "স্টক")}</span></span></div>
-              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "inventory" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{medicines.length}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("procurement") && (
-            <button onClick={() => { playSound('tab'); navigateTab("procurement"); }} className={`sc-row sidebar-nav-btn snav-stockin w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "procurement" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="sc-icons flex items-center gap-2"><span>📥</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Stock In", "মাল কিনুন")}</span></span></div>
-              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "procurement" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{purchaseList.length}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("procurement") && (
-            <button onClick={() => { playSound('tab'); navigateTab("new_product"); }} className={`sc-row-solo sidebar-nav-btn snav-newprod w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "new_product" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>➕</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("New Product", "নতুন পণ্য")}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("purchase_history") && (
-            <button onClick={() => { playSound('tab'); navigateTab("purchase_history"); }} className={`sc-row sidebar-nav-btn snav-ph w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "purchase_history" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="sc-icons flex items-center gap-2"><span>🧾</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Purchase History", "ক্রয় ইতিহাস")}</span></span></div>
-              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "purchase_history" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{purchaseList.length}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("company_purchase_history_view") && (
-            <button onClick={() => { playSound('tab'); navigateTab("company_purchase_history"); }} className={`sc-row sidebar-nav-btn snav-cph w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "company_purchase_history" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="sc-icons flex items-center gap-2"><span>🏭</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Company Purchase History", "কোম্পানি ক্রয় ইতিহাস")}</span></span></div>
-              {companyPurchaseSummary.length > 0 && <span className="sc-wrap"><span className="sc-fade whitespace-nowrap text-xs px-1.5 py-0.5 rounded font-mono bg-violet-500 text-white">{companyPurchaseSummary.length}</span></span>}
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("invoices") && (
-            <button onClick={() => { playSound('tab'); navigateTab("invoices"); }} className={`sc-row sidebar-nav-btn snav-inv w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "invoices" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="sc-icons flex items-center gap-2"><span>🧾</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Invoices", "রশিদ")}</span></span></div>
-              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "invoices" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{invoices.length}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("due_list_view") && (
-            <button onClick={() => { playSound('tab'); navigateTab("due_list"); }} className={`sc-row sidebar-nav-btn snav-due w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "due_list" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="sc-icons flex items-center gap-2"><span>💳</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Due List", "বাকি তালিকা")}</span></span></div>
-              {dueList.length > 0 && <span className="sc-wrap"><span className="sc-fade whitespace-nowrap text-xs px-1.5 py-0.5 rounded font-mono bg-red-500 text-white">{dueList.length}</span></span>}
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("due_collection_view") && (
-            <button onClick={() => { playSound('tab'); navigateTab("due_collection"); }} className={`sc-row sidebar-nav-btn snav-duecol w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "due_collection" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <div className="sc-icons flex items-center gap-2"><span>📒</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Due Collection List", "বাকি আদায় তালিকা")}</span></span></div>
-              {dueCollectionLog.length > 0 && <span className="sc-wrap"><span className="sc-fade whitespace-nowrap text-xs px-1.5 py-0.5 rounded font-mono bg-emerald-500 text-white">{dueCollectionLog.length}</span></span>}
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("report_view") && (
-            <button onClick={() => { playSound('tab'); navigateTab("report"); }} className={`sc-row-solo sidebar-nav-btn snav-report w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>📋</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Report", "রিপোর্ট")}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("closing_report") && (
-            <button onClick={() => { playSound('tab'); navigateTab("closing_report"); }} className={`sc-row-solo sidebar-nav-btn snav-closing w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "closing_report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>🌙</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Closing Report", "ক্লোজিং রিপোর্ট")}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("daily_report") && (
-            <button onClick={() => { playSound('tab'); navigateTab("daily_report"); }} className={`sc-row-solo sidebar-nav-btn snav-daily w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "daily_report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>🗓️</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Daily Report", "দৈনিক রিপোর্ট")}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("monthly_report") && (
-            <button onClick={() => { playSound('tab'); navigateTab("monthly_report"); }} className={`sc-row-solo sidebar-nav-btn snav-monthly w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "monthly_report" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>📅</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Monthly Report", "মাসিক রিপোর্ট")}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("returns") && (
-            <button onClick={() => { playSound('tab'); navigateTab("returns"); }} className={`sc-row-solo sidebar-nav-btn snav-ret w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "returns" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>🔄</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Returns", "ফেরত")}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("expense_tracker") && (
-            <button onClick={() => { playSound('tab'); navigateTab("expense_tracker"); }} className={`sc-row sidebar-nav-btn snav-exp w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "expense_tracker" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span className="sc-icons flex items-center gap-2"><span>💸</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Expense Tracker", "খরচ ট্র্যাকার")}</span></span></span>
-              <span className="sc-wrap"><span className={`sc-fade whitespace-nowrap text-sm px-1.5 py-0.5 rounded font-mono ${activeTab === "expense_tracker" ? 'bg-white/20 text-white' : 'bg-slate-500/10 text-slate-400'}`}>{expenseList.length}</span></span>
-            </button>
-          )}
-
-          {checkShouldRenderTabOption("settings") && (
-            <button onClick={() => { playSound('tab'); navigateTab("settings"); }} className={`sc-row-solo sidebar-nav-btn snav-set w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "settings" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>⚙️</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Settings", "সেটিংস")}</span></span>
-            </button>
-          )}
-
-          {currentUserRole === "ADMIN" && (
-            <button onClick={() => { playSound('tab'); navigateTab("modules_menu"); }} className={`sc-row-solo sidebar-nav-btn snav-perm w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "modules_menu" ? 'bg-indigo-500 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
-              <span>🛡️</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Permissions", "অনুমতি")}</span></span>
-            </button>
-          )}
-
-          {/* Phase 6: Reconciliation — Admin only */}
-          {currentUserRole === "ADMIN" && (
-            <button onClick={() => { playSound('tab'); navigateTab("reconciliation"); }} className={`sc-row-solo sidebar-nav-btn w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-extrabold transition btn-press ${activeTab === "reconciliation" ? 'bg-red-600 text-white shadow-sm' : isDarkMode ? 'hover:bg-slate-800 text-red-400' : 'hover:bg-red-50 text-red-600'}`}>
-              <span>🔍</span><span className="sc-wrap"><span className="sc-fade whitespace-nowrap">{t("Reconciliation", "সমন্বয়")}</span></span>
-            </button>
-          )}
-
-          {/* Bottom Info */}
-          <div className="sc-bottom mt-auto pt-4 border-t border-dashed border-slate-700/50">
-            {/* Sidebar Clock */}
-            <div className={`p-2 rounded-xl text-center mb-2 ${isDarkMode ? 'bg-slate-800/60' : 'bg-indigo-50'}`}>
-              <div className="sc-collapsed-only items-center justify-center text-lg">🕐</div>
-              <div className="sc-expanded-only">
-                <div className="animate-clock font-mono font-black text-indigo-500 text-sm tracking-widest whitespace-nowrap overflow-hidden"><LiveTimeText /></div>
-                <div className={`text-sm font-semibold mt-0.5 whitespace-nowrap overflow-hidden ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}><LiveDateText /></div>
-                <div className={`text-sm font-semibold whitespace-nowrap overflow-hidden ${isDarkMode ? 'text-slate-400' : 'text-indigo-600'}`}><LiveDayText language={language} /></div>
+        {/* SIDEBAR — hidden on mobile, visible on md+ — Professional Edition */}
+        <nav className="hidden md:flex flex-col shrink-0 print:hidden overflow-y-auto" style={{ width: '200px', minWidth: '200px', background: isDarkMode ? '#0f172a' : '#1e293b', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+          {/* Brand area */}
+          <div style={{ padding: '14px 12px 12px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+              <div style={{ width:'32px', height:'32px', borderRadius:'8px', background:'linear-gradient(135deg,#6366f1,#4338ca)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, boxShadow:'0 2px 10px rgba(99,102,241,0.45)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+              </div>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:'14px', fontWeight:800, color:'#f8fafc', letterSpacing:'0.01em', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>Madina POS</div>
+                <div style={{ fontSize:'10px', color:'#64748b', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.09em' }}>{currentUserRole}</div>
               </div>
             </div>
-            <div className={`p-2 rounded-xl text-sm ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-100'}`}>
-              <div className="flex items-center gap-1.5 font-bold mb-1 justify-center">
-                <span className={`shrink-0 w-2 h-2 rounded-full ${currentUserRole === 'ADMIN' ? 'bg-indigo-400' : 'bg-indigo-400'}`}></span>
-                <span className="sc-expanded-only uppercase tracking-wider text-sm text-slate-400 whitespace-nowrap overflow-hidden">{t("Logged in as", "লগইন")}</span>
+          </div>
+
+          {/* Nav body */}
+          <div style={{ flex:1, padding:'4px 6px', display:'flex', flexDirection:'column', gap:'1px', overflowY:'auto' }}>
+
+          {/* Helper: nav item style */}
+          {(() => {
+            const S = {
+              item: (active: boolean): React.CSSProperties => ({
+                display:'flex', alignItems:'center', gap:'9px', padding:'8px 10px',
+                borderRadius:'7px', cursor:'pointer', border:'none', width:'100%', textAlign:'left' as const,
+                fontSize:'13px', fontWeight: active ? 700 : 600, transition:'background 0.13s, color 0.13s',
+                background: active ? 'rgba(99,102,241,0.25)' : 'transparent',
+                color: active ? '#c7d2fe' : '#cbd5e1',
+              }),
+              subItem: (active: boolean): React.CSSProperties => ({
+                display:'flex', alignItems:'center', justifyContent:'space-between', gap:'6px',
+                padding:'7px 10px 7px 32px', borderRadius:'6px', cursor:'pointer', border:'none',
+                width:'100%', textAlign:'left' as const, fontSize:'12.5px', fontWeight: active ? 700 : 600,
+                transition:'background 0.13s, color 0.13s',
+                background: active ? 'rgba(99,102,241,0.22)' : 'transparent',
+                color: active ? '#c7d2fe' : '#94a3b8',
+              }),
+              group: (active: boolean, open: boolean): React.CSSProperties => ({
+                display:'flex', alignItems:'center', justifyContent:'space-between', gap:'9px',
+                padding:'8px 10px', borderRadius:'7px', cursor:'pointer', border:'none', width:'100%',
+                textAlign:'left' as const, fontSize:'13px', fontWeight: 700,
+                background: active ? 'rgba(255,255,255,0.07)' : 'transparent',
+                color: active ? '#f1f5f9' : '#94a3b8', transition:'background 0.13s, color 0.13s',
+              }),
+              sectionLabel: { fontSize:'10px', fontWeight:800, color:'#475569', textTransform:'uppercase' as const, letterSpacing:'0.12em', padding:'12px 10px 4px', userSelect:'none' as const },
+              badge: (color: string): React.CSSProperties => ({ fontSize:'10px', fontWeight:700, padding:'1px 6px', borderRadius:'10px', background:color, color:'#fff', minWidth:'18px', textAlign:'center' as const, flexShrink:0 }),
+              chevron: (open: boolean): React.CSSProperties => ({ transition:'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)', flexShrink:0, color:'#64748b' }),
+            };
+
+            const Icon = {
+              pos:     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>,
+              dash:    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
+              inv:     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>,
+              stockin: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M2 12l10 10 10-10"/></svg>,
+              newprod: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>,
+              purch:   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+              company: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+              invoice: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>,
+              due:     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>,
+              duecol:  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
+              ret:     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.97"/></svg>,
+              exp:     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
+              report:  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
+              closing: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
+              daily:   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+              monthly: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></svg>,
+              set:     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
+              perm:    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+              recon:   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+              chevron: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>,
+            };
+
+            const inventoryActive = ["inventory","procurement","new_product"].includes(activeTab);
+            const purchasesActive = ["purchase_history","company_purchase_history"].includes(activeTab);
+            const salesActive     = ["invoices","due_list","due_collection","returns","expense_tracker"].includes(activeTab);
+            const reportsActive   = ["report","closing_report","daily_report","monthly_report"].includes(activeTab);
+            const adminActive     = ["modules_menu","reconciliation"].includes(activeTab);
+
+            const invOpen  = openGroups.inventory || inventoryActive;
+            const purOpen  = openGroups.purchases || purchasesActive;
+            const salOpen  = openGroups.sales     || salesActive;
+            const repOpen  = openGroups.reports   || reportsActive;
+            const admOpen  = openGroups.admin     || adminActive;
+
+            return (<>
+              {/* MAIN */}
+              <div style={S.sectionLabel}>{t("Main","মেইন")}</div>
+
+              {checkShouldRenderTabOption("pos") && (
+                <button style={S.item(activeTab==="pos")} onClick={()=>{playSound('tab');navigateTab("pos");}}>
+                  <span style={{color: activeTab==="pos" ? '#818cf8':'#475569', flexShrink:0}}>{Icon.pos}</span>
+                  <span style={{flex:1}}>{t("Point of Sale","বিক্রয়")}</span>
+                  {cart.length > 0 && <span style={S.badge('#6366f1')}>{cart.length}</span>}
+                </button>
+              )}
+
+              {checkShouldRenderTabOption("analytics") && (
+                <button style={S.item(activeTab==="analytics")} onClick={()=>{playSound('tab');navigateTab("analytics");}}>
+                  <span style={{color: activeTab==="analytics" ? '#818cf8':'#475569', flexShrink:0}}>{Icon.dash}</span>
+                  <span style={{flex:1}}>{t("Dashboard","ড্যাশবোর্ড")}</span>
+                </button>
+              )}
+
+              {/* INVENTORY GROUP */}
+              {(checkShouldRenderTabOption("inventory") || checkShouldRenderTabOption("procurement")) && (<>
+                <div style={S.sectionLabel}>{t("Inventory","ইনভেন্টরি")}</div>
+                <button style={S.group(inventoryActive, invOpen)} onClick={()=>toggleGroup("inventory")}>
+                  <span style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                    <span style={{color: inventoryActive ? '#e2e8f0':'#475569', flexShrink:0}}>{Icon.inv}</span>
+                    <span>{t("Stock","স্টক")}</span>
+                  </span>
+                  <span style={{...S.chevron(invOpen), color: invOpen ? '#818cf8':'#475569'}}>{Icon.chevron}</span>
+                </button>
+                {invOpen && (<>
+                  {checkShouldRenderTabOption("inventory") && (
+                    <button style={S.subItem(activeTab==="inventory")} onClick={()=>{playSound('tab');navigateTab("inventory");}}>
+                      <span>{t("Stock List","স্টক তালিকা")}</span>
+                      <span style={S.badge(activeTab==="inventory"?'#6366f1':'#334155')}>{medicines.length}</span>
+                    </button>
+                  )}
+                  {checkShouldRenderTabOption("procurement") && (
+                    <button style={S.subItem(activeTab==="procurement")} onClick={()=>{playSound('tab');navigateTab("procurement");}}>
+                      <span>{t("Stock In","মাল কিনুন")}</span>
+                      <span style={S.badge(activeTab==="procurement"?'#6366f1':'#334155')}>{purchaseList.length}</span>
+                    </button>
+                  )}
+                  {checkShouldRenderTabOption("procurement") && (
+                    <button style={S.subItem(activeTab==="new_product")} onClick={()=>{playSound('tab');navigateTab("new_product");}}>
+                      <span>{t("Add Product","নতুন পণ্য")}</span>
+                    </button>
+                  )}
+                </>)}
+              </>)}
+
+              {/* PURCHASES GROUP */}
+              {(checkShouldRenderTabOption("purchase_history") || checkShouldRenderTabOption("company_purchase_history_view")) && (<>
+                <div style={S.sectionLabel}>{t("Purchases","ক্রয়")}</div>
+                <button style={S.group(purchasesActive, purOpen)} onClick={()=>toggleGroup("purchases")}>
+                  <span style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                    <span style={{color: purchasesActive ? '#e2e8f0':'#475569', flexShrink:0}}>{Icon.purch}</span>
+                    <span>{t("Purchase History","ক্রয় ইতিহাস")}</span>
+                  </span>
+                  <span style={{...S.chevron(purOpen), color: purOpen ? '#818cf8':'#475569'}}>{Icon.chevron}</span>
+                </button>
+                {purOpen && (<>
+                  {checkShouldRenderTabOption("purchase_history") && (
+                    <button style={S.subItem(activeTab==="purchase_history")} onClick={()=>{playSound('tab');navigateTab("purchase_history");}}>
+                      <span>{t("All Purchases","সব ক্রয়")}</span>
+                      <span style={S.badge(activeTab==="purchase_history"?'#6366f1':'#334155')}>{purchaseList.length}</span>
+                    </button>
+                  )}
+                  {checkShouldRenderTabOption("company_purchase_history_view") && (
+                    <button style={S.subItem(activeTab==="company_purchase_history")} onClick={()=>{playSound('tab');navigateTab("company_purchase_history");}}>
+                      <span>{t("By Company","কোম্পানি অনু.")}</span>
+                      {companyPurchaseSummary.length > 0 && <span style={S.badge('#7c3aed')}>{companyPurchaseSummary.length}</span>}
+                    </button>
+                  )}
+                </>)}
+              </>)}
+
+              {/* SALES & DUE GROUP */}
+              {(checkShouldRenderTabOption("invoices") || checkShouldRenderTabOption("due_list_view") || checkShouldRenderTabOption("due_collection_view") || checkShouldRenderTabOption("returns") || checkShouldRenderTabOption("expense_tracker")) && (<>
+                <div style={S.sectionLabel}>{t("Finance","ফিন্যান্স")}</div>
+                <button style={S.group(salesActive, salOpen)} onClick={()=>toggleGroup("sales")}>
+                  <span style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                    <span style={{color: salesActive ? '#e2e8f0':'#475569', flexShrink:0}}>{Icon.invoice}</span>
+                    <span>{t("Sales & Due","বিক্রয় ও বাকি")}</span>
+                  </span>
+                  <span style={{...S.chevron(salOpen), color: salOpen ? '#818cf8':'#475569'}}>{Icon.chevron}</span>
+                </button>
+                {salOpen && (<>
+                  {checkShouldRenderTabOption("invoices") && (
+                    <button style={S.subItem(activeTab==="invoices")} onClick={()=>{playSound('tab');navigateTab("invoices");}}>
+                      <span>{t("Invoices","রশিদ")}</span>
+                      <span style={S.badge(activeTab==="invoices"?'#6366f1':'#334155')}>{invoices.length}</span>
+                    </button>
+                  )}
+                  {checkShouldRenderTabOption("due_list_view") && (
+                    <button style={S.subItem(activeTab==="due_list")} onClick={()=>{playSound('tab');navigateTab("due_list");}}>
+                      <span>{t("Due List","বাকি তালিকা")}</span>
+                      {dueList.length > 0 && <span style={S.badge('#ef4444')}>{dueList.length}</span>}
+                    </button>
+                  )}
+                  {checkShouldRenderTabOption("due_collection_view") && (
+                    <button style={S.subItem(activeTab==="due_collection")} onClick={()=>{playSound('tab');navigateTab("due_collection");}}>
+                      <span>{t("Due Collection","বাকি আদায়")}</span>
+                      {dueCollectionLog.length > 0 && <span style={S.badge('#10b981')}>{dueCollectionLog.length}</span>}
+                    </button>
+                  )}
+                  {checkShouldRenderTabOption("returns") && (
+                    <button style={S.subItem(activeTab==="returns")} onClick={()=>{playSound('tab');navigateTab("returns");}}>
+                      <span>{t("Returns","ফেরত")}</span>
+                    </button>
+                  )}
+                  {checkShouldRenderTabOption("expense_tracker") && (
+                    <button style={S.subItem(activeTab==="expense_tracker")} onClick={()=>{playSound('tab');navigateTab("expense_tracker");}}>
+                      <span>{t("Expenses","খরচ")}</span>
+                      <span style={S.badge(activeTab==="expense_tracker"?'#6366f1':'#334155')}>{expenseList.length}</span>
+                    </button>
+                  )}
+                </>)}
+              </>)}
+
+              {/* REPORTS GROUP */}
+              {(checkShouldRenderTabOption("report_view") || checkShouldRenderTabOption("closing_report") || checkShouldRenderTabOption("daily_report") || checkShouldRenderTabOption("monthly_report")) && (<>
+                <div style={S.sectionLabel}>{t("Reports","রিপোর্ট")}</div>
+                <button style={S.group(reportsActive, repOpen)} onClick={()=>toggleGroup("reports")}>
+                  <span style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                    <span style={{color: reportsActive ? '#e2e8f0':'#475569', flexShrink:0}}>{Icon.report}</span>
+                    <span>{t("Reports","রিপোর্ট")}</span>
+                  </span>
+                  <span style={{...S.chevron(repOpen), color: repOpen ? '#818cf8':'#475569'}}>{Icon.chevron}</span>
+                </button>
+                {repOpen && (<>
+                  {checkShouldRenderTabOption("report_view") && (
+                    <button style={S.subItem(activeTab==="report")} onClick={()=>{playSound('tab');navigateTab("report");}}>
+                      <span>{t("Sales Report","বিক্রয় রিপোর্ট")}</span>
+                    </button>
+                  )}
+                  {checkShouldRenderTabOption("closing_report") && (
+                    <button style={S.subItem(activeTab==="closing_report")} onClick={()=>{playSound('tab');navigateTab("closing_report");}}>
+                      <span>{t("Closing Report","ক্লোজিং")}</span>
+                    </button>
+                  )}
+                  {checkShouldRenderTabOption("daily_report") && (
+                    <button style={S.subItem(activeTab==="daily_report")} onClick={()=>{playSound('tab');navigateTab("daily_report");}}>
+                      <span>{t("Daily Report","দৈনিক")}</span>
+                    </button>
+                  )}
+                  {checkShouldRenderTabOption("monthly_report") && (
+                    <button style={S.subItem(activeTab==="monthly_report")} onClick={()=>{playSound('tab');navigateTab("monthly_report");}}>
+                      <span>{t("Monthly Report","মাসিক")}</span>
+                    </button>
+                  )}
+                </>)}
+              </>)}
+
+              {/* SETTINGS */}
+              {checkShouldRenderTabOption("settings") && (<>
+                <div style={S.sectionLabel}>{t("System","সিস্টেম")}</div>
+                <button style={S.item(activeTab==="settings")} onClick={()=>{playSound('tab');navigateTab("settings");}}>
+                  <span style={{color: activeTab==="settings" ? '#818cf8':'#475569', flexShrink:0}}>{Icon.set}</span>
+                  <span style={{flex:1}}>{t("Settings","সেটিংস")}</span>
+                </button>
+              </>)}
+
+              {/* ADMIN GROUP */}
+              {currentUserRole === "ADMIN" && (<>
+                {!checkShouldRenderTabOption("settings") && <div style={S.sectionLabel}>{t("System","সিস্টেম")}</div>}
+                <button style={S.group(adminActive, admOpen)} onClick={()=>toggleGroup("admin")}>
+                  <span style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                    <span style={{color: adminActive ? '#e2e8f0':'#475569', flexShrink:0}}>{Icon.perm}</span>
+                    <span>{t("Administration","অ্যাডমিন")}</span>
+                  </span>
+                  <span style={{...S.chevron(admOpen), color: admOpen ? '#818cf8':'#475569'}}>{Icon.chevron}</span>
+                </button>
+                {admOpen && (<>
+                  <button style={S.subItem(activeTab==="modules_menu")} onClick={()=>{playSound('tab');navigateTab("modules_menu");}}>
+                    <span>{t("Permissions","অনুমতি")}</span>
+                  </button>
+                  <button style={S.subItem(activeTab==="reconciliation")} onClick={()=>{playSound('tab');navigateTab("reconciliation");}}>
+                    <span>{t("Reconciliation","সমন্বয়")}</span>
+                  </button>
+                </>)}
+              </>)}
+            </>);
+          })()}
+
+          </div>{/* end nav body */}
+
+          {/* Bottom — clock + user */}
+          <div style={{ borderTop:'1px solid rgba(255,255,255,0.07)', padding:'10px 10px' }}>
+            <div style={{ marginBottom:'8px', padding:'8px 10px', borderRadius:'7px', background:'rgba(255,255,255,0.05)' }}>
+              <div style={{ fontFamily:'monospace', fontWeight:800, fontSize:'14px', color:'#818cf8', letterSpacing:'0.06em', marginBottom:'2px' }}><LiveTimeText /></div>
+              <div style={{ fontSize:'11px', color:'#64748b', fontWeight:600 }}><LiveDateText /></div>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:'9px', padding:'8px 10px', borderRadius:'7px', background:'rgba(255,255,255,0.05)' }}>
+              <div style={{ width:'28px', height:'28px', borderRadius:'50%', background: currentUserRole==='ADMIN' ? 'linear-gradient(135deg,#6366f1,#4338ca)' : 'linear-gradient(135deg,#10b981,#059669)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               </div>
-              <p className="sc-expanded-only font-mono font-black text-sm truncate text-center">{currentUserRole === "ADMIN" ? t("Administrator", "অ্যাডমিন") : t("Staff", "স্টাফ")}</p>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:'10px', color:'#64748b', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>{t("Logged in","লগইন")}</div>
+                <div style={{ fontSize:'12px', color:'#e2e8f0', fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{currentUserRole === "ADMIN" ? t("Administrator","অ্যাডমিন") : t("Staff","স্টাফ")}</div>
+              </div>
             </div>
             {checkShouldRenderTabOption("backup_restore") && (
-              <button onClick={resetDatabase} className="sc-expanded-only w-full mt-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold py-1 px-2 rounded text-sm transition uppercase tracking-wider whitespace-nowrap overflow-hidden">
-                🚨 {t("Reset System", "রিসেট")}
+              <button onClick={resetDatabase} style={{ marginTop:'8px', width:'100%', background:'rgba(239,68,68,0.1)', color:'#f87171', border:'1px solid rgba(239,68,68,0.2)', borderRadius:'7px', padding:'7px 10px', fontSize:'11px', fontWeight:700, cursor:'pointer', textTransform:'uppercase', letterSpacing:'0.07em' }}>
+                {t("Reset System","রিসেট")}
               </button>
             )}
           </div>
