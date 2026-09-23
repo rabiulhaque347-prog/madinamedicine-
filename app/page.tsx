@@ -7901,20 +7901,40 @@ export default function Home() {
                         </svg>
                       </IconCircle>
                     </div>
-                    <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:14}}>
-                      <span style={{fontSize:11, fontWeight:700, color:'#16a34a', background:isDarkMode?'rgba(34,197,94,0.1)':'#dcfce7', borderRadius:6, padding:'2px 8px', display:'flex', alignItems:'center', gap:3}}>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
-                        12.4%
-                      </span>
-                      <span style={{fontSize:11, color:tm}}>{t("vs yesterday","গতকালের তুলনায়")}</span>
-                    </div>
-                    <div style={{height:3, borderRadius:4, background: isDarkMode?'#334155':'#e2e8f0'}}>
-                      <div style={{height:'100%', width:'74%', borderRadius:4, background:'linear-gradient(90deg,#3b82f6,#60a5fa)', transition:'width 1s ease'}}></div>
-                    </div>
-                    <div style={{display:'flex', justifyContent:'space-between', marginTop:5}}>
-                      <span style={{fontSize:10, color:tm}}>{t("Daily target","দৈনিক লক্ষ্য")}</span>
-                      <span style={{fontSize:10, fontWeight:700, color:'#3b82f6', fontFamily:'monospace'}}>74%</span>
-                    </div>
+                    {(()=>{
+                      const todaySale = weeklySalesData.weekSales[6] ?? 0;
+                      const yesterdaySale = weeklySalesData.weekSales[5] ?? 0;
+                      const hasBoth = todaySale > 0 || yesterdaySale > 0;
+                      const pct = yesterdaySale > 0 ? ((todaySale - yesterdaySale) / yesterdaySale) * 100 : (todaySale > 0 ? 100 : 0);
+                      const up = pct >= 0;
+                      const clr = up ? '#16a34a' : '#dc2626';
+                      const bg = up ? (isDarkMode?'rgba(34,197,94,0.1)':'#dcfce7') : (isDarkMode?'rgba(220,38,38,0.1)':'#fee2e2');
+                      // bar shows today vs max of last 7 days
+                      const maxW = Math.max(...weeklySalesData.weekSales, 1);
+                      const barPct = Math.min(Math.round((todaySale / maxW) * 100), 100);
+                      return (<>
+                        <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:14}}>
+                          {hasBoth && yesterdaySale > 0 && (
+                            <span style={{fontSize:11, fontWeight:700, color:clr, background:bg, borderRadius:6, padding:'2px 8px', display:'flex', alignItems:'center', gap:3}}>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={clr} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points={up?"18 15 12 9 6 15":"6 9 12 15 18 9"}/></svg>
+                              {Math.abs(pct).toFixed(1)}%
+                            </span>
+                          )}
+                          {yesterdaySale === 0 && todaySale > 0 && (
+                            <span style={{fontSize:11, fontWeight:700, color:'#16a34a', background:isDarkMode?'rgba(34,197,94,0.1)':'#dcfce7', borderRadius:6, padding:'2px 8px'}}>{t("New","নতুন")}</span>
+                          )}
+                          <span style={{fontSize:11, color:tm}}>{t("vs yesterday","গতকালের তুলনায়")}</span>
+                          {yesterdaySale > 0 && <span style={{fontSize:10, color:ts, fontFamily:'monospace'}}>({currencySymbol}{yesterdaySale.toLocaleString()})</span>}
+                        </div>
+                        <div style={{height:3, borderRadius:4, background: isDarkMode?'#334155':'#e2e8f0'}}>
+                          <div style={{height:'100%', width:`${barPct}%`, borderRadius:4, background:'linear-gradient(90deg,#3b82f6,#60a5fa)', transition:'width 1s ease'}}></div>
+                        </div>
+                        <div style={{display:'flex', justifyContent:'space-between', marginTop:5}}>
+                          <span style={{fontSize:10, color:tm}}>{t("vs 7-day peak","৭ দিনের সর্বোচ্চের তুলনায়")}</span>
+                          <span style={{fontSize:10, fontWeight:700, color:'#3b82f6', fontFamily:'monospace'}}>{barPct}%</span>
+                        </div>
+                      </>);
+                    })()}
                   </div>
                 )}
 
@@ -7935,20 +7955,46 @@ export default function Home() {
                         </svg>
                       </IconCircle>
                     </div>
-                    <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:14}}>
-                      <span style={{fontSize:11, fontWeight:700, color:'#16a34a', background:isDarkMode?'rgba(34,197,94,0.1)':'#dcfce7', borderRadius:6, padding:'2px 8px', display:'flex', alignItems:'center', gap:3}}>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
-                        8.7%
-                      </span>
-                      <span style={{fontSize:11, color:tm}}>{t("vs last month","গত মাসের তুলনায়")}</span>
-                    </div>
-                    <div style={{height:3, borderRadius:4, background: isDarkMode?'#334155':'#e2e8f0'}}>
-                      <div style={{height:'100%', width:'89%', borderRadius:4, background:'linear-gradient(90deg,#22c55e,#4ade80)', transition:'width 1s ease'}}></div>
-                    </div>
-                    <div style={{display:'flex', justifyContent:'space-between', marginTop:5}}>
-                      <span style={{fontSize:10, color:tm}}>{t("Monthly target","মাসিক লক্ষ্য")}</span>
-                      <span style={{fontSize:10, fontWeight:700, color:'#16a34a', fontFamily:'monospace'}}>89%</span>
-                    </div>
+                    {(()=>{
+                      const now = new Date();
+                      const curY = now.getFullYear(), curM = now.getMonth();
+                      const prevM = curM === 0 ? 11 : curM - 1;
+                      const prevY = curM === 0 ? curY - 1 : curY;
+                      const lastMonthSales = invoices.reduce((s:number, inv:any) => {
+                        const d = parseCustomDateString(inv.dateString);
+                        return (d.getFullYear() === prevY && d.getMonth() === prevM) ? s + (inv.finalBill||0) : s;
+                      }, 0);
+                      const thisMonthSales = computedMonthlySalesAmount;
+                      const hasBoth = thisMonthSales > 0 || lastMonthSales > 0;
+                      const pct = lastMonthSales > 0 ? ((thisMonthSales - lastMonthSales) / lastMonthSales) * 100 : (thisMonthSales > 0 ? 100 : 0);
+                      const up = pct >= 0;
+                      const clr = up ? '#16a34a' : '#dc2626';
+                      const bg = up ? (isDarkMode?'rgba(34,197,94,0.1)':'#dcfce7') : (isDarkMode?'rgba(220,38,38,0.1)':'#fee2e2');
+                      const maxSales = Math.max(thisMonthSales, lastMonthSales, 1);
+                      const barPct = Math.min(Math.round((thisMonthSales / maxSales) * 100), 100);
+                      return (<>
+                        <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:14}}>
+                          {hasBoth && lastMonthSales > 0 && (
+                            <span style={{fontSize:11, fontWeight:700, color:clr, background:bg, borderRadius:6, padding:'2px 8px', display:'flex', alignItems:'center', gap:3}}>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={clr} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points={up?"18 15 12 9 6 15":"6 9 12 15 18 9"}/></svg>
+                              {Math.abs(pct).toFixed(1)}%
+                            </span>
+                          )}
+                          {lastMonthSales === 0 && thisMonthSales > 0 && (
+                            <span style={{fontSize:11, fontWeight:700, color:'#16a34a', background:isDarkMode?'rgba(34,197,94,0.1)':'#dcfce7', borderRadius:6, padding:'2px 8px'}}>{t("New","নতুন")}</span>
+                          )}
+                          <span style={{fontSize:11, color:tm}}>{t("vs last month","গত মাসের তুলনায়")}</span>
+                          {lastMonthSales > 0 && <span style={{fontSize:10, color:ts, fontFamily:'monospace'}}>({currencySymbol}{lastMonthSales>=100000?(lastMonthSales/1000).toFixed(1)+'k':lastMonthSales.toLocaleString()})</span>}
+                        </div>
+                        <div style={{height:3, borderRadius:4, background: isDarkMode?'#334155':'#e2e8f0'}}>
+                          <div style={{height:'100%', width:`${barPct}%`, borderRadius:4, background:'linear-gradient(90deg,#22c55e,#4ade80)', transition:'width 1s ease'}}></div>
+                        </div>
+                        <div style={{display:'flex', justifyContent:'space-between', marginTop:5}}>
+                          <span style={{fontSize:10, color:tm}}>{t("vs last month","গত মাসের তুলনায়")}</span>
+                          <span style={{fontSize:10, fontWeight:700, color:'#16a34a', fontFamily:'monospace'}}>{barPct}%</span>
+                        </div>
+                      </>);
+                    })()}
                   </div>
                 )}
 
