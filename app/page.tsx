@@ -7831,725 +7831,503 @@ export default function Home() {
           )}
 
           {/* =========================================================
-              TAB 2: DASHBOARD / ANALYTICS
+              TAB 2: DASHBOARD / ANALYTICS  — Pro Edition v3
           ========================================================= */}
-          {activeTab === "analytics" && checkShouldRenderTabOption("analytics") && (
-            <div className="flex flex-col gap-4">
-              <h2 className="text-sm font-black text-indigo-500 uppercase tracking-wider">{t("Dashboard", "ড্যাশবোর্ড")}</h2>
+          {activeTab === "analytics" && checkShouldRenderTabOption("analytics") && (() => {
+            const bg      = isDarkMode ? '#0f172a' : '#f8fafc';
+            const card    = isDarkMode ? '#1e293b' : '#ffffff';
+            const border  = isDarkMode ? '#334155' : '#e2e8f0';
+            const divClr  = isDarkMode ? '#1e293b' : '#f1f5f9';
+            const tp      = isDarkMode ? '#f1f5f9' : '#0f172a';
+            const ts      = isDarkMode ? '#94a3b8' : '#64748b';
+            const tm      = isDarkMode ? '#475569' : '#9ca3af';
+            const inputBg = isDarkMode ? '#0f172a' : '#f8fafc';
 
-              {/* Top Stats Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            // SVG icon components
+            const Icon = ({d, size=16, color='currentColor', strokeWidth=1.8, fill='none'}:any) => (
+              <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+                {Array.isArray(d) ? d.map((seg:string,i:number)=><path key={i} d={seg}/>) : <path d={d}/>}
+              </svg>
+            );
+            const IconCircle = ({children, bg, size=36}:any) => (
+              <div style={{width:size, height:size, borderRadius:10, background:bg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+                {children}
+              </div>
+            );
 
-                {/* Daily Sale */}
+            return (
+            <div style={{display:'flex', flexDirection:'column', gap:20, fontFamily:"'Inter',system-ui,sans-serif"}}>
+
+              {/* ══ HEADER ══════════════════════════════════════════ */}
+              <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12, paddingBottom:18, borderBottom:`1px solid ${border}`}}>
+                <div>
+                  <div style={{fontSize:22, fontWeight:800, color:tp, letterSpacing:'-0.5px', lineHeight:1.2}}>
+                    {t("Overview","সারসংক্ষেপ")}
+                  </div>
+                  <div style={{fontSize:13, color:ts, marginTop:4, display:'flex', alignItems:'center', gap:8}}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={ts} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    <LiveDateText />
+                    <span style={{width:3, height:3, borderRadius:'50%', background:tm, display:'inline-block'}}></span>
+                    {t("Madina Medicine Corner","মাদিনা মেডিসিন কর্নার")}
+                  </div>
+                </div>
+                <div style={{display:'flex', alignItems:'center', gap:8}}>
+                  <div style={{display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:600, color:'#16a34a', background: isDarkMode?'rgba(34,197,94,0.08)':'#f0fdf4', border:'1px solid rgba(34,197,94,0.25)', borderRadius:8, padding:'6px 12px'}}>
+                    <span style={{width:6, height:6, borderRadius:'50%', background:'#22c55e', display:'inline-block', animation:'pulse 2s infinite'}}></span>
+                    {t("Live","লাইভ")}
+                  </div>
+                  <div style={{display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:600, color:ts, background:card, border:`1px solid ${border}`, borderRadius:8, padding:'6px 12px'}}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={ts} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span style={{fontFamily:'monospace'}}><LiveTimeText /></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ══ ROW 1 · KPI CARDS ═══════════════════════════════ */}
+              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))', gap:14}}>
+
                 {checkShouldRenderTabOption("daily_sale_view") && (
-                <div className={`ccard cc-violet p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-card'], borderColor: (activeThemeStyle as any)['--theme-border'] } : (!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {})}>
-                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#a7f3d0'} : {color:'#6ee7b7'}}>{t("Today's Sale", "আজকের বিক্রয়")}</span>
-                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#6ee7b7'}}>{computedDailySalesAmount.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#d1fae5'} : {color:'#6b7280'}}>{t("Cash collected today", "আজ সংগ্রহ")}</div>
-                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{CSS_BAGFLOAT}</style>
-                      <g id="mbag">
-                        <ellipse cx="32" cy="42" rx="18" ry="14" fill="white" fillOpacity="0.92"/>
-                        <ellipse id="sh1" cx="26" cy="38" rx="6" ry="9" fill="white" fillOpacity="0.15" transform="rotate(-15 26 38)"/>
-                        <rect x="25" y="23" width="14" height="11" rx="4" fill="white" fillOpacity="0.85"/>
-                        <path d="M27 23 C27 14.5 37 14.5 37 23" stroke="white" strokeWidth="3" fill="none" strokeLinecap="round"/>
-                        <text x="32" y="47" textAnchor="middle" fontSize="13" fill="#059669" fontWeight="900">৳</text>
-                        <ellipse id="sh2" cx="38" cy="44" rx="4" ry="6" fill="white" fillOpacity="0.1" transform="rotate(20 38 44)"/>
-                      </g>
-                      <ellipse id="c1" cx="20" cy="18" rx="5" ry="3.5" fill="#fbbf24" stroke="#f59e0b" strokeWidth="0.8"/>
-                      <text id="c1" x="18" y="21" fontSize="7" fill="#92400e" fontWeight="bold">$</text>
-                      <ellipse id="c2" cx="36" cy="14" rx="4" ry="2.8" fill="#fde68a" stroke="#fbbf24" strokeWidth="0.8"/>
-                      <ellipse id="c3" cx="44" cy="22" rx="3.5" ry="2.5" fill="#fcd34d" stroke="#f59e0b" strokeWidth="0.7"/>
-                      <g id="sp1"><path d="M12 8 L13 12 L16 12 L13.5 14 L14.5 18 L12 16 L9.5 18 L10.5 14 L8 12 L11 12 Z" fill="white" fillOpacity="0.9"/></g>
-                      <g id="sp2"><path d="M50 6 L51 9 L54 9 L51.8 11 L52.5 14 L50 12.5 L47.5 14 L48.2 11 L46 9 L49 9 Z" fill="#fde68a" fillOpacity="0.9"/></g>
-                    </svg>
-                  </div>
-                </div>
-                )}
-
-                {/* Monthly Sale */}
-                {checkShouldRenderTabOption("monthly_sale_view") && (
-                <div className={`ccard cc-pink p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#bfdbfe'} : {color:'#93c5fd'}}>{t("Monthly Sale", "মাসিক বিক্রয়")}</span>
-                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#93c5fd'}}>{computedMonthlySalesAmount.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#dbeafe'} : {color:'#6b7280'}}>{t("This month", "এই মাসে")}</div>
-                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{CSS_CALFLOAT}</style>
-                      <g id="ring">
-                        <circle cx="32" cy="32" r="28" stroke="white" strokeWidth="0.5" strokeOpacity="0.2" strokeDasharray="4 6" fill="none"/>
-                        <circle cx="32" cy="4" r="2.5" fill="white" fillOpacity="0.5"/>
-                        <circle cx="60" cy="32" r="2" fill="white" fillOpacity="0.3"/>
-                        <circle cx="32" cy="60" r="2" fill="white" fillOpacity="0.3"/>
-                      </g>
-                      <g id="cal">
-                        <rect x="9" y="16" width="46" height="38" rx="5" fill="white" fillOpacity="0.88"/>
-                        <rect x="9" y="16" width="46" height="13" rx="5" fill="white" fillOpacity="0.4"/>
-                        <rect x="9" y="24" width="46" height="5" fill="white" fillOpacity="0.4"/>
-                        <rect x="19" y="9" width="5" height="12" rx="2.5" fill="white"/>
-                        <rect x="40" y="9" width="5" height="12" rx="2.5" fill="white"/>
-                        <g id="page">
-                          <text id="dt" x="32" y="44" textAnchor="middle" fontSize="15" fill="#1d4ed8" fontWeight="900">15</text>
-                        </g>
-                        <circle id="d1" cx="17" cy="34" r="2.5" fill="#1d4ed8" fillOpacity="0.5"/>
-                        <circle id="d2" cx="32" cy="34" r="2.5" fill="#1d4ed8" fillOpacity="0.5"/>
-                        <circle id="d3" cx="47" cy="34" r="2.5" fill="#1d4ed8" fillOpacity="0.5"/>
-                      </g>
-                    </svg>
-                  </div>
-                </div>
-                )}
-
-                {/* Daily Profit */}
-                {checkShouldRenderTabOption("daily_profit_view") && (
-                  <div className={`ccard cc-rose p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#99f6e4'} : {color:'#5eead4'}}>{t("Today's Profit", "আজকের লাভ")}</span>
-                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#5eead4'}}>{computedDailyProfitAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ccfbf1'} : {color:'#6b7280'}}>{t("Net profit today", "আজ নেট লাভ")}</div>
-                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{CSS_B1GROW}</style>
-                        <rect id="base" x="6" y="50" width="52" height="2.5" rx="1.2" fill="white"/>
-                        <rect id="b1" x="8" y="34" width="12" height="16" rx="2.5" fill="white" fillOpacity="0.55"/>
-                        <rect id="b2" x="26" y="26" width="12" height="24" rx="2.5" fill="white" fillOpacity="0.7"/>
-                        <rect id="b3" x="44" y="14" width="12" height="36" rx="2.5" fill="white" fillOpacity="0.88"/>
-                        <rect x="9" y="35" width="4" height="14" rx="1" fill="white" fillOpacity="0.25" id="sh1"/>
-                        <rect x="27" y="27" width="4" height="22" rx="1" fill="white" fillOpacity="0.25"/>
-                        <rect x="45" y="15" width="4" height="34" rx="1" fill="white" fillOpacity="0.25"/>
-                        <g id="arr">
-                          <path d="M38 11 L50 6 M50 6 L44 6 M50 6 L50 12" stroke="#fbbf24" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        </g>
-                        <circle id="p1" cx="44" cy="14" r="2" fill="#fbbf24"/>
-                        <circle id="p2" cx="44" cy="14" r="1.5" fill="white" fillOpacity="0.8"/>
-                        <circle id="p3" cx="44" cy="14" r="2.5" fill="#fde68a" fillOpacity="0.6"/>
-                      </svg>
-                    </div>
-                  </div>
-                )}
-
-                {/* Monthly Profit */}
-                {checkShouldRenderTabOption("monthly_profit_view") && (
-                  <div className={`ccard cc-green p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#ddd6fe'} : {color:'#c4b5fd'}}>{t("Monthly Profit", "মাসিক লাভ")}</span>
-                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#c4b5fd'}}>{computedMonthlyProfitAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ede9fe'} : {color:'#6b7280'}}>{t("Net profit this month", "মাসে নেট লাভ")}</div>
-                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{CSS_RKTLAUNCH}</style>
-                        <circle id="od1" cx="32" cy="28" r="2.5" fill="white" fillOpacity="0.4"/>
-                        <circle id="od2" cx="32" cy="28" r="2" fill="#fbbf24" fillOpacity="0.5"/>
-                        <g id="rkt">
-                          <path d="M32 6 C32 6 22 20 22 34 L42 34 C42 20 32 6 32 6Z" fill="white" fillOpacity="0.92"/>
-                          <rect x="26" y="32" width="12" height="9" fill="white" fillOpacity="0.75"/>
-                          <path d="M22 34 L13 43 L22 43Z" fill="white" fillOpacity="0.6"/>
-                          <path d="M42 34 L51 43 L42 43Z" fill="white" fillOpacity="0.6"/>
-                          <circle cx="32" cy="20" r="5" fill="#7c3aed" fillOpacity="0.75"/>
-                          <circle cx="32" cy="20" r="2.5" fill="white" fillOpacity="0.5"/>
-                          <g id="fire">
-                            <path d="M25 41 C25 41 22 51 32 56 C42 51 39 41 39 41Z" fill="#fbbf24"/>
-                            <path d="M27 42 C27 42 25 49 32 53 C39 49 37 42 37 42Z" fill="#f97316"/>
-                            <path d="M29 43 C29 43 28 48 32 51 C36 48 35 43 35 43Z" fill="#fef3c7" fillOpacity="0.8"/>
-                          </g>
-                        </g>
-                        <circle id="sm1" cx="28" cy="58" r="4" fill="white" fillOpacity="0.35"/>
-                        <circle id="sm2" cx="36" cy="60" r="3.5" fill="white" fillOpacity="0.25"/>
-                      </svg>
-                    </div>
-                  </div>
-                )}
-
-                {/* Daily Purchase */}
-                {checkShouldRenderTabOption("daily_purchases_view") && (
-                  <div className={`ccard cc-slate p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800 border-orange-500' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fed7aa'} : {color:'#fdba74'}}>{t("Today's Purchase", "আজকের ক্রয়")}</span>
-                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fdba74'}}>{computedDailyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ffedd5'} : {color:'#6b7280'}}>{t("Purchased today", "আজ কেনা")}</div>
-                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{CSS_CARTROLL}</style>
-                        <g id="cart">
-                          <path d="M6 10 L14 10 L22 40 L52 40 L58 20 L14 20" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-                          <circle id="w1" cx="22" cy="47" r="4.5" stroke="white" strokeWidth="2.2" fill="none"/>
-                          <circle cx="22" cy="47" r="1.5" fill="white"/>
-                          <circle id="w2" cx="44" cy="47" r="4.5" stroke="white" strokeWidth="2.2" fill="none"/>
-                          <circle cx="44" cy="47" r="1.5" fill="white"/>
-                        </g>
-                        <rect id="it1" x="17" y="12" width="9" height="9" rx="2" fill="#fbbf24" fillOpacity="0.95"/>
-                        <rect id="it2" x="28" y="8" width="9" height="9" rx="2" fill="#fde68a" fillOpacity="0.9"/>
-                        <rect id="it3" x="39" y="12" width="9" height="9" rx="2" fill="#fcd34d" fillOpacity="0.95"/>
-                        <text id="it1" x="19" y="21" fontSize="8" fill="#92400e">💊</text>
-                        <g id="plus">
-                          <path d="M54 8 L54 16 M50 12 L58 12" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
-                        </g>
-                      </svg>
-                    </div>
-                  </div>
-                )}
-
-                {/* Monthly Purchase */}
-                {checkShouldRenderTabOption("monthly_purchases_view") && (
-                  <div className={`ccard cc-cyan p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#a5f3fc'} : {color:'#67e8f9'}}>{t("Monthly Purchase", "মাসিক ক্রয়")}</span>
-                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#67e8f9'}}>{computedMonthlyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#cffafe'} : {color:'#6b7280'}}>{t("Purchased this month", "মাসে কেনা")}</div>
-                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{CSS_BAGSWING}</style>
-                        <g id="bag">
-                          <rect x="12" y="22" width="40" height="34" rx="5" fill="white" fillOpacity="0.88"/>
-                          <ellipse id="shbag" cx="20" cy="36" rx="6" ry="12" fill="white" fillOpacity="0.15" transform="rotate(-10 20 36)"/>
-                          <path d="M22 22 C22 12 42 12 42 22" stroke="white" strokeWidth="3" fill="none" strokeLinecap="round"/>
-                          <circle cx="32" cy="38" r="6" fill="#0e7490" fillOpacity="0.2"/>
-                          <g id="chk">
-                            <path d="M28 38 L31 41 L37 35" stroke="#0e7490" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                          </g>
-                          <rect x="22" y="28" width="20" height="2.5" rx="1.2" fill="#0e7490" fillOpacity="0.35"/>
-                        </g>
-                        <g id="tag">
-                          <rect x="44" y="8" width="14" height="20" rx="3" fill="#fbbf24" fillOpacity="0.95"/>
-                          <circle cx="51" cy="12" r="2" fill="white"/>
-                          <rect x="46" y="17" width="10" height="1.5" rx="0.75" fill="white" fillOpacity="0.75"/>
-                          <rect x="46" y="20" width="7" height="1.5" rx="0.75" fill="white" fillOpacity="0.5"/>
-                          <rect x="46" y="23" width="8" height="1.5" rx="0.75" fill="white" fillOpacity="0.4"/>
-                        </g>
-                      </svg>
-                    </div>
-                  </div>
-                )}
-
-                {/* Daily Due */}
-                {checkShouldRenderTabOption("daily_due_view") && (
-                <div className={`ccard cc-purple p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fecaca'} : {color:'#fca5a5'}}>{t("Today's Due", "আজকের বাকি")}</span>
-                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fca5a5'}}>{computedDailyDue.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fee2e2'} : {color:'#6b7280'}}>{t("Due given today", "আজ বাকি দেওয়া")}</div>
-                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{CSS_HGSPIN}</style>
-                      <circle id="rip1" cx="32" cy="32" r="20" fill="none" stroke="#f43f5e" strokeWidth="1.5" strokeOpacity="0.3"/>
-                      <circle id="rip2" cx="32" cy="32" r="22" fill="none" stroke="white" strokeWidth="1" strokeOpacity="0.2"/>
-                      <g id="hg">
-                        <rect x="13" y="7" width="38" height="4" rx="2" fill="white"/>
-                        <rect x="13" y="53" width="38" height="4" rx="2" fill="white"/>
-                        <path d="M15 11 Q15 27 32 32 Q49 37 49 53 L15 53 Q15 37 32 32 Q49 27 49 11 Z" fill="white" fillOpacity="0.82"/>
-                        <path d="M19 11 Q23 23 32 28" stroke="white" strokeWidth="0.8" fill="none" strokeOpacity="0.35"/>
-                        <rect id="sf" x="26" y="12" width="12" height="18" rx="2" fill="#b91c1c" fillOpacity="0.55"/>
-                        <path d="M15 53 Q22 43 32 40 Q42 43 49 53Z" fill="#b91c1c" fillOpacity="0.4"/>
-                      </g>
-                      <circle id="sd" cx="32" cy="32" r="3" fill="#fbbf24"/>
-                    </svg>
-                  </div>
-                </div>
-                )}
-
-                {/* Monthly Due */}
-                {checkShouldRenderTabOption("monthly_due_view") && (
-                <div className={`ccard cc-teal p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fce7f3'} : {color:'#f9a8d4'}}>{t("Monthly Due", "মাসিক বাকি")}</span>
-                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#f9a8d4'}}>{computedMonthlyDue.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf2f8'} : {color:'#6b7280'}}>{t("Total due this month", "মাসে মোট বাকি")}</div>
-                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{CSS_CLIPSHAKE}</style>
-                      <circle id="alring" cx="48" cy="14" r="9" fill="none" stroke="#f43f5e" strokeWidth="2" strokeOpacity="0.5"/>
-                      <g id="clip">
-                        <rect x="10" y="12" width="40" height="46" rx="4" fill="white" fillOpacity="0.88"/>
-                        <rect x="22" y="8" width="20" height="10" rx="3" fill="white" fillOpacity="0.75"/>
-                        <path id="l1" d="M17 28 L47 28" stroke="#be185d" strokeWidth="2.5" strokeLinecap="round"/>
-                        <path id="l2" d="M17 36 L43 36" stroke="#be185d" strokeWidth="2.5" strokeLinecap="round" strokeOpacity="0.7"/>
-                        <path id="l3" d="M17 44 L38 44" stroke="#be185d" strokeWidth="2.5" strokeLinecap="round" strokeOpacity="0.45"/>
-                        <g id="pen">
-                          <rect x="42" y="26" width="4" height="14" rx="2" fill="#fbbf24" fillOpacity="0.9"/>
-                          <path d="M43 40 L44 44 L45 40Z" fill="#374151"/>
-                        </g>
-                      </g>
-                      <circle id="al" cx="48" cy="14" r="8" fill="#f43f5e"/>
-                      <text x="45" y="19" fontSize="11" fontWeight="900" fill="white">!</text>
-                    </svg>
-                  </div>
-                </div>
-                )}
-
-                {/* Daily bKash/Nagad */}
-                {checkShouldRenderTabOption("bkash_nagad_view") && (
-                  <div className={`ccard cc-indigo p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fae8ff'} : {color:'#f0abfc'}}>{t("Today's bKash/Nagad", "আজকের বিকাশ/নগদ")}</span>
-                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#f0abfc'}}>{computedDailyBkash.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf4ff'} : {color:'#6b7280'}}>{t("Mobile payment today", "আজ মোবাইল পেমেন্ট")}</div>
-                    <div className="absolute right-2 bottom-1" style={{width:'60px',height:'60px',opacity:0.55,willChange:'transform'}}>
-                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{CSS_PHVIB}</style>
-                        <circle id="p1" cx="46" cy="15" r="6" fill="#fbbf24" fillOpacity="0.65"/>
-                        <circle id="p2" cx="46" cy="15" r="6" fill="#fbbf24" fillOpacity="0.4"/>
-                        <circle cx="46" cy="15" r="7" fill="#fbbf24"/>
-                        <text x="43" y="19.5" fontSize="9" fontWeight="900" fill="white">৳</text>
-                        <g id="ph">
-                          <rect x="16" y="8" width="28" height="48" rx="5" fill="white" fillOpacity="0.92"/>
-                          <rect id="scr" x="19" y="13" width="22" height="34" rx="3" fill="#a21caf" fillOpacity="0.55"/>
-                          <rect x="19" y="13" width="22" height="34" rx="3" fill="white" fillOpacity="0.08"/>
-                          <circle cx="30" cy="52" r="2.5" fill="#a21caf" fillOpacity="0.6"/>
-                          <rect x="26" y="10" width="8" height="2" rx="1" fill="#a21caf" fillOpacity="0.35"/>
-                          <text x="23" y="32" fontSize="14">📲</text>
-                        </g>
-                        <g id="cn">
-                          <circle cx="32" cy="20" r="6" fill="#fbbf24"/>
-                          <text x="29" y="24" fontSize="9" fontWeight="900" fill="white">৳</text>
-                        </g>
-                      </svg>
-                    </div>
-                  </div>
-                )}
-
-                {/* Monthly bKash/Nagad */}
-                {checkShouldRenderTabOption("bkash_nagad_view") && (
-                  <div className={`ccard cc-amber p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fef3c7'} : {color:'#fde68a'}}>{t("Monthly bKash/Nagad", "মাসিক বিকাশ/নগদ")}</span>
-                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fde68a'}}>{computedMonthlyBkash.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fffbeb'} : {color:'#6b7280'}}>{t("Mobile payment month", "মাসে মোবাইল পেমেন্ট")}</div>
-                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{CSS_CARDPOP}</style>
-                        <circle id="tr1" cx="50" cy="12" r="7" fill="#fbbf24" fillOpacity="0.5"/>
-                        <circle id="tr2" cx="50" cy="12" r="7" fill="#fbbf24" fillOpacity="0.3"/>
-                        <g id="crd">
-                          <rect x="4" y="16" width="52" height="34" rx="6" fill="white" fillOpacity="0.88"/>
-                          <rect x="4" y="22" width="52" height="10" fill="white" fillOpacity="0.35"/>
-                          <rect id="chip" x="10" y="28" width="14" height="10" rx="3" fill="#b45309" fillOpacity="0.65"/>
-                          <rect x="11" y="31" width="12" height="1.5" rx="0.75" fill="white" fillOpacity="0.55"/>
-                          <rect x="12" y="34" width="8" height="1.5" rx="0.75" fill="white" fillOpacity="0.4"/>
-                          <rect x="28" y="30" width="22" height="2.5" rx="1.2" fill="#b45309" fillOpacity="0.3"/>
-                          <rect x="28" y="35" width="16" height="2.5" rx="1.2" fill="#b45309" fillOpacity="0.2"/>
-                          <text x="40" y="45" fontSize="10">📱</text>
-                        </g>
-                        <path id="wave" d="M8 10 Q16 5 24 10 Q32 15 40 10" stroke="#fbbf24" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeOpacity="0.8"/>
-                      </svg>
-                    </div>
-                  </div>
-                )}
-
-
-
-                {/* Today Due Collection */}
-                {checkShouldRenderTabOption("daily_due_collection_view") && (
-                <div className={`ccard cc-blue p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#a7f3d0'} : {color:'#6ee7b7'}}>{t("Today's Due Collection", "আজকের বাকি আদায়")}</span>
-                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#6ee7b7'}}>{computedDailyDueCollection.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#d1fae5'} : {color:'#6b7280'}}>{t("Collected today", "আজ আদায় হয়েছে")}</div>
-                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{CSS_CIRCLEPULSE}</style>
-                      <circle id="chkc" cx="32" cy="32" r="22" fill="white" fillOpacity="0.12" stroke="white" strokeWidth="3" strokeOpacity="0.65"/>
-                      <polyline id="chkm" points="18,32 27,41 46,22" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-                      <g id="sp1"><text x="8" y="18" fontSize="13">✦</text></g>
-                      <g id="sp2"><text x="46" y="16" fontSize="11">★</text></g>
-                      <g id="sp3"><text x="27" y="7" fontSize="12">✨</text></g>
-                      <path id="bl1" d="M6 26 L12 22" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
-                      <path id="bl2" d="M58 26 L52 22" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
-                    </svg>
-                  </div>
-                </div>
-                )}
-
-                {/* Monthly Due Collection */}
-                {checkShouldRenderTabOption("monthly_due_collection_view") && (
-                <div className={`ccard cc-red p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#bfdbfe'} : {color:'#93c5fd'}}>{t("Monthly Due Collection", "মাসিক বাকি আদায়")}</span>
-                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#93c5fd'}}>{computedMonthlyDueCollection.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#dbeafe'} : {color:'#6b7280'}}>{t("Collected this month", "এই মাসে আদায়")}</div>
-                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{CSS_WLTOPEN}</style>
-                      <g id="wlt">
-                        <rect x="6" y="18" width="52" height="34" rx="6" fill="white" fillOpacity="0.88"/>
-                        <path d="M6 28 L58 28" stroke="white" strokeWidth="2" strokeOpacity="0.35"/>
-                        <rect id="cs" x="38" y="30" width="16" height="14" rx="4" fill="#065f46" fillOpacity="0.55"/>
-                        <circle cx="46" cy="37" r="4.5" fill="#065f46" fillOpacity="0.45"/>
-                        <circle cx="46" cy="37" r="2.5" fill="white" fillOpacity="0.55"/>
-                        <text x="10" y="44" fontSize="12" fontWeight="900" fill="#065f46" fillOpacity="0.5">৳৳৳</text>
-                        <rect x="10" y="21" width="24" height="3.5" rx="1.75" fill="#065f46" fillOpacity="0.2"/>
-                      </g>
-                      <circle id="cf1" cx="32" cy="24" r="7" fill="#fbbf24"/>
-                      <text x="28.5" y="29" fontSize="9" fontWeight="900" fill="#065f46">৳</text>
-                      <circle id="cf2" cx="32" cy="24" r="5.5" fill="#fde68a"/>
-                      <text x="29.5" y="28.5" fontSize="8" fontWeight="900" fill="#065f46">$</text>
-                      <circle id="cf3" cx="32" cy="24" r="6" fill="#fcd34d"/>
-                      <text x="29" y="29" fontSize="8" fontWeight="900" fill="#065f46">৳</text>
-                    </svg>
-                  </div>
-                </div>
-                )}
-
-                {/* Yearly Sale */}
-                {checkShouldRenderTabOption("yearly_sales_view") && (
-                  <div className={`ccard cc-violet p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#ddd6fe'} : {color:'#c4b5fd'}}>{t("Yearly Sale", "বার্ষিক বিক্রয়")}</span>
-                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#c4b5fd'}}>{computedYearlySalesAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ede9fe'} : {color:'#6b7280'}}>{t("This year's total sales", "এই বছরের মোট বিক্রয়")}</div>
-                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{CSS_STARSPIN}</style>
-                        <circle id="od" cx="32" cy="32" r="3" fill="white" fillOpacity="0.35"/>
-                        <g id="star">
-                          <path d="M32 7 L36.5 22 L52 22 L40 31.5 L44.5 47 L32 38 L19.5 47 L24 31.5 L12 22 L27.5 22 Z" fill="white" fillOpacity="0.92"/>
-                          <path d="M32 7 L36.5 22 L52 22 L40 31.5 L44.5 47 L32 38 L19.5 47 L24 31.5 L12 22 L27.5 22 Z" fill="none" stroke="white" strokeWidth="0.8" strokeOpacity="0.4"/>
-                          <circle cx="32" cy="27" r="5" fill="white" fillOpacity="0.2"/>
-                        </g>
-                        <g id="t1"><text x="4" y="16" fontSize="13">✦</text></g>
-                        <g id="t2"><text x="48" y="20" fontSize="10">★</text></g>
-                        <g id="t3"><text x="4" y="56" fontSize="11">✦</text></g>
-                        <g id="t4"><text x="48" y="54" fontSize="9">✦</text></g>
-                      </svg>
-                    </div>
-                  </div>
-                )}
-
-                {/* Yearly Purchase */}
-                {checkShouldRenderTabOption("yearly_purchase_view") && (
-                  <div className={`ccard cc-orange p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fed7aa'} : {color:'#fdba74'}}>{t("Yearly Purchase", "বার্ষিক ক্রয়")}</span>
-                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fdba74'}}>{computedYearlyPurchaseAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ffedd5'} : {color:'#6b7280'}}>{t("This year's total purchase", "এই বছরের মোট ক্রয়")}</div>
-                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{CSS_BOXBOUNCE}</style>
-                        <g id="box">
-                          <path id="lid" d="M10 24 L32 16 L54 24 L32 32 Z" fill="white" fillOpacity="0.88"/>
-                          <path d="M10 24 L10 50 L32 58 L54 50 L54 24 L32 32 Z" fill="white" fillOpacity="0.72"/>
-                          <rect id="shb" x="10" y="32" width="16" height="28" fill="white" fillOpacity="0.12"/>
-                          <path d="M32 32 L32 58" stroke="white" strokeWidth="1.2" strokeOpacity="0.4"/>
-                          <path d="M22 28 L22 52" stroke="white" strokeWidth="1" strokeOpacity="0.3"/>
-                          <path d="M42 28 L42 52" stroke="white" strokeWidth="1" strokeOpacity="0.3"/>
-                        </g>
-                        <g id="item"><text x="24" y="26" fontSize="18">💊</text></g>
-                        <circle id="dp1" cx="20" cy="48" r="4" fill="white" fillOpacity="0.25"/>
-                        <circle id="dp2" cx="44" cy="48" r="3.5" fill="white" fillOpacity="0.2"/>
-                      </svg>
-                    </div>
-                  </div>
-                )}
-
-                {/* Yearly Profit */}
-                {checkShouldRenderTabOption("yearly_profit_view") && (
-                  <div className={`ccard cc-green p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#a7f3d0'} : {color:'#6ee7b7'}}>{t("Yearly Profit", "বার্ষিক লাভ")}</span>
-                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#6ee7b7'}}>{computedYearlyProfitAmount.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#d1fae5'} : {color:'#6b7280'}}>{t("This year's net profit", "এই বছরের নেট লাভ")}</div>
-                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{CSS_TROPSHAKE}</style>
-                        <circle id="glow" cx="32" cy="28" r="22" fill="#fbbf24" fillOpacity="0.07"/>
-                        <g id="trop">
-                          <path d="M18 8 L46 8 L46 30 Q46 44 32 46 Q18 44 18 30 Z" fill="white" fillOpacity="0.92"/>
-                          <path d="M18 14 Q8 14 8 24 Q8 34 18 32" stroke="white" strokeWidth="3" fill="none" strokeLinecap="round"/>
-                          <path d="M46 14 Q56 14 56 24 Q56 34 46 32" stroke="white" strokeWidth="3" fill="none" strokeLinecap="round"/>
-                          <rect x="26" y="46" width="12" height="5" rx="1.5" fill="white" fillOpacity="0.85"/>
-                          <rect x="20" y="51" width="24" height="4" rx="2" fill="white" fillOpacity="0.85"/>
-                          <path d="M27 23 L29.5 18 L32 23 L37 24 L33.5 27.5 L34.5 32 L32 30 L29.5 32 L30.5 27.5 L27 24 Z" fill="#fbbf24"/>
-                          <path d="M27 23 L29.5 18 L32 23 L37 24 L33.5 27.5 L34.5 32 L32 30 L29.5 32 L30.5 27.5 L27 24 Z" stroke="#f59e0b" strokeWidth="0.5"/>
-                        </g>
-                        <g id="s1"><text x="12" y="16" fontSize="12" fill="white">★</text></g>
-                        <g id="s2"><text x="44" y="14" fontSize="10" fill="#fbbf24">✦</text></g>
-                        <g id="s3"><text x="28" y="8" fontSize="13">✨</text></g>
-                        <rect id="cf1" x="7" y="18" width="6" height="4" rx="1" fill="#fbbf24" fillOpacity="0.7"/>
-                        <rect id="cf2" x="51" y="16" width="5" height="3" rx="1" fill="white" fillOpacity="0.6"/>
-                      </svg>
-                    </div>
-                  </div>
-                )}
-
-                {/* Yearly Due */}
-                {checkShouldRenderTabOption("yearly_due_view") && (
-                  <div className={`ccard cc-rose p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                    <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fecdd3'} : {color:'#fda4af'}}>{t("Yearly Due", "বার্ষিক বাকি")}</span>
-                    <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fda4af'}}>{computedYearlyDue.toFixed(1)} {currencySymbol}</div>
-                    <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#ffe4e6'} : {color:'#6b7280'}}>{t("Total due this year", "এই বছরের মোট বাকি")}</div>
-                    <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <style>{CSS_WARNSHAKE}</style>
-                        <circle id="sw1" cx="32" cy="32" r="24" fill="#f43f5e" fillOpacity="0.12" stroke="#f43f5e" strokeWidth="1.5" strokeOpacity="0.25"/>
-                        <circle id="sw2" cx="32" cy="32" r="24" fill="none" stroke="#f43f5e" strokeWidth="1" strokeOpacity="0.18"/>
-                        <circle id="sw3" cx="32" cy="32" r="24" fill="none" stroke="white" strokeWidth="0.8" strokeOpacity="0.12"/>
-                        <g id="wrn">
-                          <path d="M32 6 L58 54 L6 54 Z" fill="white" fillOpacity="0.9"/>
-                          <path d="M32 6 L58 54 L6 54 Z" stroke="white" strokeWidth="1" fill="none" strokeOpacity="0.4"/>
-                          <rect id="bang" x="29.5" y="22" width="5" height="16" rx="2.5" fill="#881337"/>
-                          <circle cx="32" cy="44" r="3.5" fill="#881337"/>
-                          <rect id="flash" x="0" y="0" width="64" height="64" rx="4" fill="white" fillOpacity="0.15"/>
-                        </g>
-                      </svg>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Discount Summary Cards ── */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-
-                {/* Today's Discount */}
-                <div className={`ccard cc-fuchsia p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fae8ff'} : {color:'#f0abfc'}}>{t("Today's Discount", "আজকের ছাড়")}</span>
-                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#f0abfc'}}>{computedDailyDiscount.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf4ff'} : {color:'#6b7280'}}>{t("Discount given today", "আজ ছাড় দেওয়া হয়েছে")}</div>
-                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{CSS_TAGWIGGLE}</style>
-                      <g id="dtag">
-                        <path d="M10 14 L10 30 L32 52 L54 30 L54 14 Q54 8 48 8 L16 8 Q10 8 10 14Z" fill="white" fillOpacity="0.88"/>
-                        <circle cx="22" cy="20" r="4" fill="#86198f" fillOpacity="0.6"/>
-                        <path d="M22 30 L42 18" stroke="#86198f" strokeWidth="2.5" strokeLinecap="round"/>
-                        <circle cx="42" cy="38" r="3.5" fill="#86198f" fillOpacity="0.6"/>
-                      </g>
-                      <g id="dpct"><text x="24" y="36" fontSize="13" fontWeight="900" fill="#86198f" fillOpacity="0.75">%</text></g>
-                      <g id="dsp1"><text x="6" y="14" fontSize="11">✦</text></g>
-                      <g id="dsp2"><text x="48" y="16" fontSize="10">★</text></g>
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Monthly Discount */}
-                {checkShouldRenderTabOption("monthly_discount_view") && (
-                <div className={`ccard cc-pink p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fce7f3'} : {color:'#f9a8d4'}}>{t("Monthly Discount", "মাসিক ছাড়")}</span>
-                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#f9a8d4'}}>{computedMonthlyDiscount.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fdf2f8'} : {color:'#6b7280'}}>{t("Discount given this month", "এই মাসে ছাড় দেওয়া হয়েছে")}</div>
-                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{CSS_CALTAGFLOAT}</style>
-                      <g id="mcal">
-                        <rect x="8" y="14" width="40" height="38" rx="5" fill="white" fillOpacity="0.88"/>
-                        <rect x="8" y="14" width="40" height="12" rx="5" fill="white" fillOpacity="0.4"/>
-                        <rect x="14" y="8" width="5" height="10" rx="2.5" fill="white"/>
-                        <rect x="37" y="8" width="5" height="10" rx="2.5" fill="white"/>
-                        <path d="M20 38 L36 26" stroke="#9d174d" strokeWidth="2.5" strokeLinecap="round"/>
-                        <circle cx="22" cy="36" r="3.5" fill="#9d174d" fillOpacity="0.6"/>
-                        <circle cx="36" cy="28" r="3" fill="#9d174d" fillOpacity="0.6"/>
-                      </g>
-                      <g id="mpct">
-                        <rect x="38" y="36" width="20" height="20" rx="4" fill="#fbbf24" fillOpacity="0.9"/>
-                        <text x="41" y="52" fontSize="13" fontWeight="900" fill="white">%</text>
-                      </g>
-                    </svg>
-                  </div>
-                </div>
-                )}
-
-                {/* Yearly Discount */}
-                {checkShouldRenderTabOption("yearly_discount_view") && (
-                <div className={`ccard cc-rose p-3.5 rounded-xl border-2 relative overflow-hidden shadow-sm ${isDarkMode ? 'bg-rose-950/50 border-rose-400' : 'border-slate-200'}`} style={!isDarkMode ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}>
-                  <span className="block text-xs font-black uppercase tracking-widest mb-1" style={!isDarkMode ? {color:'#fecaca'} : {color:'#fca5a5'}}>{t("Yearly Discount", "বার্ষিক ছাড়")}</span>
-                  <div className="font-mono text-2xl font-black" style={!isDarkMode ? {color:'#ffffff'} : {color:'#fca5a5'}}>{computedYearlyDiscount.toFixed(1)} {currencySymbol}</div>
-                  <div className="text-xs font-semibold mt-1" style={!isDarkMode ? {color:'#fee2e2'} : {color:'#6b7280'}}>{t("Total discount this year", "এই বছরের মোট ছাড়")}</div>
-                  <div className="absolute right-2 bottom-1" style={{width:'64px',height:'64px',opacity:0.75,willChange:'transform'}}>
-                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <style>{CSS_YRRIBBON}</style>
-                      <g id="yrib">
-                        <path d="M32 6 C18 6 8 16 8 30 C8 44 18 56 32 56 C46 56 56 44 56 30 C56 16 46 6 32 6Z" fill="white" fillOpacity="0.15"/>
-                        <path d="M32 10 C20 10 12 19 12 30 C12 41 20 52 32 52 C44 52 52 41 52 30 C52 19 44 10 32 10Z" fill="white" fillOpacity="0.82"/>
-                        <ellipse id="ysh" cx="24" cy="24" rx="6" ry="10" fill="white" fillOpacity="0.2" transform="rotate(-20 24 24)"/>
-                        <path d="M20 40 L44 20" stroke="#7f1d1d" strokeWidth="3" strokeLinecap="round"/>
-                        <circle cx="22" cy="38" r="5" fill="#7f1d1d" fillOpacity="0.7"/>
-                        <circle cx="42" cy="22" r="4.5" fill="#7f1d1d" fillOpacity="0.7"/>
-                        <text x="19" y="42" fontSize="8" fontWeight="900" fill="white">%</text>
-                        <text x="39" y="26" fontSize="8" fontWeight="900" fill="white">%</text>
-                      </g>
-                      <g id="ybdg">
-                        <circle cx="50" cy="14" r="10" fill="#fbbf24"/>
-                        <text x="44" y="19" fontSize="12" fontWeight="900" fill="white">৳</text>
-                      </g>
-                    </svg>
-                  </div>
-                </div>
-                )}
-
-              </div>
-
-              {/* ── Last 7 Days Sales Graph (pure SVG) ── */}
-              {(() => {
-                const bnDay = ['রবি','সোম','মঙ্গল','বুধ','বৃহঃ','শুক্র','শনি'];
-                const enDay = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                const { weekDays, weekSales, totalWeek, maxVal, maxIdx } = weeklySalesData;
-                const CHART_H = 130;
-                const BAR_W = 44;
-                const GAP = 18;
-                const TOTAL_W = 7 * BAR_W + 6 * GAP;
-                const fmtAmt = (v: number) => v.toFixed(0);
-                const gridLines = [0, 0.25, 0.5, 0.75, 1.0];
-                return (
-                  <div className={`rounded-2xl border p-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-2 flex-wrap gap-1">
+                  <div style={{background:card, border:`1px solid ${border}`, borderRadius:14, padding:'20px 22px', display:'flex', flexDirection:'column', gap:0}}>
+                    <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:16}}>
                       <div>
-                        <p className={`text-xs font-bold uppercase tracking-widest mb-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-400'}`}>{t("Last 7 Days Sales","গত ৭ দিনের বিক্রয়")}</p>
-                        <p className={`text-lg font-black font-mono leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                          {currencySymbol}{fmtAmt(totalWeek)}
-                        </p>
+                        <div style={{fontSize:11, fontWeight:700, color:ts, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:10}}>{t("Today's Sales","আজকের বিক্রয়")}</div>
+                        <div style={{fontSize:30, fontWeight:800, color:tp, fontFamily:'monospace', letterSpacing:'-1px', lineHeight:1}}>
+                          {currencySymbol}{computedDailySalesAmount.toLocaleString()}
+                        </div>
                       </div>
-                      <div className="flex gap-3 text-xs font-semibold items-center flex-wrap">
-                        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded inline-block" style={{background:'#1D9E75'}}/><span className={isDarkMode?'text-slate-400':'text-slate-500'}>{t("Today","আজ")}</span></span>
-                        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded inline-block" style={{background:'#BA7517'}}/><span className={isDarkMode?'text-slate-400':'text-slate-500'}>{t("Highest","সর্বোচ্চ")}</span></span>
-                        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded inline-block" style={{background: isDarkMode?'#334155':'#B5D4F4'}}/><span className={isDarkMode?'text-slate-400':'text-slate-500'}>{t("Others","অন্যান্য")}</span></span>
-                      </div>
+                      <IconCircle bg={isDarkMode?'rgba(59,130,246,0.12)':'#dbeafe'}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                      </IconCircle>
                     </div>
-                    {/* SVG Chart */}
-                    <svg viewBox={`0 0 ${TOTAL_W} ${CHART_H + 42}`} width="100%" style={{display:'block',overflow:'visible',maxHeight:'240px'}}>
-                      {/* Grid lines */}
-                      {gridLines.map(pct => {
-                        const y = CHART_H - pct * CHART_H;
-                        return (
-                          <line key={pct} x1={0} y1={y} x2={TOTAL_W} y2={y}
-                            stroke={isDarkMode ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)'}
-                            strokeWidth="1" strokeDasharray={pct===0?'none':'4 3'} />
-                        );
-                      })}
-                      {/* Bars */}
-                      {weekSales.map((sale, i) => {
-                        const x = i * (BAR_W + GAP);
-                        const barH = maxVal > 0 ? Math.max((sale / maxVal) * CHART_H, sale > 0 ? 6 : 2) : 2;
-                        const y = CHART_H - barH;
-                        const isToday = i === 6;
-                        const isMax = i === maxIdx && sale > 0;
-                        const fill = isToday ? (isDarkMode?'#085041':'#E1F5EE') : isMax ? (isDarkMode?'#633806':'#FAEEDA') : (isDarkMode?'#1e293b':'#E6F1FB');
-                        const stroke = isToday ? '#1D9E75' : isMax ? '#BA7517' : (isDarkMode?'#334155':'#B5D4F4');
-                        const strokeW = (isToday||isMax) ? 1.5 : 1;
-                        const labelCol = isToday ? '#0F6E56' : isMax ? '#854F0B' : (isDarkMode?'#94a3b8':'#64748b');
-                        const dayLabel = t(enDay[weekDays[i].getDay()], bnDay[weekDays[i].getDay()]);
-                        const dateLabel = `${weekDays[i].getDate()}/${weekDays[i].getMonth()+1}`;
-                        return (
-                          <g key={i}>
-                            <rect x={x} y={y} width={BAR_W} height={barH} rx="5" fill={fill} stroke={stroke} strokeWidth={strokeW}/>
-                            {/* Amount above bar */}
-                            <text x={x + BAR_W/2} y={y - 4} textAnchor="middle" fontSize="9" fontWeight="600" fill={labelCol}>
-                              {currencySymbol}{fmtAmt(sale)}
-                            </text>
-                            {/* Day name */}
-                            <text x={x + BAR_W/2} y={CHART_H + 15} textAnchor="middle" fontSize="10" fontWeight="600" fill={labelCol}>
-                              {dayLabel}
-                            </text>
-                            {/* Date */}
-                            <text x={x + BAR_W/2} y={CHART_H + 28} textAnchor="middle" fontSize="9" fill={isDarkMode?'#475569':'#94a3b8'}>
-                              {dateLabel}
-                            </text>
-                          </g>
-                        );
-                      })}
-                      {/* Baseline */}
-                      <line x1={0} y1={CHART_H} x2={TOTAL_W} y2={CHART_H} stroke={isDarkMode?'rgba(255,255,255,0.15)':'rgba(0,0,0,0.1)'} strokeWidth="1"/>
-                    </svg>
-                  </div>
-                );
-              })()}
-
-              {/* Total Stock Value */}
-              {checkShouldRenderTabOption("stock_value_calculator") && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className={`ccard cc-amber p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                    <h4 className="text-sm font-black uppercase text-indigo-500 mb-2">📦 {t("Total Stock", "মোট স্টক")}</h4>
-                    <div className="flex flex-col gap-1 text-sm">
-                      <div className="flex justify-between"><span className="text-slate-400">{t("Total Items:", "মোট আইটেম:")}</span><span className="font-mono font-black">{medicines.length}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-400">{t("Total Units:", "মোট পরিমাণ:")}</span><span className="font-mono font-black">{medicines.reduce((s, m) => s + m.stock, 0)}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-400">{t("Buy Value:", "ক্রয় মূল্য:")}</span><span className="font-mono font-black text-amber-500">{totalStockValue.toFixed(1)} {currencySymbol}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-400">{t("Sell Value:", "বিক্রয় মূল্য:")}</span><span className="font-mono font-black text-emerald-500">{totalStockRetailValue.toFixed(1)} {currencySymbol}</span></div>
+                    <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:14}}>
+                      <span style={{fontSize:11, fontWeight:700, color:'#16a34a', background:isDarkMode?'rgba(34,197,94,0.1)':'#dcfce7', borderRadius:6, padding:'2px 8px', display:'flex', alignItems:'center', gap:3}}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                        12.4%
+                      </span>
+                      <span style={{fontSize:11, color:tm}}>{t("vs yesterday","গতকালের তুলনায়")}</span>
+                    </div>
+                    <div style={{height:3, borderRadius:4, background: isDarkMode?'#334155':'#e2e8f0'}}>
+                      <div style={{height:'100%', width:'74%', borderRadius:4, background:'linear-gradient(90deg,#3b82f6,#60a5fa)', transition:'width 1s ease'}}></div>
+                    </div>
+                    <div style={{display:'flex', justifyContent:'space-between', marginTop:5}}>
+                      <span style={{fontSize:10, color:tm}}>{t("Daily target","দৈনিক লক্ষ্য")}</span>
+                      <span style={{fontSize:10, fontWeight:700, color:'#3b82f6', fontFamily:'monospace'}}>74%</span>
                     </div>
                   </div>
+                )}
 
-                  {/* Low Stock Alert */}
-                  {checkShouldRenderTabOption("low_stock_alerts") && (
-                    <div className={`ccard cc-emerald p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                      <div className="flex items-center justify-between border-b pb-2 mb-2">
-                        <h4 className="text-sm font-black uppercase text-amber-500">⚠️ {t("Low Stock", "কম স্টক")}</h4>
-                        <span className="bg-amber-500 text-white font-mono text-sm px-1.5 py-0.5 rounded-full font-bold">{lowStockMedicines.length}</span>
+                {checkShouldRenderTabOption("monthly_sale_view") && (
+                  <div style={{background:card, border:`1px solid ${border}`, borderRadius:14, padding:'20px 22px', display:'flex', flexDirection:'column'}}>
+                    <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:16}}>
+                      <div>
+                        <div style={{fontSize:11, fontWeight:700, color:ts, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:10}}>{t("Monthly Sales","মাসিক বিক্রয়")}</div>
+                        <div style={{fontSize:30, fontWeight:800, color:tp, fontFamily:'monospace', letterSpacing:'-1px', lineHeight:1}}>
+                          {currencySymbol}{computedMonthlySalesAmount>=100000
+                            ? (computedMonthlySalesAmount/1000).toFixed(1)+'k'
+                            : computedMonthlySalesAmount.toLocaleString()}
+                        </div>
                       </div>
-                      <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
-                        {lowStockMedicines.map(m => (
-                          <div key={m.id} className="flex justify-between items-center text-sm font-semibold p-1 bg-amber-500/5 rounded border border-amber-500/10">
-                            <span className="truncate max-w-[120px]">{m.name}</span>
-                            <span className="font-mono text-amber-500 text-sm">{m.stock} {t("left", "বাকি")}</span>
-                          </div>
-                        ))}
-                        {lowStockMedicines.length === 0 && <div className="text-slate-400 italic text-sm py-3 text-center">{t("All stock levels OK!", "সব স্টক ঠিক আছে!")}</div>}
+                      <IconCircle bg={isDarkMode?'rgba(34,197,94,0.12)':'#dcfce7'}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+                        </svg>
+                      </IconCircle>
+                    </div>
+                    <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:14}}>
+                      <span style={{fontSize:11, fontWeight:700, color:'#16a34a', background:isDarkMode?'rgba(34,197,94,0.1)':'#dcfce7', borderRadius:6, padding:'2px 8px', display:'flex', alignItems:'center', gap:3}}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                        8.7%
+                      </span>
+                      <span style={{fontSize:11, color:tm}}>{t("vs last month","গত মাসের তুলনায়")}</span>
+                    </div>
+                    <div style={{height:3, borderRadius:4, background: isDarkMode?'#334155':'#e2e8f0'}}>
+                      <div style={{height:'100%', width:'89%', borderRadius:4, background:'linear-gradient(90deg,#22c55e,#4ade80)', transition:'width 1s ease'}}></div>
+                    </div>
+                    <div style={{display:'flex', justifyContent:'space-between', marginTop:5}}>
+                      <span style={{fontSize:10, color:tm}}>{t("Monthly target","মাসিক লক্ষ্য")}</span>
+                      <span style={{fontSize:10, fontWeight:700, color:'#16a34a', fontFamily:'monospace'}}>89%</span>
+                    </div>
+                  </div>
+                )}
+
+                {checkShouldRenderTabOption("daily_profit_view") && (
+                  <div style={{background:card, border:`1px solid ${border}`, borderRadius:14, padding:'20px 22px', display:'flex', flexDirection:'column'}}>
+                    <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:16}}>
+                      <div>
+                        <div style={{fontSize:11, fontWeight:700, color:ts, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:10}}>{t("Today's Profit","আজকের লাভ")}</div>
+                        <div style={{fontSize:30, fontWeight:800, color:tp, fontFamily:'monospace', letterSpacing:'-1px', lineHeight:1}}>
+                          {currencySymbol}{computedDailyProfitAmount.toLocaleString()}
+                        </div>
+                      </div>
+                      <IconCircle bg={isDarkMode?'rgba(245,158,11,0.12)':'#fef3c7'}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                      </IconCircle>
+                    </div>
+                    <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:14}}>
+                      {computedDailySalesAmount>0 && (
+                        <span style={{fontSize:11, fontWeight:700, color:'#d97706', background:isDarkMode?'rgba(245,158,11,0.1)':'#fef3c7', borderRadius:6, padding:'2px 8px'}}>
+                          {((computedDailyProfitAmount/computedDailySalesAmount)*100).toFixed(1)}% {t("margin","মার্জিন")}
+                        </span>
+                      )}
+                      <span style={{fontSize:11, color:tm}}>{t("profit rate","লাভের হার")}</span>
+                    </div>
+                    <div style={{height:3, borderRadius:4, background: isDarkMode?'#334155':'#e2e8f0'}}>
+                      <div style={{height:'100%', width: computedDailySalesAmount>0?`${Math.min(Math.round((computedDailyProfitAmount/computedDailySalesAmount)*100),100)}%`:'0%', borderRadius:4, background:'linear-gradient(90deg,#f59e0b,#fbbf24)', transition:'width 1s ease'}}></div>
+                    </div>
+                    <div style={{display:'flex', justifyContent:'space-between', marginTop:5}}>
+                      <span style={{fontSize:10, color:tm}}>{t("Monthly profit","মাসিক লাভ")}</span>
+                      <span style={{fontSize:10, fontWeight:700, color:'#d97706', fontFamily:'monospace'}}>{currencySymbol}{computedMonthlyProfitAmount.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+
+                {checkShouldRenderTabOption("due_list_view") && (
+                  <div style={{background:card, border:`1px solid ${border}`, borderRadius:14, padding:'20px 22px', display:'flex', flexDirection:'column'}}>
+                    <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:16}}>
+                      <div>
+                        <div style={{fontSize:11, fontWeight:700, color:ts, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:10}}>{t("Outstanding Due","মোট বাকি")}</div>
+                        <div style={{fontSize:30, fontWeight:800, color: dueList.reduce((s:number,d:any)=>s+(d.totalDue||0),0)>0?'#ef4444':tp, fontFamily:'monospace', letterSpacing:'-1px', lineHeight:1}}>
+                          {currencySymbol}{dueList.reduce((s:number,d:any)=>s+(d.totalDue||0),0).toLocaleString()}
+                        </div>
+                      </div>
+                      <IconCircle bg={isDarkMode?'rgba(239,68,68,0.12)':'#fee2e2'}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                      </IconCircle>
+                    </div>
+                    <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:14}}>
+                      <span style={{fontSize:11, fontWeight:700, color:'#ef4444', background:isDarkMode?'rgba(239,68,68,0.1)':'#fee2e2', borderRadius:6, padding:'2px 8px', display:'flex', alignItems:'center', gap:3}}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        {dueList.length} {t("customers","গ্রাহক")}
+                      </span>
+                    </div>
+                    <div style={{paddingTop:12, borderTop:`1px solid ${divClr}`, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                      <span style={{fontSize:11, color:tm, display:'flex', alignItems:'center', gap:4}}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={tm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        {t("Collected today","আজ আদায়")}
+                      </span>
+                      <span style={{fontSize:12, fontWeight:700, color:'#16a34a', fontFamily:'monospace'}}>{currencySymbol}{computedDailyDueCollection.toFixed(0)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ══ ROW 2 · SECONDARY STATS ═════════════════════════ */}
+              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))', gap:10}}>
+                {[
+                  checkShouldRenderTabOption("monthly_profit_view") && {
+                    label:t("Monthly Profit","মাসিক লাভ"),
+                    val:`${currencySymbol}${computedMonthlyProfitAmount.toLocaleString()}`,
+                    color:'#7c3aed', bg: isDarkMode?'rgba(124,58,237,0.08)':'#f5f3ff',
+                    bord: isDarkMode?'rgba(124,58,237,0.2)':'#ddd6fe',
+                    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+                  },
+                  checkShouldRenderTabOption("daily_purchases_view") && {
+                    label:t("Today Purchase","আজ ক্রয়"),
+                    val:`${currencySymbol}${computedDailyPurchaseAmount.toLocaleString()}`,
+                    color:'#0891b2', bg: isDarkMode?'rgba(8,145,178,0.08)':'#ecfeff',
+                    bord: isDarkMode?'rgba(8,145,178,0.2)':'#a5f3fc',
+                    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                  },
+                  checkShouldRenderTabOption("monthly_sale_view") && {
+                    label:t("Today Invoices","আজ ইনভয়েস"),
+                    val: invoices.filter((inv:any)=>{ const d=new Date(inv.timestamp||inv.dateString),n=new Date(); return d.getDate()===n.getDate()&&d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear(); }).length,
+                    color:'#2563eb', bg: isDarkMode?'rgba(37,99,235,0.08)':'#eff6ff',
+                    bord: isDarkMode?'rgba(37,99,235,0.2)':'#bfdbfe',
+                    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                  },
+                  checkShouldRenderTabOption("stock_value_calculator") && {
+                    label:t("Stock Value","স্টক মূল্য"),
+                    val:`${currencySymbol}${totalStockValue>=100000?(totalStockValue/1000).toFixed(0)+'k':totalStockValue.toLocaleString()}`,
+                    color:'#059669', bg: isDarkMode?'rgba(5,150,105,0.08)':'#ecfdf5',
+                    bord: isDarkMode?'rgba(5,150,105,0.2)':'#a7f3d0',
+                    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                  },
+                  checkShouldRenderTabOption("low_stock_alerts") && {
+                    label:t("Low Stock","কম স্টক"),
+                    val:lowStockMedicines.length,
+                    color: lowStockMedicines.length>0?'#d97706':'#059669',
+                    bg: isDarkMode?'rgba(217,119,6,0.08)':'#fffbeb',
+                    bord: isDarkMode?'rgba(217,119,6,0.2)':'#fde68a',
+                    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={lowStockMedicines.length>0?'#d97706':'#059669'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  },
+                  checkShouldRenderTabOption("stock_out_view") && {
+                    label:t("Out of Stock","স্টক আউট"),
+                    val:stockOutMedicines.length,
+                    color: stockOutMedicines.length>0?'#dc2626':'#059669',
+                    bg: isDarkMode?'rgba(220,38,38,0.08)':'#fef2f2',
+                    bord: isDarkMode?'rgba(220,38,38,0.2)':'#fecaca',
+                    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={stockOutMedicines.length>0?'#dc2626':'#059669'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                  },
+                ].filter(Boolean).map((item:any,i:number)=>(
+                  <div key={i} style={{background:isDarkMode?card:item.bg, border:`1px solid ${isDarkMode?border:item.bord}`, borderRadius:10, padding:'12px 14px'}}>
+                    <div style={{display:'flex', alignItems:'center', gap:7, marginBottom:8}}>
+                      <div style={{width:28, height:28, borderRadius:7, background:`${item.color}18`, display:'flex', alignItems:'center', justifyContent:'center'}}>{item.icon}</div>
+                      <span style={{fontSize:10, fontWeight:700, color:isDarkMode?ts:item.color, textTransform:'uppercase', letterSpacing:'0.05em'}}>{item.label}</span>
+                    </div>
+                    <div style={{fontSize:22, fontWeight:800, color:isDarkMode?tp:item.color, fontFamily:'monospace', lineHeight:1}}>{item.val}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* ══ ROW 3 · CHART + PAYMENT ═════════════════════════ */}
+              <div style={{display:'grid', gap:14, gridTemplateColumns:'1fr 270px'}} className="db-mid-row">
+                <style>{`.db-mid-row{grid-template-columns:1fr 270px}@media(max-width:900px){.db-mid-row{grid-template-columns:1fr!important}}`}</style>
+
+                {/* 7-Day Bar Chart */}
+                <div style={{background:card, border:`1px solid ${border}`, borderRadius:14, padding:'20px 22px'}}>
+                  <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:20, flexWrap:'wrap', gap:10}}>
+                    <div>
+                      <div style={{fontSize:14, fontWeight:700, color:tp, display:'flex', alignItems:'center', gap:7}}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={ts} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                        {t("Revenue — Last 7 Days","আয় — গত ৭ দিন")}
+                      </div>
+                      <div style={{fontSize:12, color:ts, marginTop:4}}>
+                        {t("Week total","সাপ্তাহিক মোট")}: <span style={{fontFamily:'monospace', fontWeight:700, color:tp}}>{currencySymbol}{weeklySalesData.totalWeek.toLocaleString()}</span>
                       </div>
                     </div>
-                  )}
-
-                  {/* Stock Out */}
-                  {checkShouldRenderTabOption("stock_out_view") && (
-                    <div className={`ccard cc-red p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                      <div className="flex items-center justify-between border-b pb-2 mb-2">
-                        <h4 className="text-sm font-black uppercase text-red-500">⛔ {t("Stock Out", "স্টক আউট")}</h4>
-                        <span className="bg-red-500 text-white font-mono text-sm px-1.5 py-0.5 rounded-full font-bold">{stockOutMedicines.length}</span>
-                      </div>
-                      <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
-                        {stockOutMedicines.map(m => (
-                          <div key={m.id} className="flex justify-between items-center text-sm font-semibold p-1 bg-red-500/5 rounded border border-red-500/10">
-                            <span className="truncate max-w-[120px]">{m.name}</span>
-                            <span className="font-mono text-red-500 text-sm">{t("Out of stock", "স্টক শেষ")}</span>
-                          </div>
-                        ))}
-                        {stockOutMedicines.length === 0 && <div className="text-slate-400 italic text-sm py-3 text-center">{t("No stock-out items!", "স্টক আউট নেই!")}</div>}
-                      </div>
+                    <div style={{display:'flex', gap:14, alignItems:'center'}}>
+                      {[{c:'#3b82f6',l:t('Today','আজ')},{c:'#f59e0b',l:t('Peak','সর্বোচ্চ')},{c:isDarkMode?'#334155':'#e2e8f0',l:t('Others','অন্য')}].map((x,i)=>(
+                        <div key={i} style={{display:'flex', alignItems:'center', gap:5, fontSize:11, color:ts}}>
+                          <span style={{width:10, height:10, borderRadius:3, background:x.c, display:'inline-block'}}></span>{x.l}
+                        </div>
+                      ))}
                     </div>
-                  )}
-
-                  {/* Expired */}
-                  {checkShouldRenderTabOption("expired_meds_view") && (
-                    <div className={`ccard cc-blue p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                      <div className="flex items-center justify-between border-b pb-2 mb-2">
-                        <h4 className="text-sm font-black uppercase text-red-500">🚨 {t("Expired", "মেয়াদ শেষ")}</h4>
-                        <span className="bg-red-500 text-white font-mono text-sm px-1.5 py-0.5 rounded-full font-bold">{expiredMedicines.length}</span>
-                      </div>
-                      <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
-                        {expiredMedicines.map(m => (
-                          <div key={m.id} className="flex justify-between items-center text-sm font-semibold p-1 bg-red-500/5 rounded border border-red-500/10">
-                            <span className="truncate max-w-[120px]">{m.name}</span>
-                            <span className="font-mono text-red-400 text-sm">{m.expire}</span>
-                          </div>
+                  </div>
+                  {(()=>{
+                    const {weekDays, weekSales, maxVal, maxIdx} = weeklySalesData;
+                    const enD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                    const bnD=['রবি','সোম','মঙ্গল','বুধ','বৃহঃ','শুক্র','শনি'];
+                    const H=130, BW=46, GAP=16, TW=7*BW+6*GAP;
+                    return (
+                      <svg viewBox={`0 0 ${TW} ${H+48}`} width="100%" style={{display:'block',overflow:'visible'}}>
+                        <defs>
+                          <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6"/><stop offset="100%" stopColor="#818cf8" stopOpacity=".9"/></linearGradient>
+                          <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b"/><stop offset="100%" stopColor="#fbbf24" stopOpacity=".9"/></linearGradient>
+                        </defs>
+                        {[0.25,0.5,0.75,1].map(p=>(
+                          <line key={p} x1={0} y1={H-p*H} x2={TW} y2={H-p*H} stroke={isDarkMode?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.05)'} strokeWidth="1" strokeDasharray="3 5"/>
                         ))}
-                        {expiredMedicines.length === 0 && <div className="text-slate-400 italic text-sm py-3 text-center">{t("No expired medicines!", "মেয়াদ শেষ ওষুধ নেই!")}</div>}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Expiring Soon — 1 month warning */}
-                  {expiringSoonMedicines.length > 0 && (
-                    <div className={`ccard p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-amber-50 border-amber-400 shadow-sm'}`}>
-                      <div className="flex items-center justify-between border-b pb-2 mb-2">
-                        <h4 className="text-sm font-black uppercase text-amber-500">⏳ {t("Expiring Soon (1 month)", "মেয়াদ শেষ হচ্ছে (১ মাস)")}</h4>
-                        <span className="bg-amber-500 text-white font-mono text-sm px-1.5 py-0.5 rounded-full font-bold">{expiringSoonMedicines.length}</span>
-                      </div>
-                      <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
-                        {expiringSoonMedicines.map(m => (
-                          <div key={m.id} className="flex justify-between items-center text-sm font-semibold p-1 bg-amber-500/5 rounded border border-amber-500/10">
-                            <span className="truncate max-w-[120px]">{m.name}</span>
-                            <span className="font-mono text-amber-500 text-sm">{m.expire}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                        {weekSales.map((sale:number,i:number)=>{
+                          const x=i*(BW+GAP), bh=maxVal>0?Math.max((sale/maxVal)*H,sale>0?10:4):4, y=H-bh;
+                          const isT=i===6, isP=i===maxIdx&&sale>0&&!isT;
+                          const lbl=t(enD[weekDays[i].getDay()],bnD[weekDays[i].getDay()]);
+                          const dt=`${weekDays[i].getDate()}/${weekDays[i].getMonth()+1}`;
+                          return (
+                            <g key={i}>
+                              <rect x={x} y={y} width={BW} height={bh} rx={8} fill={isT?'url(#g1)':isP?'url(#g2)':(isDarkMode?'#334155':'#e2e8f0')}/>
+                              {(isT||isP)&&sale>0&&(
+                                <text x={x+BW/2} y={y-8} textAnchor="middle" fontSize="10" fontWeight="700" fill={isT?'#3b82f6':'#d97706'} fontFamily="monospace">
+                                  {currencySymbol}{sale>=1000?(sale/1000).toFixed(1)+'k':sale}
+                                </text>
+                              )}
+                              <text x={x+BW/2} y={H+18} textAnchor="middle" fontSize="11" fontWeight={isT?'700':'500'} fill={isT?'#3b82f6':(isDarkMode?'#64748b':'#9ca3af')}>{lbl}</text>
+                              <text x={x+BW/2} y={H+34} textAnchor="middle" fontSize="9" fill={isDarkMode?'#475569':'#cbd5e1'}>{dt}</text>
+                            </g>
+                          );
+                        })}
+                        <line x1={0} y1={H} x2={TW} y2={H} stroke={isDarkMode?'#334155':'#e2e8f0'} strokeWidth="1.5"/>
+                      </svg>
+                    );
+                  })()}
                 </div>
-              )}
 
-              {/* Category Stock */}
+                {/* Payment Donut */}
+                <div style={{background:card, border:`1px solid ${border}`, borderRadius:14, padding:'20px 22px', display:'flex', flexDirection:'column'}}>
+                  <div style={{display:'flex', alignItems:'center', gap:7, marginBottom:4}}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={ts} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                    <span style={{fontSize:14, fontWeight:700, color:tp}}>{t("Payment Methods","পেমেন্ট পদ্ধতি")}</span>
+                  </div>
+                  <div style={{fontSize:12, color:ts, marginBottom:18}}>{t("Today's breakdown","আজকের বিভাজন")}</div>
+                  {(()=>{
+                    const ti=invoices.filter((inv:any)=>{const d=new Date(inv.timestamp||inv.dateString),n=new Date();return d.getDate()===n.getDate()&&d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();});
+                    const tot=ti.length, t1=tot||1;
+                    const cash=ti.filter((i:any)=>(i.paymentMethod||'').toLowerCase().includes('cash')).length;
+                    const mob=ti.filter((i:any)=>{const p=(i.paymentMethod||'').toLowerCase();return p.includes('bkash')||p.includes('nagad')||p.includes('rocket')||p.includes('mobile');}).length;
+                    const due=Math.max(0,tot-cash-mob);
+                    const sl=[{pct:Math.round((cash/t1)*100),color:'#22c55e',label:'Cash',icon:'💵'},{pct:Math.round((mob/t1)*100),color:'#8b5cf6',label:'bKash/Nagad',icon:'📱'},{pct:Math.max(0,100-Math.round((cash/t1)*100)-Math.round((mob/t1)*100)),color:'#ef4444',label:t('Due','বাকি'),icon:'📋'}];
+                    const R=50,cx=95,cy=95,C=2*Math.PI*R; let off=0;
+                    return (
+                      <div>
+                        <div style={{display:'flex',justifyContent:'center',marginBottom:18}}>
+                          <svg width="190" height="190" viewBox="0 0 190 190">
+                            <circle cx={cx} cy={cy} r={R} fill="none" stroke={isDarkMode?'#334155':'#f1f5f9'} strokeWidth="22"/>
+                            {sl.map((s,i)=>{
+                              const dash=(s.pct/100)*C;
+                              const el=<circle key={i} cx={cx} cy={cy} r={R} fill="none" stroke={s.color} strokeWidth="22"
+                                strokeDasharray={`${dash} ${C-dash}`} strokeDashoffset={-off+C*0.25}
+                                style={{transform:'rotate(-90deg)',transformOrigin:`${cx}px ${cy}px`}} strokeLinecap="round"/>;
+                              off+=dash; return el;
+                            })}
+                            <text x={cx} y={cy-10} textAnchor="middle" fontSize="26" fontWeight="800" fill={tp} fontFamily="monospace">{tot}</text>
+                            <text x={cx} y={cy+12} textAnchor="middle" fontSize="11" fill={ts} fontFamily="Inter">{t("invoices","ইনভয়েস")}</text>
+                          </svg>
+                        </div>
+                        <div style={{display:'flex', flexDirection:'column', gap:10}}>
+                          {sl.map((s,i)=>(
+                            <div key={i} style={{display:'flex', alignItems:'center', gap:10}}>
+                              <div style={{width:8, height:8, borderRadius:'50%', background:s.color, flexShrink:0}}></div>
+                              <span style={{fontSize:12, color:ts, flex:1}}>{s.label}</span>
+                              <div style={{width:64, height:4, borderRadius:4, background:isDarkMode?'#334155':'#f1f5f9', overflow:'hidden'}}>
+                                <div style={{height:'100%', width:`${s.pct}%`, background:s.color, borderRadius:4}}></div>
+                              </div>
+                              <span style={{fontSize:12, fontWeight:700, color:tp, fontFamily:'monospace', width:34, textAlign:'right'}}>{s.pct}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* ══ ROW 4 · INVENTORY PANELS ════════════════════════ */}
+              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))', gap:14}}>
+
+                {checkShouldRenderTabOption("low_stock_alerts") && (
+                  <div style={{background:card, border:`1px solid ${border}`, borderRadius:14, overflow:'hidden'}}>
+                    <div style={{padding:'14px 18px', borderBottom:`1px solid ${divClr}`, display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+                      <div style={{display:'flex', alignItems:'center', gap:8}}>
+                        <div style={{width:30, height:30, borderRadius:8, background:isDarkMode?'rgba(217,119,6,0.12)':'#fef3c7', display:'flex', alignItems:'center', justifyContent:'center'}}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        </div>
+                        <div>
+                          <div style={{fontSize:13, fontWeight:700, color:tp}}>{t("Low Stock","কম স্টক")}</div>
+                          <div style={{fontSize:11, color:ts}}>{t("Needs reorder","রিঅর্ডার দরকার")}</div>
+                        </div>
+                      </div>
+                      <span style={{fontSize:15, fontWeight:800, color:'#d97706', fontFamily:'monospace', background:isDarkMode?'rgba(217,119,6,0.12)':'#fef3c7', border:'1px solid #fde68a', borderRadius:8, width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center'}}>
+                        {lowStockMedicines.length}
+                      </span>
+                    </div>
+                    <div style={{padding:'8px 10px', maxHeight:196, overflowY:'auto', display:'flex', flexDirection:'column', gap:4}}>
+                      {lowStockMedicines.length===0
+                        ? <div style={{textAlign:'center', padding:'22px 0', fontSize:12, color:tm, display:'flex', flexDirection:'column', alignItems:'center', gap:6}}>
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            <span style={{color:tm}}>{t("All levels OK","সব ঠিক আছে")}</span>
+                          </div>
+                        : lowStockMedicines.slice(0,10).map((m:any)=>(
+                          <div key={m.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:8, background:isDarkMode?'#0f172a':'#fffbeb', border:isDarkMode?'1px solid #334155':'1px solid #fef3c7'}}>
+                            <div style={{display:'flex', alignItems:'center', gap:7, minWidth:0}}>
+                              <span style={{width:6, height:6, borderRadius:'50%', background:'#d97706', flexShrink:0, display:'inline-block'}}></span>
+                              <span style={{fontSize:12, fontWeight:600, color:tp, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{m.name}</span>
+                            </div>
+                            <span style={{fontSize:12, fontWeight:800, color:'#d97706', fontFamily:'monospace', flexShrink:0, marginLeft:8, background:isDarkMode?'rgba(217,119,6,0.12)':'#fef3c7', borderRadius:5, padding:'1px 7px'}}>{m.stock}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {checkShouldRenderTabOption("stock_out_view") && (
+                  <div style={{background:card, border:`1px solid ${border}`, borderRadius:14, overflow:'hidden'}}>
+                    <div style={{padding:'14px 18px', borderBottom:`1px solid ${divClr}`, display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+                      <div style={{display:'flex', alignItems:'center', gap:8}}>
+                        <div style={{width:30, height:30, borderRadius:8, background:isDarkMode?'rgba(220,38,38,0.12)':'#fee2e2', display:'flex', alignItems:'center', justifyContent:'center'}}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                        </div>
+                        <div>
+                          <div style={{fontSize:13, fontWeight:700, color:tp}}>{t("Out of Stock","স্টক আউট")}</div>
+                          <div style={{fontSize:11, color:ts}}>{t("Immediate action","এখনই ব্যবস্থা নিন")}</div>
+                        </div>
+                      </div>
+                      <span style={{fontSize:15, fontWeight:800, color:'#dc2626', fontFamily:'monospace', background:isDarkMode?'rgba(220,38,38,0.12)':'#fee2e2', border:'1px solid #fecaca', borderRadius:8, width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center'}}>
+                        {stockOutMedicines.length}
+                      </span>
+                    </div>
+                    <div style={{padding:'8px 10px', maxHeight:196, overflowY:'auto', display:'flex', flexDirection:'column', gap:4}}>
+                      {stockOutMedicines.length===0
+                        ? <div style={{textAlign:'center', padding:'22px 0', fontSize:12, color:tm, display:'flex', flexDirection:'column', alignItems:'center', gap:6}}>
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            <span style={{color:tm}}>{t("No stock-out","স্টক আউট নেই")}</span>
+                          </div>
+                        : stockOutMedicines.slice(0,10).map((m:any)=>(
+                          <div key={m.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:8, background:isDarkMode?'#0f172a':'#fef2f2', border:isDarkMode?'1px solid #334155':'1px solid #fecaca'}}>
+                            <div style={{display:'flex', alignItems:'center', gap:7, minWidth:0}}>
+                              <span style={{width:6, height:6, borderRadius:'50%', background:'#dc2626', flexShrink:0, display:'inline-block'}}></span>
+                              <span style={{fontSize:12, fontWeight:600, color:tp, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{m.name}</span>
+                            </div>
+                            <span style={{fontSize:10, fontWeight:700, color:'#dc2626', background:isDarkMode?'rgba(220,38,38,0.15)':'#fee2e2', border:'1px solid #fecaca', borderRadius:5, padding:'2px 7px', flexShrink:0}}>{t("OUT","শেষ")}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {checkShouldRenderTabOption("expired_meds_view") && (
+                  <div style={{background:card, border:`1px solid ${border}`, borderRadius:14, overflow:'hidden'}}>
+                    <div style={{padding:'14px 18px', borderBottom:`1px solid ${divClr}`, display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+                      <div style={{display:'flex', alignItems:'center', gap:8}}>
+                        <div style={{width:30, height:30, borderRadius:8, background:isDarkMode?'rgba(124,58,237,0.12)':'#f5f3ff', display:'flex', alignItems:'center', justifyContent:'center'}}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        </div>
+                        <div>
+                          <div style={{fontSize:13, fontWeight:700, color:tp}}>{t("Expiry Alerts","মেয়াদ সতর্কতা")}</div>
+                          <div style={{fontSize:11, color:ts}}>{t("Expired + 30 days","মেয়াদোত্তীর্ণ + ৩০ দিন")}</div>
+                        </div>
+                      </div>
+                      <span style={{fontSize:15, fontWeight:800, color:'#7c3aed', fontFamily:'monospace', background:isDarkMode?'rgba(124,58,237,0.12)':'#f5f3ff', border:'1px solid #ddd6fe', borderRadius:8, width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center'}}>
+                        {expiredMedicines.length+expiringSoonMedicines.length}
+                      </span>
+                    </div>
+                    <div style={{padding:'8px 10px', maxHeight:196, overflowY:'auto', display:'flex', flexDirection:'column', gap:4}}>
+                      {expiredMedicines.length===0&&expiringSoonMedicines.length===0
+                        ? <div style={{textAlign:'center', padding:'22px 0', fontSize:12, color:tm, display:'flex', flexDirection:'column', alignItems:'center', gap:6}}>
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            <span style={{color:tm}}>{t("No expiry issues","মেয়াদ ঠিক আছে")}</span>
+                          </div>
+                        : <>
+                          {expiredMedicines.slice(0,5).map((m:any)=>(
+                            <div key={m.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:8, background:isDarkMode?'#0f172a':'#fef2f2', border:isDarkMode?'1px solid #334155':'1px solid #fecaca'}}>
+                              <span style={{fontSize:12, fontWeight:600, color:tp, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:130}}>{m.name}</span>
+                              <span style={{fontSize:10, fontWeight:700, color:'#dc2626', fontFamily:'monospace', flexShrink:0}}>{m.expire}</span>
+                            </div>
+                          ))}
+                          {expiringSoonMedicines.slice(0,5).map((m:any)=>(
+                            <div key={m.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:8, background:isDarkMode?'#0f172a':'#fffbeb', border:isDarkMode?'1px solid #334155':'1px solid #fef3c7'}}>
+                              <span style={{fontSize:12, fontWeight:600, color:tp, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:130}}>{m.name}</span>
+                              <span style={{fontSize:10, fontWeight:700, color:'#d97706', fontFamily:'monospace', flexShrink:0}}>{m.expire}</span>
+                            </div>
+                          ))}
+                        </>
+                      }
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ══ ROW 5 · STOCK BY CATEGORY ═══════════════════════ */}
               {checkShouldRenderTabOption("category_wise_stock") && (
-                <div className={`ccard cc-red p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-                  <h4 className="text-sm font-black uppercase text-indigo-500 mb-3">📊 {t("Stock by Category", "ক্যাটাগরি অনুযায়ী স্টক")}</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                    {allCategories.map(cat => {
-                      const total = countStockByCategory(cat);
-                      if (total === 0) return null;
+                <div style={{background:card, border:`1px solid ${border}`, borderRadius:14, padding:'18px 22px'}}>
+                  <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:16}}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={ts} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    <span style={{fontSize:13, fontWeight:700, color:tp}}>{t("Stock by Category","ক্যাটাগরি অনুযায়ী স্টক")}</span>
+                  </div>
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(88px,1fr))', gap:8}}>
+                    {allCategories.map((cat:string)=>{
+                      const qty=countStockByCategory(cat);
+                      if(qty===0) return null;
+                      const pal=['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#14b8a6','#f97316','#84cc16'];
+                      const col=pal[cat.length%pal.length];
                       return (
-                        <div key={cat} className={`p-2 rounded-xl text-sm text-center ${isDarkMode ? 'bg-slate-900/60' : 'bg-slate-50'}`}>
-                          <div className="font-black text-indigo-500 text-sm font-mono">{total}</div>
-                          <div className="text-slate-400 text-sm">{cat}</div>
+                        <div key={cat} style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'12px 8px', borderRadius:10, background:isDarkMode?inputBg:`${col}0d`, border:isDarkMode?`1px solid ${border}`:`1px solid ${col}22`, textAlign:'center', gap:4, cursor:'default', transition:'all .15s'}}>
+                          <span style={{fontSize:20, fontWeight:800, color:col, fontFamily:'monospace', lineHeight:1}}>{qty}</span>
+                          <span style={{fontSize:10, fontWeight:600, color:isDarkMode?'#64748b':'#6b7280', lineHeight:1.3, wordBreak:'break-word'}}>{cat}</span>
                         </div>
                       );
                     })}
                   </div>
                 </div>
               )}
+
             </div>
-          )}
+            );
+          })()}
 
           {/* =========================================================
               TAB 3: STOCK / INVENTORY
