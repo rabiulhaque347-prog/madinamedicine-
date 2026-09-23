@@ -8103,7 +8103,7 @@ export default function Home() {
                     const {weekDays, weekSales, maxVal, maxIdx} = weeklySalesData;
                     const enD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
                     const bnD=['রবি','সোম','মঙ্গল','বুধ','বৃহঃ','শুক্র','শনি'];
-                    const H=130, BW=46, GAP=16, TW=7*BW+6*GAP;
+                    const H=80, BW=40, GAP=12, TW=7*BW+6*GAP;
                     return (
                       <svg viewBox={`0 0 ${TW} ${H+48}`} width="100%" style={{display:'block',overflow:'visible'}}>
                         <defs>
@@ -8122,9 +8122,13 @@ export default function Home() {
                             <g key={i}>
                               <rect x={x} y={y} width={BW} height={bh} rx={8} fill={isT?'url(#g1)':isP?'url(#g2)':(isDarkMode?'#334155':'#e2e8f0')}/>
                               {(isT||isP)&&sale>0&&(
-                                <text x={x+BW/2} y={y-8} textAnchor="middle" fontSize="10" fontWeight="700" fill={isT?'#3b82f6':'#d97706'} fontFamily="monospace">
-                                  {currencySymbol}{sale>=1000?(sale/1000).toFixed(1)+'k':sale}
-                                </text>
+                                bh>22
+                                  ? <text x={x+BW/2} y={y+bh-7} textAnchor="middle" fontSize="8" fontWeight="700" fill={isT?'#fff':'#92400e'} fontFamily="monospace">
+                                      {currencySymbol}{sale>=1000?(sale/1000).toFixed(1)+'k':sale}
+                                    </text>
+                                  : <text x={x+BW/2} y={y-4} textAnchor="middle" fontSize="8" fontWeight="700" fill={isT?'#3b82f6':'#d97706'} fontFamily="monospace">
+                                      {currencySymbol}{sale>=1000?(sale/1000).toFixed(1)+'k':sale}
+                                    </text>
                               )}
                               <text x={x+BW/2} y={H+18} textAnchor="middle" fontSize="11" fontWeight={isT?'700':'500'} fill={isT?'#3b82f6':(isDarkMode?'#64748b':'#9ca3af')}>{lbl}</text>
                               <text x={x+BW/2} y={H+34} textAnchor="middle" fontSize="9" fill={isDarkMode?'#475569':'#cbd5e1'}>{dt}</text>
@@ -8201,17 +8205,35 @@ export default function Home() {
                           <div style={{fontSize:11, color:ts}}>{t("Needs reorder","রিঅর্ডার দরকার")}</div>
                         </div>
                       </div>
-                      <span style={{fontSize:15, fontWeight:800, color:'#d97706', fontFamily:'monospace', background:isDarkMode?'rgba(217,119,6,0.12)':'#fef3c7', border:'1px solid #fde68a', borderRadius:8, width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center'}}>
-                        {lowStockMedicines.length}
-                      </span>
+                      <div style={{display:'flex', alignItems:'center', gap:8}}>
+                        {lowStockMedicines.length>0 && (
+                          <button
+                            onClick={()=>{
+                              const rows = lowStockMedicines.map((m:any,i:number)=>`<tr><td style="padding:6px 10px;border-bottom:1px solid #fde68a;">${i+1}</td><td style="padding:6px 10px;border-bottom:1px solid #fde68a;font-weight:600;">${m.name}</td><td style="padding:6px 10px;border-bottom:1px solid #fde68a;text-align:center;color:#92400e;">${m.category||''}</td><td style="padding:6px 10px;border-bottom:1px solid #fde68a;text-align:center;font-weight:800;color:#d97706;">${m.stock}</td><td style="padding:6px 10px;border-bottom:1px solid #fde68a;text-align:center;color:#b45309;">${m.lowStockAlert||activeThreshold}</td></tr>`).join('');
+                              const win=window.open('','_blank','width=700,height=900');
+                              if(!win)return;
+                              win.document.write(`<!DOCTYPE html><html><head><title>Low Stock Report</title><style>body{font-family:sans-serif;padding:24px;color:#1e293b;}h2{color:#d97706;margin-bottom:4px;}p{color:#64748b;font-size:13px;margin-bottom:16px;}table{width:100%;border-collapse:collapse;font-size:13px;}th{background:#fef3c7;padding:8px 10px;text-align:left;color:#92400e;font-weight:700;}tr:last-child td{border-bottom:none;}@media print{body{padding:0}}</style></head><body><h2>⚠️ ${t('Low Stock Report','কম স্টক রিপোর্ট')}</h2><p>${t('Total','মোট')}: ${lowStockMedicines.length} ${t('medicines need reorder','টি ওষুধ রিঅর্ডার দরকার')} — ${new Date().toLocaleDateString()}</p><table><thead><tr><th>#</th><th>${t('Medicine','ওষুধ')}</th><th>${t('Category','ক্যাটাগরি')}</th><th style="text-align:center">${t('Stock','স্টক')}</th><th style="text-align:center">${t('Alert Level','সতর্ক সীমা')}</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+                              win.document.close();
+                              setTimeout(()=>win.print(),400);
+                            }}
+                            title={t("Print Low Stock List","লো স্টক প্রিন্ট করুন")}
+                            style={{width:28, height:28, borderRadius:7, background:isDarkMode?'rgba(217,119,6,0.15)':'#fef3c7', border:'1px solid #fde68a', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0}}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                          </button>
+                        )}
+                        <span style={{fontSize:15, fontWeight:800, color:'#d97706', fontFamily:'monospace', background:isDarkMode?'rgba(217,119,6,0.12)':'#fef3c7', border:'1px solid #fde68a', borderRadius:8, width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center'}}>
+                          {lowStockMedicines.length}
+                        </span>
+                      </div>
                     </div>
-                    <div style={{padding:'8px 10px', maxHeight:196, overflowY:'auto', display:'flex', flexDirection:'column', gap:4}}>
+                    <div style={{padding:'8px 10px', maxHeight:300, overflowY:'auto', display:'flex', flexDirection:'column', gap:4}}>
                       {lowStockMedicines.length===0
                         ? <div style={{textAlign:'center', padding:'22px 0', fontSize:12, color:tm, display:'flex', flexDirection:'column', alignItems:'center', gap:6}}>
                             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                             <span style={{color:tm}}>{t("All levels OK","সব ঠিক আছে")}</span>
                           </div>
-                        : lowStockMedicines.slice(0,10).map((m:any)=>(
+                        : lowStockMedicines.map((m:any)=>(
                           <div key={m.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:8, background:isDarkMode?'#0f172a':'#fffbeb', border:isDarkMode?'1px solid #334155':'1px solid #fef3c7'}}>
                             <div style={{display:'flex', alignItems:'center', gap:7, minWidth:0}}>
                               <span style={{width:6, height:6, borderRadius:'50%', background:'#d97706', flexShrink:0, display:'inline-block'}}></span>
@@ -8236,17 +8258,35 @@ export default function Home() {
                           <div style={{fontSize:11, color:ts}}>{t("Immediate action","এখনই ব্যবস্থা নিন")}</div>
                         </div>
                       </div>
-                      <span style={{fontSize:15, fontWeight:800, color:'#dc2626', fontFamily:'monospace', background:isDarkMode?'rgba(220,38,38,0.12)':'#fee2e2', border:'1px solid #fecaca', borderRadius:8, width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center'}}>
-                        {stockOutMedicines.length}
-                      </span>
+                      <div style={{display:'flex', alignItems:'center', gap:8}}>
+                        {stockOutMedicines.length>0 && (
+                          <button
+                            onClick={()=>{
+                              const rows = stockOutMedicines.map((m:any,i:number)=>`<tr><td style="padding:6px 10px;border-bottom:1px solid #fecaca;">${i+1}</td><td style="padding:6px 10px;border-bottom:1px solid #fecaca;font-weight:600;">${m.name}</td><td style="padding:6px 10px;border-bottom:1px solid #fecaca;text-align:center;color:#7f1d1d;">${m.category||''}</td><td style="padding:6px 10px;border-bottom:1px solid #fecaca;text-align:center;font-weight:800;color:#dc2626;">${m.rack||'-'}</td></tr>`).join('');
+                              const win=window.open('','_blank','width=700,height=900');
+                              if(!win)return;
+                              win.document.write(`<!DOCTYPE html><html><head><title>Out of Stock Report</title><style>body{font-family:sans-serif;padding:24px;color:#1e293b;}h2{color:#dc2626;margin-bottom:4px;}p{color:#64748b;font-size:13px;margin-bottom:16px;}table{width:100%;border-collapse:collapse;font-size:13px;}th{background:#fee2e2;padding:8px 10px;text-align:left;color:#7f1d1d;font-weight:700;}tr:last-child td{border-bottom:none;}@media print{body{padding:0}}</style></head><body><h2>🚫 ${t('Out of Stock Report','স্টক আউট রিপোর্ট')}</h2><p>${t('Total','মোট')}: ${stockOutMedicines.length} ${t('medicines out of stock','টি ওষুধ স্টক শেষ')} — ${new Date().toLocaleDateString()}</p><table><thead><tr><th>#</th><th>${t('Medicine','ওষুধ')}</th><th>${t('Category','ক্যাটাগরি')}</th><th style="text-align:center">${t('Rack','র‍্যাক')}</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+                              win.document.close();
+                              setTimeout(()=>win.print(),400);
+                            }}
+                            title={t("Print Out of Stock List","স্টক আউট প্রিন্ট করুন")}
+                            style={{width:28, height:28, borderRadius:7, background:isDarkMode?'rgba(220,38,38,0.15)':'#fee2e2', border:'1px solid #fecaca', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0}}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                          </button>
+                        )}
+                        <span style={{fontSize:15, fontWeight:800, color:'#dc2626', fontFamily:'monospace', background:isDarkMode?'rgba(220,38,38,0.12)':'#fee2e2', border:'1px solid #fecaca', borderRadius:8, width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center'}}>
+                          {stockOutMedicines.length}
+                        </span>
+                      </div>
                     </div>
-                    <div style={{padding:'8px 10px', maxHeight:196, overflowY:'auto', display:'flex', flexDirection:'column', gap:4}}>
+                    <div style={{padding:'8px 10px', maxHeight:300, overflowY:'auto', display:'flex', flexDirection:'column', gap:4}}>
                       {stockOutMedicines.length===0
                         ? <div style={{textAlign:'center', padding:'22px 0', fontSize:12, color:tm, display:'flex', flexDirection:'column', alignItems:'center', gap:6}}>
                             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                             <span style={{color:tm}}>{t("No stock-out","স্টক আউট নেই")}</span>
                           </div>
-                        : stockOutMedicines.slice(0,10).map((m:any)=>(
+                        : stockOutMedicines.map((m:any)=>(
                           <div key={m.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:8, background:isDarkMode?'#0f172a':'#fef2f2', border:isDarkMode?'1px solid #334155':'1px solid #fecaca'}}>
                             <div style={{display:'flex', alignItems:'center', gap:7, minWidth:0}}>
                               <span style={{width:6, height:6, borderRadius:'50%', background:'#dc2626', flexShrink:0, display:'inline-block'}}></span>
@@ -8271,24 +8311,43 @@ export default function Home() {
                           <div style={{fontSize:11, color:ts}}>{t("Expired + 30 days","মেয়াদোত্তীর্ণ + ৩০ দিন")}</div>
                         </div>
                       </div>
-                      <span style={{fontSize:15, fontWeight:800, color:'#7c3aed', fontFamily:'monospace', background:isDarkMode?'rgba(124,58,237,0.12)':'#f5f3ff', border:'1px solid #ddd6fe', borderRadius:8, width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center'}}>
-                        {expiredMedicines.length+expiringSoonMedicines.length}
-                      </span>
+                      <div style={{display:'flex', alignItems:'center', gap:8}}>
+                        {(expiredMedicines.length+expiringSoonMedicines.length)>0 && (
+                          <button
+                            onClick={()=>{
+                              const expRows = expiredMedicines.map((m:any,i:number)=>`<tr style="background:#fef2f2"><td style="padding:6px 10px;border-bottom:1px solid #fecaca;">${i+1}</td><td style="padding:6px 10px;border-bottom:1px solid #fecaca;font-weight:600;">${m.name}</td><td style="padding:6px 10px;border-bottom:1px solid #fecaca;text-align:center;color:#7f1d1d;">${m.category||''}</td><td style="padding:6px 10px;border-bottom:1px solid #fecaca;text-align:center;font-weight:800;color:#dc2626;">${m.expire}</td><td style="padding:6px 10px;border-bottom:1px solid #fecaca;text-align:center;font-weight:700;color:#dc2626;">${t('EXPIRED','মেয়াদ শেষ')}</td></tr>`).join('');
+                              const soonRows = expiringSoonMedicines.map((m:any,i:number)=>`<tr style="background:#fffbeb"><td style="padding:6px 10px;border-bottom:1px solid #fde68a;">${expiredMedicines.length+i+1}</td><td style="padding:6px 10px;border-bottom:1px solid #fde68a;font-weight:600;">${m.name}</td><td style="padding:6px 10px;border-bottom:1px solid #fde68a;text-align:center;color:#92400e;">${m.category||''}</td><td style="padding:6px 10px;border-bottom:1px solid #fde68a;text-align:center;font-weight:800;color:#d97706;">${m.expire}</td><td style="padding:6px 10px;border-bottom:1px solid #fde68a;text-align:center;font-weight:700;color:#d97706;">${t('SOON','শীঘ্রই')}</td></tr>`).join('');
+                              const win=window.open('','_blank','width=700,height=900');
+                              if(!win)return;
+                              win.document.write(`<!DOCTYPE html><html><head><title>Expiry Alert Report</title><style>body{font-family:sans-serif;padding:24px;color:#1e293b;}h2{color:#7c3aed;margin-bottom:4px;}p{color:#64748b;font-size:13px;margin-bottom:16px;}table{width:100%;border-collapse:collapse;font-size:13px;}th{background:#f5f3ff;padding:8px 10px;text-align:left;color:#5b21b6;font-weight:700;}tr:last-child td{border-bottom:none;}@media print{body{padding:0}}</style></head><body><h2>⏰ ${t('Expiry Alert Report','মেয়াদ সতর্কতা রিপোর্ট')}</h2><p>${t('Expired','মেয়াদ শেষ')}: ${expiredMedicines.length} | ${t('Expiring Soon','শীঘ্রই শেষ')}: ${expiringSoonMedicines.length} — ${new Date().toLocaleDateString()}</p><table><thead><tr><th>#</th><th>${t('Medicine','ওষুধ')}</th><th>${t('Category','ক্যাটাগরি')}</th><th style="text-align:center">${t('Expiry Date','মেয়াদ তারিখ')}</th><th style="text-align:center">${t('Status','অবস্থা')}</th></tr></thead><tbody>${expRows}${soonRows}</tbody></table></body></html>`);
+                              win.document.close();
+                              setTimeout(()=>win.print(),400);
+                            }}
+                            title={t("Print Expiry List","মেয়াদ লিস্ট প্রিন্ট করুন")}
+                            style={{width:28, height:28, borderRadius:7, background:isDarkMode?'rgba(124,58,237,0.15)':'#f5f3ff', border:'1px solid #ddd6fe', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0}}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                          </button>
+                        )}
+                        <span style={{fontSize:15, fontWeight:800, color:'#7c3aed', fontFamily:'monospace', background:isDarkMode?'rgba(124,58,237,0.12)':'#f5f3ff', border:'1px solid #ddd6fe', borderRadius:8, width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center'}}>
+                          {expiredMedicines.length+expiringSoonMedicines.length}
+                        </span>
+                      </div>
                     </div>
-                    <div style={{padding:'8px 10px', maxHeight:196, overflowY:'auto', display:'flex', flexDirection:'column', gap:4}}>
+                    <div style={{padding:'8px 10px', maxHeight:300, overflowY:'auto', display:'flex', flexDirection:'column', gap:4}}>
                       {expiredMedicines.length===0&&expiringSoonMedicines.length===0
                         ? <div style={{textAlign:'center', padding:'22px 0', fontSize:12, color:tm, display:'flex', flexDirection:'column', alignItems:'center', gap:6}}>
                             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                             <span style={{color:tm}}>{t("No expiry issues","মেয়াদ ঠিক আছে")}</span>
                           </div>
                         : <>
-                          {expiredMedicines.slice(0,5).map((m:any)=>(
+                          {expiredMedicines.map((m:any)=>(
                             <div key={m.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:8, background:isDarkMode?'#0f172a':'#fef2f2', border:isDarkMode?'1px solid #334155':'1px solid #fecaca'}}>
                               <span style={{fontSize:12, fontWeight:600, color:tp, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:130}}>{m.name}</span>
                               <span style={{fontSize:10, fontWeight:700, color:'#dc2626', fontFamily:'monospace', flexShrink:0}}>{m.expire}</span>
                             </div>
                           ))}
-                          {expiringSoonMedicines.slice(0,5).map((m:any)=>(
+                          {expiringSoonMedicines.map((m:any)=>(
                             <div key={m.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:8, background:isDarkMode?'#0f172a':'#fffbeb', border:isDarkMode?'1px solid #334155':'1px solid #fef3c7'}}>
                               <span style={{fontSize:12, fontWeight:600, color:tp, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:130}}>{m.name}</span>
                               <span style={{fontSize:10, fontWeight:700, color:'#d97706', fontFamily:'monospace', flexShrink:0}}>{m.expire}</span>
