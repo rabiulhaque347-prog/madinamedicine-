@@ -1532,7 +1532,7 @@ const ProductCard = React.memo(function ProductCard({ med, onAdd, isDarkMode, cu
     <button
       onClick={() => onAdd(med)}
       disabled={med.stock === 0 || isExpired}
-      style={{ contentVisibility: 'auto', containIntrinsicSize: '0 90px' } as any}
+     
       className={`p-2.5 rounded-xl border ccard cc-teal text-left transition hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-slate-800/60 border-slate-700 hover:border-indigo-500/50' : 'bg-white border-slate-200 hover:border-indigo-300 shadow-sm'}`}
     >
       <div className="font-black text-sm truncate mb-1">{med.name}</div>
@@ -8334,120 +8334,242 @@ export default function Home() {
           ========================================================= */}
           {activeTab === "inventory" && checkShouldRenderTabOption("inventory") && (
             <div className="flex flex-col gap-4">
-              <div className={`rounded-xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                <div className="p-3 border-b border-slate-700/10 flex items-center justify-between flex-wrap gap-2">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-indigo-500">{t("Medicine Stock List", "ওষুধের স্টক তালিকা")} ({medicines.length})</h3>
-                  <div className="flex gap-2">
-                    <SearchBox onSearch={setSearchTerm} placeholder={t("Search...", "খুঁজুন...")} className={`px-2 py-1 text-sm rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} />
-                    <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} className={`px-2 py-1 text-sm rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}>
-                      <option value="All">{t("All", "সব")}</option>
+              <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+
+                {/* ── Toolbar ── */}
+                <div className={`flex items-center justify-between gap-3 px-4 py-3 border-b flex-wrap ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                  <div className="flex items-center gap-2.5">
+                    <span className={`text-xs font-semibold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                      {t("Stock List", "স্টক তালিকা")}
+                    </span>
+                    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${isDarkMode ? 'bg-indigo-950 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                      {filteredMedicines.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <svg className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                      <SearchBox
+                        onSearch={setSearchTerm}
+                        placeholder={t("Search...", "খুঁজুন...")}
+                        className={`pl-8 pr-3 py-1.5 text-sm rounded-lg border outline-none w-44 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
+                      />
+                    </div>
+                    <select
+                      value={selectedCategory}
+                      onChange={e => setSelectedCategory(e.target.value)}
+                      className={`px-3 py-1.5 text-sm rounded-lg border outline-none cursor-pointer ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
+                    >
+                      <option value="All">{t("All types", "সব ধরন")}</option>
                       {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
                   </div>
                 </div>
 
+                {/* ── Table ── */}
                 <div className="overflow-x-auto w-full">
-                  <table className="w-full text-left text-sm border-collapse" style={{minWidth:'700px'}}>
+                  <table className="w-full text-left border-collapse" style={{ minWidth: '680px' }}>
                     <thead>
-                      <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                        <th className="p-2.5">#</th>
-                        <th className="p-2.5">{t("Name", "নাম")}</th>
-                        <th className="p-2.5">{t("Type", "ধরন")}</th>
-                        <th className="p-2.5">{t("Generic", "জেনেরিক")}</th>
-                        {currentUserRole === "ADMIN" && <th className="p-2.5">{t("Buy Price", "ক্রয় মূল্য")}</th>}
-                        <th className="p-2.5">{t("Sell Price", "বিক্রয় মূল্য")}</th>
-                        <th className="p-2.5">{t("Stock", "স্টক")}</th>
-                        <th className="p-2.5">{t("Low Alert", "কম স্টক সীমা")}</th>
-                        <th className="p-2.5">{t("Expiry", "মেয়াদ")}</th>
-                        {checkShouldRenderTabOption("rack_management") && <th className="p-2.5">{t("Rack", "র্যাক")}</th>}
-                        <th className="p-2.5 text-center">{t("Actions", "কার্যক্রম")}</th>
+                      <tr className={`text-xs font-semibold uppercase tracking-wider border-b ${isDarkMode ? 'text-slate-500 bg-slate-900 border-slate-800' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
+                        <th className="px-4 py-3 w-8 font-semibold">#</th>
+                        <th className="px-4 py-3 font-semibold">{t("Medicine", "ওষুধ")}</th>
+                        <th className="px-4 py-3 font-semibold">{t("Type", "ধরন")}</th>
+                        {currentUserRole === "ADMIN" && <th className="px-4 py-3 font-semibold">{t("Buy", "ক্রয়")}</th>}
+                        <th className="px-4 py-3 font-semibold">{t("Sell", "বিক্রয়")}</th>
+                        <th className="px-4 py-3 font-semibold">{t("Stock", "স্টক")}</th>
+                        <th className="px-4 py-3 font-semibold">{t("Alert", "সীমা")}</th>
+                        <th className="px-4 py-3 font-semibold">{t("Expiry", "মেয়াদ")}</th>
+                        {checkShouldRenderTabOption("rack_management") && <th className="px-4 py-3 font-semibold">{t("Rack", "র্যাক")}</th>}
+                        <th className="px-4 py-3 font-semibold text-center">{t("Actions", "কার্যক্রম")}</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-700/10">
+                    <tbody>
                       {pagedMedicines.map((med, pageIndex) => {
                         const index = (invPage - 1) * INV_PAGE_SIZE + pageIndex;
                         const isEditing = editingId === med.id;
                         const medLowAlert = med.lowStockAlert || activeThreshold;
-                        const lowStockFlag = med.stock <= medLowAlert;
+                        const lowStockFlag = med.stock <= medLowAlert && med.stock > 0;
                         const expiredFlag = new Date(med.expire) < new Date();
 
+                        const stockBadgeClass = med.stock === 0
+                          ? isDarkMode ? 'bg-red-950 text-red-400' : 'bg-red-50 text-red-500'
+                          : lowStockFlag
+                            ? isDarkMode ? 'bg-amber-950 text-amber-400' : 'bg-amber-50 text-amber-600'
+                            : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500';
+
+                        const rowBgClass = expiredFlag
+                          ? isDarkMode ? 'bg-red-950/20' : 'bg-red-50/40'
+                          : lowStockFlag
+                            ? isDarkMode ? 'bg-amber-950/20' : 'bg-amber-50/30'
+                            : '';
+
+                        const rowDivider = isDarkMode ? 'border-slate-800' : 'border-slate-100';
+                        const rowHover = isDarkMode ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50/70';
+
                         return (
-                          <tr key={med.id} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 52px' } as any} className={`transition-colors hover:bg-slate-500/5 ${expiredFlag ? 'bg-red-500/5' : lowStockFlag ? 'bg-amber-500/5' : ''}`}>
-                            <td className="p-2.5 font-mono text-slate-400 text-sm">{index + 1}</td>
-                            <td className="p-2.5 font-bold">
-                              {isEditing ? <input type="text" value={editFormData.name} onChange={e => handleEditFormChange("name", e.target.value)} className="px-1.5 py-0.5 rounded border text-sm bg-transparent w-full" />
-                                : <span className="block truncate max-w-[140px]">{med.name}</span>}
-                            </td>
-                            <td className="p-2.5">
+                          <tr
+                            key={med.id}
+                           
+                            className={`border-b transition-colors ${rowDivider} ${rowHover} ${rowBgClass}`}
+                          >
+                            {/* # */}
+                            <td className={`px-4 py-3 text-xs font-mono ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>{index + 1}</td>
+
+                            {/* Medicine name + generic */}
+                            <td className="px-4 py-3">
                               {isEditing ? (
-                                <select value={editFormData.category} onChange={e => handleEditFormChange("category", e.target.value)} className="p-0.5 rounded border text-sm bg-transparent">
+                                <input type="text" value={editFormData.name} onChange={e => handleEditFormChange("name", e.target.value)} className="px-2 py-1 rounded-lg border text-sm bg-transparent w-full outline-none" />
+                              ) : (
+                                <>
+                                  <span className={`block text-sm font-medium truncate max-w-[150px] ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{med.name}</span>
+                                  <span className={`text-xs truncate max-w-[150px] block mt-0.5 italic ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>{med.generic}</span>
+                                </>
+                              )}
+                            </td>
+
+                            {/* Type/Category */}
+                            <td className="px-4 py-3">
+                              {isEditing ? (
+                                <select value={editFormData.category} onChange={e => handleEditFormChange("category", e.target.value)} className="p-1 rounded-lg border text-sm bg-transparent outline-none">
                                   {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                 </select>
-                              ) : <span className="text-sm px-1.5 py-0.5 rounded font-bold uppercase bg-slate-500/10 text-slate-400">{med.category}</span>}
+                              ) : (
+                                <span className={`inline-flex items-center text-xs font-medium px-2.5 py-0.5 rounded-full border ${isDarkMode ? 'border-slate-700 text-slate-400 bg-slate-800' : 'border-slate-200 text-slate-500 bg-white'}`}>
+                                  {med.category}
+                                </span>
+                              )}
                             </td>
-                            <td className="p-2.5 text-slate-400 italic">
-                              {isEditing ? <input type="text" value={editFormData.generic} onChange={e => handleEditFormChange("generic", e.target.value)} className="px-1.5 py-0.5 rounded border text-sm bg-transparent w-full" />
-                                : <span className="block truncate max-w-[100px]">{med.generic}</span>}
-                            </td>
+
+                            {/* Buy Price */}
                             {currentUserRole === "ADMIN" && (
-                              <td className="p-2.5 font-mono">
-                                {isEditing ? <input type="number" step="any" value={editFormData.buyPrice} onChange={e => handleEditFormChange("buyPrice", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-16" />
-                                  : <span>{med.buyPrice} {currencySymbol}</span>}
+                              <td className="px-4 py-3 font-mono text-sm">
+                                {isEditing ? (
+                                  <input type="number" step="any" value={editFormData.buyPrice} onChange={e => handleEditFormChange("buyPrice", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-16 outline-none" />
+                                ) : (
+                                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>{med.buyPrice} {currencySymbol}</span>
+                                )}
                               </td>
                             )}
-                            <td className="p-2.5 font-mono font-bold text-indigo-500">
-                              {isEditing ? <input type="number" step="any" value={editFormData.price} onChange={e => handleEditFormChange("price", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-16" />
-                                : <span>{med.price} {currencySymbol}</span>}
-                            </td>
-                            <td className="p-2.5 font-mono">
-                              {isEditing ? <input type="number" value={editFormData.stock} onChange={e => handleEditFormChange("stock", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-16" />
-                                : <span className={`px-1.5 py-0.5 rounded font-black text-sm ${med.stock === 0 ? 'bg-red-500 text-white' : lowStockFlag ? 'bg-amber-500 text-white' : isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{med.stock}</span>}
-                            </td>
-                            <td className="p-2.5 font-mono">
-                              {isEditing ? <input type="number" value={editFormData.lowStockAlert || activeThreshold} onChange={e => handleEditFormChange("lowStockAlert", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-14" />
-                                : <span className="text-amber-500 font-bold">{medLowAlert}</span>}
-                            </td>
-                            <td className="p-2.5 font-mono">
-                              {isEditing ? <input type="date" value={editFormData.expire} onChange={e => handleEditFormChange("expire", e.target.value)} className="p-0.5 rounded border text-sm bg-transparent" />
-                                : <span className={expiredFlag ? 'text-red-500 font-bold' : 'text-slate-400'}>{med.expire}</span>}
-                            </td>
-                            {checkShouldRenderTabOption("rack_management") && (
-                              <td className="p-2.5 font-mono text-slate-500">
-                                {isEditing ? <input type="text" value={editFormData.rack} onChange={e => handleEditFormChange("rack", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-14" />
-                                  : <span>{med.rack}</span>}
-                              </td>
-                            )}
-                            <td className="p-2.5 text-center">
+
+                            {/* Sell Price */}
+                            <td className="px-4 py-3 font-mono text-sm font-semibold text-indigo-500">
                               {isEditing ? (
-                                <div className="flex gap-1 justify-center">
-                                  <button onClick={() => saveEditedMedicine(med.id)} className="bg-emerald-500 text-white text-sm font-bold px-2 py-0.5 rounded hover:bg-emerald-600 transition">{t("Save", "সেভ")}</button>
-                                  <button onClick={() => { closeEdit(); setEditingId(null); }} className="bg-slate-400 text-white text-sm font-bold px-2 py-0.5 rounded hover:bg-slate-500 transition">{t("Cancel", "বাতিল")}</button>
+                                <input type="number" step="any" value={editFormData.price} onChange={e => handleEditFormChange("price", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-16 outline-none" />
+                              ) : (
+                                <span>{med.price} {currencySymbol}</span>
+                              )}
+                            </td>
+
+                            {/* Stock */}
+                            <td className="px-4 py-3">
+                              {isEditing ? (
+                                <input type="number" value={editFormData.stock} onChange={e => handleEditFormChange("stock", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-16 outline-none" />
+                              ) : (
+                                <span className={`inline-block font-mono text-xs font-semibold px-2.5 py-1 rounded-md ${stockBadgeClass}`}>
+                                  {med.stock}
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Low Alert */}
+                            <td className="px-4 py-3 font-mono text-xs">
+                              {isEditing ? (
+                                <input type="number" value={editFormData.lowStockAlert || activeThreshold} onChange={e => handleEditFormChange("lowStockAlert", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-14 outline-none" />
+                              ) : (
+                                <span className={isDarkMode ? 'text-amber-500/70' : 'text-amber-500'}>{medLowAlert}</span>
+                              )}
+                            </td>
+
+                            {/* Expiry */}
+                            <td className="px-4 py-3 font-mono text-xs">
+                              {isEditing ? (
+                                <input type="date" value={editFormData.expire} onChange={e => handleEditFormChange("expire", e.target.value)} className="p-0.5 rounded border text-sm bg-transparent outline-none" />
+                              ) : (
+                                <span className={expiredFlag ? 'text-red-500 font-semibold' : isDarkMode ? 'text-slate-600' : 'text-slate-400'}>{med.expire}</span>
+                              )}
+                            </td>
+
+                            {/* Rack */}
+                            {checkShouldRenderTabOption("rack_management") && (
+                              <td className="px-4 py-3">
+                                {isEditing ? (
+                                  <input type="text" value={editFormData.rack} onChange={e => handleEditFormChange("rack", e.target.value)} className="px-1 py-0.5 rounded border text-sm bg-transparent w-14 outline-none" />
+                                ) : (
+                                  <span className={`text-xs font-mono px-2 py-0.5 rounded border ${isDarkMode ? 'border-slate-700 text-slate-500 bg-slate-800' : 'border-slate-200 text-slate-500 bg-slate-50'}`}>{med.rack}</span>
+                                )}
+                              </td>
+                            )}
+
+                            {/* Actions */}
+                            <td className="px-4 py-3 text-center">
+                              {isEditing ? (
+                                <div className="flex gap-1.5 justify-center">
+                                  <button onClick={() => saveEditedMedicine(med.id)} className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                                    {t("Save", "সেভ")}
+                                  </button>
+                                  <button onClick={() => { closeEdit(); setEditingId(null); }} className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition ${isDarkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                    {t("Cancel", "বাতিল")}
+                                  </button>
                                 </div>
                               ) : (
                                 <div className="flex gap-1.5 justify-center">
-                                  <button onClick={() => startEditing(med)} className="text-indigo-500 hover:text-indigo-600 font-bold transition">✏️</button>
-                                  {currentUserRole === "ADMIN" && <button onClick={() => deleteMedicine(med.id)} className="text-red-400 hover:text-red-600 font-bold transition">🗑️</button>}
+                                  <button
+                                    onClick={() => startEditing(med)}
+                                    title={t("Edit", "সম্পাদনা")}
+                                    className={`w-7 h-7 flex items-center justify-center rounded-lg border transition ${isDarkMode ? 'border-slate-700 text-slate-500 hover:border-indigo-600 hover:text-indigo-400 hover:bg-indigo-950' : 'border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50'}`}
+                                  >
+                                    <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                  </button>
+                                  {currentUserRole === "ADMIN" && (
+                                    <button
+                                      onClick={() => deleteMedicine(med.id)}
+                                      title={t("Delete", "মুছুন")}
+                                      className={`w-7 h-7 flex items-center justify-center rounded-lg border transition ${isDarkMode ? 'border-slate-700 text-slate-500 hover:border-red-700 hover:text-red-400 hover:bg-red-950' : 'border-slate-200 text-slate-400 hover:border-red-200 hover:text-red-500 hover:bg-red-50'}`}
+                                    >
+                                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </td>
                           </tr>
                         );
                       })}
-                      {filteredMedicines.length === 0 && <tr><td colSpan={12} className="text-center py-8 text-slate-400 italic">{t("No medicines found.", "কোনো ওষুধ পাওয়া যায়নি।")}</td></tr>}
+                      {filteredMedicines.length === 0 && (
+                        <tr>
+                          <td colSpan={12} className={`text-center py-14 text-sm ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                            <svg className="mx-auto mb-2 w-8 h-8 opacity-30" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                            {t("No medicines found.", "কোনো ওষুধ পাওয়া যায়নি।")}
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
+
+                {/* ── Pagination ── */}
                 {filteredMedicines.length > INV_PAGE_SIZE && (
-                  <div className="flex items-center justify-between p-3 border-t border-slate-700/10 text-sm font-bold">
-                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
-                      {t("Page", "পাতা")} {invPage} / {invTotalPages} — {filteredMedicines.length} {t("items", "টি আইটেম")}
-                    </span>
+                  <div className={`flex items-center justify-between px-4 py-3 border-t text-xs ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
+                    <span>{t("Page", "পাতা")} {invPage} / {invTotalPages} — {filteredMedicines.length} {t("items", "টি আইটেম")}</span>
                     <div className="flex gap-2">
-                      <button onClick={() => setInvPage(p => Math.max(1, p - 1))} disabled={invPage === 1} className="px-3 py-1 rounded-lg border disabled:opacity-40 hover:bg-slate-500/10 transition">← {t("Prev", "আগে")}</button>
-                      <button onClick={() => setInvPage(p => Math.min(invTotalPages, p + 1))} disabled={invPage === invTotalPages} className="px-3 py-1 rounded-lg border disabled:opacity-40 hover:bg-slate-500/10 transition">{t("Next", "পরে")} →</button>
+                      <button
+                        onClick={() => setInvPage(p => Math.max(1, p - 1))}
+                        disabled={invPage === 1}
+                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border font-medium disabled:opacity-30 transition ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        ← {t("Prev", "আগে")}
+                      </button>
+                      <button
+                        onClick={() => setInvPage(p => Math.min(invTotalPages, p + 1))}
+                        disabled={invPage === invTotalPages}
+                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border font-medium disabled:opacity-30 transition ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        {t("Next", "পরে")} →
+                      </button>
                     </div>
                   </div>
                 )}
+
               </div>
             </div>
           )}
@@ -8642,7 +8764,7 @@ export default function Home() {
                     )}
                     <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto">
                       {purchaseList.map(log => (
-                        <div key={log.id} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 110px' } as any} className={`p-2.5 rounded-xl border flex flex-col gap-1 text-sm ${isDarkMode ? 'bg-slate-900/60 border-slate-700/60' : 'bg-slate-50 border-slate-200'}`}>
+                        <div key={log.id} className={`p-2.5 rounded-xl border flex flex-col gap-1 text-sm ${isDarkMode ? 'bg-slate-900/60 border-slate-700/60' : 'bg-slate-50 border-slate-200'}`}>
                           <div className="flex items-center justify-between font-bold">
                             <span className="text-indigo-500 truncate max-w-[140px]">{log.medicineName}</span>
                             {currentUserRole === "ADMIN" && <span className="font-mono text-slate-400">{log.totalCost.toFixed(1)} {currencySymbol}</span>}
@@ -9252,7 +9374,7 @@ export default function Home() {
                   </thead>
                   <tbody className="divide-y divide-slate-700/10">
                     {pagedInvoices.map(inv => (
-                      <tr key={inv.invoiceId} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 52px' } as any} className="hover:bg-slate-500/5 transition-colors">
+                      <tr key={inv.invoiceId} className="hover:bg-slate-500/5 transition-colors">
                         <td className="p-2.5 font-mono font-black text-indigo-500">{inv.invoiceId}</td>
                         <td className="p-2.5 font-bold">
                           <div>{inv.customer}</div>
