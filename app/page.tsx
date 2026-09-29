@@ -8312,6 +8312,20 @@ export default function Home() {
                     bord: isDarkMode?'rgba(124,58,237,0.2)':'#ddd6fe',
                     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
                   },
+                  checkShouldRenderTabOption("daily_due_view") && {
+                    label:t("Today's Due","আজকের বাকি"),
+                    val:`${currencySymbol}${computedDailyDue.toLocaleString()}`,
+                    color:'#f97316', bg: isDarkMode?'rgba(249,115,22,0.08)':'#fff7ed',
+                    bord: isDarkMode?'rgba(249,115,22,0.2)':'#fed7aa',
+                    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  },
+                  checkShouldRenderTabOption("monthly_due_view") && {
+                    label:t("Monthly Due","মাসিক বাকি"),
+                    val:`${currencySymbol}${computedMonthlyDue>=100000?(computedMonthlyDue/1000).toFixed(1)+'k':computedMonthlyDue.toLocaleString()}`,
+                    color:'#ef4444', bg: isDarkMode?'rgba(239,68,68,0.08)':'#fef2f2',
+                    bord: isDarkMode?'rgba(239,68,68,0.2)':'#fecaca',
+                    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                  },
                   checkShouldRenderTabOption("daily_purchases_view") && {
                     label:t("Today Purchase","আজ ক্রয়"),
                     val:`${currencySymbol}${computedDailyPurchaseAmount.toLocaleString()}`,
@@ -8406,12 +8420,12 @@ export default function Home() {
                           return (
                             <g key={i}>
                               <rect x={x} y={y} width={BW} height={bh} rx={8} fill={isT?'url(#g1)':isP?'url(#g2)':(isDarkMode?'#334155':'#e2e8f0')}/>
-                              {(isT||isP)&&sale>0&&(
+                              {sale>0&&(
                                 bh>22
-                                  ? <text x={x+BW/2} y={y+bh-7} textAnchor="middle" fontSize="8" fontWeight="700" fill={isT?'#fff':'#92400e'} fontFamily="monospace">
+                                  ? <text x={x+BW/2} y={y+bh-7} textAnchor="middle" fontSize="8" fontWeight="700" fill={isT?'#fff':isP?'#92400e':(isDarkMode?'#e2e8f0':'#475569')} fontFamily="monospace">
                                       {currencySymbol}{sale>=1000?(sale/1000).toFixed(1)+'k':sale}
                                     </text>
-                                  : <text x={x+BW/2} y={y-4} textAnchor="middle" fontSize="8" fontWeight="700" fill={isT?'#3b82f6':'#d97706'} fontFamily="monospace">
+                                  : <text x={x+BW/2} y={y-4} textAnchor="middle" fontSize="8" fontWeight="700" fill={isT?'#3b82f6':isP?'#d97706':(isDarkMode?'#94a3b8':'#64748b')} fontFamily="monospace">
                                       {currencySymbol}{sale>=1000?(sale/1000).toFixed(1)+'k':sale}
                                     </text>
                               )}
