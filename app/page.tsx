@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback, useMemo, startTransition } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
+import { User as LgUser, Lock as LgLock, Eye as LgEye, EyeOff as LgEyeOff, ArrowRight as LgArrowRight, ArrowLeft as LgArrowLeft, ShieldCheck as LgShield, Users as LgUsers, AlertCircle as LgAlert, Send as LgSend, Check as LgCheck, Zap as LgZap, Package as LgPackage, Cloud as LgCloud, Pill as LgPill } from 'lucide-react';
 
 // ============================================================
 // MADINA MEDICINE CORNER - PROFESSIONAL PHARMACY POS SYSTEM
@@ -6769,185 +6770,423 @@ export default function Home() {
   // LOGIN SCREEN
   // ============================================================
   if (!isLoggedIn) {
-    return (
-      <div className={`min-h-screen flex items-center justify-center p-4 relative overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-gradient-to-br from-indigo-50 via-emerald-50 to-slate-100'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-bg'] } : {}}>
-        {/* Animated background CSS */}
-        <style>{CSS_FLOAT}</style>
+    const dk = isDarkMode;
+    const ct = isCustomTheme ? (activeThemeStyle as any) : null;
+    const labelCls = `block text-[11.5px] font-medium mb-1 ${dk ? 'text-slate-400' : 'text-slate-600'}`;
+    const inputCls = `lg-input w-full h-10 pl-9 pr-3 rounded-lg border text-[13.5px] outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 ${dk ? 'bg-slate-900 border-slate-800 text-slate-100 focus:bg-slate-900' : 'bg-slate-50 border-slate-200 text-slate-900 hover:border-slate-300 focus:bg-white'}`;
+    const iconCls = `absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none transition-colors duration-200 group-focus-within:text-indigo-500 ${dk ? 'text-slate-500' : 'text-slate-400'}`;
+    const primaryBtnCls = `lg-btn group/btn w-full h-10 rounded-lg text-[13px] font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed`;
+    const mutedCls = dk ? 'text-slate-400' : 'text-slate-500';
+    const stepIdx = forgotStep === "send" ? 0 : forgotStep === "verify" ? 1 : 2;
+    const brandGradient = 'linear-gradient(135deg,#4338ca 0%,#6d28d9 48%,#0891b2 100%)';
+    const logoNode = (size: string) => (
+      <div
+        onClick={handleLogoSecretTap}
+        className={`${size} rounded-2xl flex items-center justify-center overflow-hidden cursor-pointer select-none font-bold bg-white/15 backdrop-blur-md ring-1 ring-white/30 text-white transition-transform duration-200 ${logoTapCount > 0 ? 'scale-90' : ''}`}
+      >
+        {pharmacyLogo && pharmacyLogo.startsWith('data:image')
+          ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover pointer-events-none" />
+          : pharmacyLogo}
+      </div>
+    );
+    const features = [
+      { icon: <LgZap className="w-3.5 h-3.5" />, title: t("Fast billing", "দ্রুত বিলিং") },
+      { icon: <LgPackage className="w-3.5 h-3.5" />, title: t("Stock alerts", "স্টক অ্যালার্ট") },
+      { icon: <LgCloud className="w-3.5 h-3.5" />, title: t("Cloud sync", "ক্লাউড সিঙ্ক") },
+    ];
+    const bars = [38, 56, 44, 72, 52, 84, 64, 92, 76];
 
-        {/* Floating particles background */}
-        {[...Array(12)].map((_, i) => (
+    return (
+      <div
+        className={`lg-root min-h-screen grid lg:grid-cols-[1.1fr_1fr] font-sans antialiased ${dk ? 'bg-slate-950' : 'bg-white'}`}
+        style={ct ? { backgroundColor: ct['--theme-bg'] } : {}}
+      >
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+          .lg-root { --lg-ease: cubic-bezier(.22,1,.36,1); font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, 'Noto Sans Bengali', 'Hind Siliguri', sans-serif; }
+          @keyframes lg-grow { from { transform: scaleY(0) } to { transform: scaleY(1) } }
+          @keyframes lg-glow { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
+          .lg-bar { transform-origin: bottom; animation: lg-grow .9s var(--lg-ease) both }
+          .lg-glow { animation: lg-glow 3s ease-in-out infinite }
+          @keyframes lg-rise { from { opacity: 0; transform: translateY(18px) } to { opacity: 1; transform: none } }
+          @keyframes lg-fade { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+          @keyframes lg-shake { 0%,100% { transform: translateX(0) } 20% { transform: translateX(-7px) } 40% { transform: translateX(6px) } 60% { transform: translateX(-4px) } 80% { transform: translateX(3px) } }
+          @keyframes lg-spin { to { transform: rotate(360deg) } }
+          @keyframes lg-float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-10px) } }
+          @keyframes lg-orb { 0%,100% { transform: translate3d(0,0,0) scale(1) } 50% { transform: translate3d(30px,-24px,0) scale(1.08) } }
+          @keyframes lg-rotate { to { transform: rotate(360deg) } }
+          @keyframes lg-pill { 0%,100% { transform: rotate(-18deg) translateY(0) } 50% { transform: rotate(-8deg) translateY(-14px) } }
+          .lg-rise { animation: lg-rise .8s var(--lg-ease) both }
+          .lg-d1 { animation-delay: .08s } .lg-d2 { animation-delay: .16s } .lg-d3 { animation-delay: .24s } .lg-d4 { animation-delay: .32s }
+          .lg-fade { animation: lg-fade .35s var(--lg-ease) both }
+          .lg-shake { animation: lg-shake .45s ease both }
+          .lg-spin { animation: lg-spin .7s linear infinite }
+          .lg-float { animation: lg-float 6s ease-in-out infinite }
+          .lg-orb { animation: lg-orb 14s ease-in-out infinite }
+          .lg-ring { animation: lg-rotate 40s linear infinite }
+          .lg-bigpill { animation: lg-pill 9s ease-in-out infinite }
+          .lg-slide { transition: transform .38s var(--lg-ease) }
+          .lg-btn { position: relative; overflow: hidden; background: linear-gradient(135deg,#4f46e5,#7c3aed); box-shadow: 0 1px 0 rgba(255,255,255,.25) inset, 0 12px 28px -10px rgba(79,70,229,.7); transition: transform .2s var(--lg-ease), box-shadow .2s, filter .2s }
+          .lg-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 1px 0 rgba(255,255,255,.25) inset, 0 16px 34px -10px rgba(79,70,229,.8) }
+          .lg-btn:active:not(:disabled) { transform: translateY(0) scale(.985) }
+          .lg-btn::after { content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 40%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.35), transparent); transform: skewX(-20deg); transition: left .7s var(--lg-ease) }
+          .lg-btn:hover:not(:disabled)::after { left: 130% }
+          .lg-input:-webkit-autofill { -webkit-box-shadow: 0 0 0 40px ${dk ? '#0f172a' : '#ffffff'} inset; -webkit-text-fill-color: ${dk ? '#f1f5f9' : '#0f172a'}; }
+          @media (prefers-reduced-motion: reduce) { .lg-bar, .lg-glow, .lg-rise, .lg-fade, .lg-shake, .lg-float, .lg-orb, .lg-ring, .lg-bigpill { animation: none !important } .lg-slide, .lg-btn, .lg-btn::after { transition: none } }
+        `}</style>
+
+        {/* ───────── LEFT — brand panel (desktop) ───────── */}
+        <aside className="relative hidden lg:flex flex-col justify-between p-12 xl:p-16 overflow-hidden text-white" style={{ background: brandGradient }}>
+          <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(60% 50% at 12% 8%, rgba(255,255,255,.25), transparent 60%), radial-gradient(55% 50% at 95% 92%, rgba(52,211,153,.4), transparent 60%)' }} />
           <div
-            key={i}
-            className="absolute rounded-full pointer-events-none"
+            className="absolute inset-0 pointer-events-none opacity-[.14]"
             style={{
-              width: `${8 + (i % 4) * 6}px`,
-              height: `${8 + (i % 4) * 6}px`,
-              left: `${(i * 8.3) % 100}%`,
-              bottom: '-20px',
-              background: isDarkMode
-                ? `rgba(20,184,166,${0.05 + (i % 3) * 0.03})`
-                : `rgba(20,184,166,${0.1 + (i % 3) * 0.06})`,
-              animation: `float-up ${6 + (i % 5) * 2}s linear ${i * 0.8}s infinite`,
+              backgroundImage: 'linear-gradient(rgba(255,255,255,.7) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.7) 1px, transparent 1px)',
+              backgroundSize: '48px 48px',
+              maskImage: 'radial-gradient(ellipse at 40% 45%, black 10%, transparent 72%)',
+              WebkitMaskImage: 'radial-gradient(ellipse at 40% 45%, black 10%, transparent 72%)',
             }}
           />
-        ))}
+          <div className="lg-orb absolute -top-24 -right-16 w-80 h-80 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+          <div className="lg-orb absolute bottom-10 -left-20 w-72 h-72 rounded-full bg-cyan-300/20 blur-3xl pointer-events-none" style={{ animationDelay: '-7s' }} />
+          <div className="lg-ring absolute -right-40 top-1/3 w-[520px] h-[520px] rounded-full border border-white/15 pointer-events-none">
+            <div className="absolute -top-1.5 left-1/2 w-3 h-3 rounded-full bg-white/70" />
+          </div>
+          <div className="absolute -right-60 top-[22%] w-[760px] h-[760px] rounded-full border border-white/10 pointer-events-none" />
+          <LgPill className="lg-bigpill absolute right-14 top-24 w-28 h-28 text-white/25 pointer-events-none" strokeWidth={1.2} />
 
-        <div className="animate-login-slide w-full max-w-sm">
-          {/* Live Clock above card */}
-          <div className="text-center mb-4">
-            <div className={`inline-flex flex-col items-center px-5 py-2.5 rounded-2xl border backdrop-blur-sm ${isDarkMode ? 'bg-slate-800/60 border-slate-700/50' : 'bg-white/70 border-slate-200/80'}`}>
-              <span className="animate-clock font-mono font-black text-2xl text-indigo-500 tracking-widest"><LiveTimeText /></span>
-              <span className={`text-sm font-semibold tracking-wide ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}><LiveDateText /> · <LiveDayText language={language} /></span>
+          <div className="lg-rise relative flex items-center gap-3">
+            {logoNode("w-11 h-11 text-base")}
+            <span className="text-[15px] font-semibold tracking-tight">{pharmacyName}</span>
+          </div>
+
+          <div className="relative">
+            <h2 className="lg-rise lg-d1 text-[40px] xl:text-[48px] font-semibold tracking-tight leading-[1.08]">
+              {t("Run your pharmacy,", "আপনার ফার্মেসি,")}<br />
+              <span className="text-white/70">{t("beautifully simple.", "আরও সহজ ও স্মার্ট।")}</span>
+            </h2>
+            <p className="lg-rise lg-d2 mt-3 text-[14px] text-white/75 max-w-sm leading-relaxed">{pharmacySlogan}</p>
+
+            {/* Floating dashboard preview */}
+            <div className="lg-rise lg-d3 mt-9 max-w-[340px]">
+              <div className="lg-float rounded-2xl bg-white/12 backdrop-blur-xl border border-white/25 p-4 shadow-[0_24px_60px_-20px_rgba(15,23,42,0.55)]" style={{ background: 'rgba(255,255,255,0.12)' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center"><LgPill className="w-3.5 h-3.5" /></div>
+                    <div className="leading-tight">
+                      <div className="text-[12px] font-semibold">{t("Sales overview", "বিক্রয় এক নজরে")}</div>
+                      <div className="text-[10.5px] text-white/60">{t("This week", "এই সপ্তাহ")}</div>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 text-[10.5px] font-medium rounded-full bg-emerald-400/20 text-emerald-100 border border-emerald-300/30 px-2 py-0.5">
+                    <span className="relative flex w-1.5 h-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75" /><span className="relative inline-flex rounded-full w-1.5 h-1.5 bg-emerald-300" /></span>
+                    {t("Live", "লাইভ")}
+                  </span>
+                </div>
+                <div className="flex items-end gap-1.5 h-20">
+                  {bars.map((h, i) => (
+                    <div
+                      key={i}
+                      className={`lg-bar flex-1 rounded-md ${i === 7 ? 'lg-glow' : ''}`}
+                      style={{
+                        height: `${h}%`,
+                        animationDelay: `${0.5 + i * 0.07}s`,
+                        background: i === 7 ? 'linear-gradient(180deg,#a7f3d0,#34d399)' : 'linear-gradient(180deg,rgba(255,255,255,.75),rgba(255,255,255,.25))',
+                      }}
+                    />
+                  ))}
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <div className="h-1.5 w-16 rounded-full bg-white/30" />
+                  <div className="h-1.5 w-10 rounded-full bg-white/15" />
+                </div>
+              </div>
+            </div>
+
+            <div className="lg-rise lg-d4 mt-5 flex flex-wrap gap-2 max-w-[360px]">
+              {features.map((f, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 px-3 py-1.5 text-[12px] font-medium">
+                  {f.icon}{f.title}
+                </span>
+              ))}
             </div>
           </div>
 
-          <div className={`rounded-2xl shadow-sm border p-6 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white/95 border-slate-200'}`} style={isCustomTheme ? { backgroundColor: (activeThemeStyle as any)['--theme-card'], borderColor: (activeThemeStyle as any)['--theme-border'], color: (activeThemeStyle as any)['--theme-text'] } : {}}>
+          <p className="lg-rise lg-d4 relative text-[12px] text-white/60">{pharmacyAddress}</p>
+        </aside>
 
-            {/* Logo — tap 5x quickly to secretly reveal Creator login */}
-            <div className="text-center mb-6">
-              <div
-                onClick={handleLogoSecretTap}
-                className={`animate-logo-pulse w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-500 to-emerald-400 flex items-center justify-center text-white shadow-sm font-black text-xl mx-auto mb-3 overflow-hidden cursor-pointer select-none transition-transform ${logoTapCount > 0 ? 'scale-95' : ''}`}
-              >
-                {pharmacyLogo && pharmacyLogo.startsWith('data:image') ? <img src={pharmacyLogo} alt="logo" className="w-full h-full object-cover pointer-events-none" /> : pharmacyLogo}
+        {/* ───────── RIGHT — form ───────── */}
+        <main className="relative flex flex-col min-h-screen overflow-hidden">
+          {/* Mobile brand banner */}
+          <div className="lg:hidden relative overflow-hidden px-6 pt-10 pb-16 text-white" style={{ background: brandGradient }}>
+            <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(60% 80% at 10% 0%, rgba(255,255,255,.25), transparent 60%), radial-gradient(50% 70% at 100% 100%, rgba(52,211,153,.4), transparent 60%)' }} />
+            <LgPill className="lg-bigpill absolute right-4 top-4 w-24 h-24 text-white/20 pointer-events-none" strokeWidth={1.2} />
+            <div className="relative flex items-center gap-3">
+              {logoNode("w-12 h-12 text-lg")}
+              <div className="leading-tight">
+                <div className="text-[16px] font-semibold tracking-tight">{pharmacyName}</div>
+                <div className="text-[12px] text-white/75">{pharmacySlogan}</div>
               </div>
-              <h1 className="font-black text-lg text-indigo-600">{pharmacyName}</h1>
-              <p className={`text-sm font-semibold mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{pharmacySlogan}</p>
             </div>
+          </div>
 
-          {!showForgotPass ? (
-            <>
-              {/* Login Type Toggle */}
-              <div className={`flex p-1 rounded-xl mb-4 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
-                <button onClick={() => setLoginRole("admin")} className={`flex-1 py-2 rounded-xl text-sm font-black transition-all btn-press ${loginRole === "admin" ? 'bg-indigo-500 text-white shadow' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                  👑 {t("Admin", "অ্যাডমিন")}
-                </button>
-                <button onClick={() => setLoginRole("staff")} className={`flex-1 py-2 rounded-xl text-sm font-black transition-all btn-press ${loginRole === "staff" ? 'bg-indigo-500 text-white shadow' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                  👥 {t("Staff", "স্টাফ")}
-                </button>
+          <div
+            className={`relative flex-1 flex flex-col justify-center px-6 sm:px-12 py-10 -mt-6 lg:mt-0 rounded-t-3xl lg:rounded-none ${dk ? 'bg-slate-950' : 'bg-white'}`}
+            style={ct ? { backgroundColor: ct['--theme-card'], color: ct['--theme-text'] } : {}}
+          >
+            {!dk && <div className="absolute top-0 right-0 w-72 h-72 rounded-full bg-indigo-100/60 blur-3xl pointer-events-none" />}
+
+            <div className="relative w-full max-w-[330px] mx-auto">
+              <div className="lg-rise mb-6">
+                <h1 className={`text-[24px] font-semibold tracking-tight leading-tight ${dk ? 'text-white' : 'text-slate-900'}`}>
+                  {showForgotPass ? t("Reset password", "পাসওয়ার্ড রিসেট") : t("Welcome back", "স্বাগতম")}
+                </h1>
+                <p className={`text-[13px] mt-1 ${mutedCls}`}>
+                  {showForgotPass ? t("Verify it's you to set a new login", "নতুন লগইন দিতে পরিচয় যাচাই করুন") : t("Sign in to continue to your dashboard", "ড্যাশবোর্ডে যেতে সাইন ইন করুন")}
+                </p>
               </div>
 
-              <div className={`flex flex-col gap-3 ${loginShake ? 'animate-shake' : ''}`}>
-                <div>
-                  <label className={`block text-sm font-bold uppercase mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Username", "ইউজারনেম")}</label>
-                  <input
-                    type="text"
-                    value={loginUsername}
-                    onChange={e => setLoginUsername(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && handleLogin()}
-                    placeholder={t("Enter username...", "ইউজারনেম লিখুন...")}
-                    className={`w-full px-3 py-2 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+              <div className="lg-rise lg-d1">
+            {!showForgotPass ? (
+              <div key="signin" className="lg-fade">
+
+                {/* Role switch — sliding pill */}
+                <div className={`relative grid grid-cols-2 p-[3px] rounded-lg mb-4 ${dk ? 'bg-slate-950/70 ring-1 ring-slate-800' : 'bg-slate-100'}`}>
+                  <div
+                    className={`lg-slide absolute top-[3px] bottom-[3px] left-[3px] rounded-md ${dk ? 'bg-slate-700' : 'bg-white shadow-[0_1px_3px_rgba(15,23,42,0.12)]'}`}
+                    style={{ width: 'calc(50% - 3px)', transform: loginRole === "admin" ? 'translateX(0)' : 'translateX(100%)' }}
                   />
-                </div>
-                <div>
-                  <label className={`block text-sm font-bold uppercase mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Password", "পাসওয়ার্ড")}</label>
-                  <div className="relative">
-                    <input
-                      type={showLoginPass ? "text" : "password"}
-                      value={loginPassword}
-                      onChange={e => setLoginPassword(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && handleLogin()}
-                      placeholder={t("Enter password...", "পাসওয়ার্ড লিখুন...")}
-                      className={`w-full px-3 py-2 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all pr-10 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
-                    />
-                    <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">{showLoginPass ? "🙈" : "👁️"}</button>
-                  </div>
-                </div>
-
-                {loginError && <p className="text-red-500 text-sm font-bold text-center">{loginError}</p>}
-
-                <button onClick={handleLogin} disabled={loginLoading} className="w-full bg-gradient-to-r from-indigo-500 to-emerald-500 text-white font-black py-2.5 rounded-xl text-sm hover:from-indigo-600 hover:to-emerald-600 transition-all shadow-sm mt-1 btn-press disabled:opacity-60 relative overflow-hidden">
-                  {loginLoading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" style={{animation:'spin-slow 0.8s linear infinite'}}></span>
-                      {t("Verifying...", "যাচাই হচ্ছে...")}
-                    </span>
-                  ) : <>🔐 {t("Login", "লগইন")}</>}
-                </button>
-
-                <button onClick={() => { setShowForgotPass(true); setForgotStep("send"); setForgotError(""); setForgotCodeInput(""); setForgotNewUsername(""); setForgotNewPass(""); }} className="text-indigo-500 text-sm font-bold hover:underline text-center">
-                  {t("Forgot Password?", "পাসওয়ার্ড ভুলে গেছেন?")}
-                </button>
-              </div>
-
-              {/* Language Toggle on login */}
-              <div className="flex justify-center mt-4 gap-2">
-                <button onClick={() => handleLanguageChange("en")} className={`px-3 py-1 rounded-xl text-sm font-bold transition btn-press ${language === "en" ? 'bg-indigo-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>EN</button>
-                <button onClick={() => handleLanguageChange("bn")} className={`px-3 py-1 rounded-xl text-sm font-bold transition btn-press ${language === "bn" ? 'bg-indigo-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>বাং</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <h3 className="text-sm font-black text-center text-indigo-500 mb-4">{t("Reset Password", "পাসওয়ার্ড রিসেট")}</h3>
-
-              {forgotStep === "send" && (
-                <div className="flex flex-col gap-3">
-                  <p className={`text-sm text-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t(
-                    "We'll send a one-time code to your Telegram to verify it's really you.",
-                    "আপনার পরিচয় যাচাইয়ের জন্য টেলিগ্রামে একটি ওয়ান-টাইম কোড পাঠানো হবে।"
-                  )}</p>
-                  {forgotError && <p className="text-red-500 text-sm font-bold text-center">{forgotError}</p>}
-                  <button onClick={handleSendResetCode} disabled={forgotSending} className="w-full bg-indigo-500 text-white font-black py-2.5 rounded-xl text-sm hover:bg-indigo-600 transition btn-press disabled:opacity-60">
-                    {forgotSending ? t("Sending...", "পাঠানো হচ্ছে...") : <>📩 {t("Send Code to Telegram", "টেলিগ্রামে কোড পাঠান")}</>}
+                  <button
+                    type="button"
+                    onClick={() => setLoginRole("admin")}
+                    className={`relative z-10 h-8 rounded-md text-[12px] font-medium flex items-center justify-center gap-1.5 transition-colors duration-300 ${loginRole === "admin" ? (dk ? 'text-white' : 'text-slate-900') : (dk ? 'text-slate-500 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700')}`}
+                  >
+                    <LgShield className="w-3 h-3" /> {t("Admin", "অ্যাডমিন")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLoginRole("staff")}
+                    className={`relative z-10 h-8 rounded-md text-[12px] font-medium flex items-center justify-center gap-1.5 transition-colors duration-300 ${loginRole === "staff" ? (dk ? 'text-white' : 'text-slate-900') : (dk ? 'text-slate-500 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700')}`}
+                  >
+                    <LgUsers className="w-3 h-3" /> {t("Staff", "স্টাফ")}
                   </button>
                 </div>
-              )}
 
-              {forgotStep === "verify" && (
-                <div className="flex flex-col gap-3">
-                  <p className={`text-sm text-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("Enter the 6-digit code sent to your Telegram:", "আপনার টেলিগ্রামে পাঠানো ৬-সংখ্যার কোডটি লিখুন:")}</p>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={forgotCodeInput}
-                    onChange={e => setForgotCodeInput(e.target.value.replace(/\D/g, ""))}
-                    onKeyDown={e => e.key === "Enter" && handleVerifyResetCode()}
-                    placeholder={t("6-digit code...", "৬-সংখ্যার কোড...")}
-                    className={`w-full px-3 py-2 rounded-xl border text-sm text-center tracking-[0.5em] font-mono outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
-                  />
-                  {forgotError && <p className="text-red-500 text-sm font-bold text-center">{forgotError}</p>}
-                  <button onClick={handleVerifyResetCode} className="w-full bg-indigo-500 text-white font-black py-2.5 rounded-xl text-sm hover:bg-indigo-600 transition btn-press">{t("Verify Code", "কোড যাচাই করুন")}</button>
-                  <button onClick={handleSendResetCode} disabled={forgotSending} className="text-indigo-500 text-sm font-bold hover:underline text-center disabled:opacity-60">
-                    {forgotSending ? t("Sending...", "পাঠানো হচ্ছে...") : t("Didn't get it? Resend code", "পাননি? আবার পাঠান")}
-                  </button>
-                </div>
-              )}
-
-              {forgotStep === "newpass" && (
-                <div className="flex flex-col gap-3">
-                  <p className="text-sm text-center text-emerald-500 font-bold">{t("✅ Identity Verified! Set your new login:", "✅ পরিচয় যাচাই হয়েছে! নতুন লগইন দিন:")}</p>
+                <div className={`flex flex-col gap-3 ${loginShake ? 'lg-shake' : ''}`}>
                   <div>
-                    <label className={`block text-sm font-bold uppercase mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("New Username", "নতুন ইউজারনেম")}</label>
+                    <label className={labelCls}>{t("Username", "ইউজারনেম")}</label>
+                    <div className="relative group">
+                      <LgUser className={iconCls} />
+                      <input
+                        type="text"
+                        name="username"
+                        autoComplete="username"
+                        value={loginUsername}
+                        onChange={e => setLoginUsername(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && handleLogin()}
+                        placeholder={t("Enter username", "ইউজারনেম লিখুন")}
+                        className={inputCls}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className={labelCls}>{t("Password", "পাসওয়ার্ড")}</label>
+                      <button
+                        type="button"
+                        onClick={() => { setShowForgotPass(true); setForgotStep("send"); setForgotError(""); setForgotCodeInput(""); setForgotNewUsername(""); setForgotNewPass(""); }}
+                        className="text-[11.5px] font-medium text-indigo-500 hover:text-indigo-600 -mt-1 transition-colors"
+                      >
+                        {t("Forgot?", "ভুলে গেছেন?")}
+                      </button>
+                    </div>
+                    <div className="relative group">
+                      <LgLock className={iconCls} />
+                      <input
+                        type={showLoginPass ? "text" : "password"}
+                        name="password"
+                        autoComplete="current-password"
+                        value={loginPassword}
+                        onChange={e => setLoginPassword(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && handleLogin()}
+                        placeholder={t("Enter password", "পাসওয়ার্ড লিখুন")}
+                        className={`${inputCls} !pr-9`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLoginPass(!showLoginPass)}
+                        aria-label={showLoginPass ? "Hide password" : "Show password"}
+                        className={`absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 rounded-md flex items-center justify-center transition-colors ${dk ? 'text-slate-500 hover:text-slate-300 hover:bg-slate-800' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                      >
+                        {showLoginPass ? <LgEyeOff className="w-3.5 h-3.5" /> : <LgEye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {loginError && (
+                    <div key={loginError + String(loginShake)} className={`lg-fade flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${dk ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-red-50 border-red-100 text-red-600'}`}>
+                      <LgAlert className="w-4 h-4 shrink-0" />
+                      <span>{loginError}</span>
+                    </div>
+                  )}
+
+                  <button type="button" onClick={handleLogin} disabled={loginLoading} className={primaryBtnCls}>
+                    {loginLoading ? (
+                      <>
+                        <span className={`lg-spin w-4 h-4 rounded-full border-2 ${dk ? 'border-slate-900/25 border-t-slate-900' : 'border-white/30 border-t-white'}`} />
+                        {t("Verifying...", "যাচাই হচ্ছে...")}
+                      </>
+                    ) : (
+                      <>
+                        {t("Sign in", "লগইন")}
+                        <LgArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover/btn:translate-x-0.5" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div key="reset" className="lg-fade">
+                <div className="flex items-center gap-2 mb-5">
+                  <button
+                    type="button"
+                    onClick={() => { setShowForgotPass(false); setForgotStep("send"); setForgotCodeInput(""); setForgotNewUsername(""); setForgotNewPass(""); setForgotError(""); }}
+                    aria-label={t("Back to Login", "লগইনে ফিরুন")}
+                    className={`w-8 h-8 -ml-1 rounded-lg flex items-center justify-center transition-colors ${dk ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                  >
+                    <LgArrowLeft className="w-4 h-4" />
+                  </button>
+                  <h3 className={`text-[15px] font-semibold ${dk ? 'text-white' : 'text-slate-900'}`}>{t("Reset password", "পাসওয়ার্ড রিসেট")}</h3>
+                </div>
+
+                {/* Step indicator */}
+                <div className="flex gap-1.5 mb-5">
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className={`h-1 flex-1 rounded-full transition-colors duration-500 ${i <= stepIdx ? 'bg-indigo-500' : (dk ? 'bg-slate-800' : 'bg-slate-200')}`} />
+                  ))}
+                </div>
+
+                {forgotStep === "send" && (
+                  <div key="s-send" className="lg-fade flex flex-col gap-3">
+                    <p className={`text-[13px] leading-relaxed ${mutedCls}`}>{t(
+                      "We'll send a one-time code to your Telegram to verify it's really you.",
+                      "আপনার পরিচয় যাচাইয়ের জন্য টেলিগ্রামে একটি ওয়ান-টাইম কোড পাঠানো হবে।"
+                    )}</p>
+                    {forgotError && (
+                      <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${dk ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-red-50 border-red-100 text-red-600'}`}>
+                        <LgAlert className="w-4 h-4 shrink-0" /><span>{forgotError}</span>
+                      </div>
+                    )}
+                    <button type="button" onClick={handleSendResetCode} disabled={forgotSending} className={primaryBtnCls}>
+                      {forgotSending ? (
+                        <>
+                          <span className={`lg-spin w-4 h-4 rounded-full border-2 ${dk ? 'border-slate-900/25 border-t-slate-900' : 'border-white/30 border-t-white'}`} />
+                          {t("Sending...", "পাঠানো হচ্ছে...")}
+                        </>
+                      ) : (
+                        <><LgSend className="w-4 h-4" /> {t("Send code to Telegram", "টেলিগ্রামে কোড পাঠান")}</>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {forgotStep === "verify" && (
+                  <div key="s-verify" className="lg-fade flex flex-col gap-3">
+                    <p className={`text-[13px] leading-relaxed ${mutedCls}`}>{t("Enter the 6-digit code sent to your Telegram.", "আপনার টেলিগ্রামে পাঠানো ৬-সংখ্যার কোডটি লিখুন।")}</p>
                     <input
                       type="text"
-                      value={forgotNewUsername}
-                      onChange={e => setForgotNewUsername(e.target.value)}
-                      placeholder={t("New Username...", "নতুন ইউজারনেম...")}
-                      className={`w-full px-3 py-2 rounded-xl border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={forgotCodeInput}
+                      onChange={e => setForgotCodeInput(e.target.value.replace(/\D/g, ""))}
+                      onKeyDown={e => e.key === "Enter" && handleVerifyResetCode()}
+                      placeholder="••••••"
+                      className={`w-full h-11 rounded-lg border text-center text-lg tracking-[0.6em] font-mono outline-none transition-all duration-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 ${dk ? 'bg-slate-950/60 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
                     />
+                    {forgotError && (
+                      <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${dk ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-red-50 border-red-100 text-red-600'}`}>
+                        <LgAlert className="w-4 h-4 shrink-0" /><span>{forgotError}</span>
+                      </div>
+                    )}
+                    <button type="button" onClick={handleVerifyResetCode} className={primaryBtnCls}>
+                      {t("Verify code", "কোড যাচাই করুন")}
+                      <LgArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover/btn:translate-x-0.5" />
+                    </button>
+                    <button type="button" onClick={handleSendResetCode} disabled={forgotSending} className="text-[13px] font-medium text-indigo-500 hover:text-indigo-600 text-center transition-colors disabled:opacity-60">
+                      {forgotSending ? t("Sending...", "পাঠানো হচ্ছে...") : t("Didn't get it? Resend code", "পাননি? আবার পাঠান")}
+                    </button>
                   </div>
-                  <div>
-                    <label className={`block text-sm font-bold uppercase mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t("New Password", "নতুন পাসওয়ার্ড")}</label>
-                    <input
-                      type="password"
-                      value={forgotNewPass}
-                      onChange={e => setForgotNewPass(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && handleResetCredentials()}
-                      placeholder={t("New Password...", "নতুন পাসওয়ার্ড...")}
-                      className={`w-full px-3 py-2 rounded-xl border text-sm outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
-                    />
-                  </div>
-                  {forgotError && <p className="text-red-500 text-sm font-bold text-center">{forgotError}</p>}
-                  <button onClick={handleResetCredentials} className="w-full bg-emerald-500 text-white font-black py-2.5 rounded-xl text-sm hover:bg-emerald-600 transition btn-press">{t("Save New Login", "নতুন লগইন সংরক্ষণ")}</button>
-                </div>
-              )}
+                )}
 
-              <button onClick={() => { setShowForgotPass(false); setForgotStep("send"); setForgotCodeInput(""); setForgotNewUsername(""); setForgotNewPass(""); setForgotError(""); }} className="w-full text-slate-400 text-sm font-bold mt-3 hover:underline">← {t("Back to Login", "লগইনে ফিরুন")}</button>
-            </>
-          )}
+                {forgotStep === "newpass" && (
+                  <div key="s-new" className="lg-fade flex flex-col gap-3">
+                    <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${dk ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-emerald-50 border-emerald-100 text-emerald-700'}`}>
+                      <LgCheck className="w-4 h-4 shrink-0" />
+                      <span>{t("Identity verified. Set your new login.", "পরিচয় যাচাই হয়েছে। নতুন লগইন দিন।")}</span>
+                    </div>
+                    <div>
+                      <label className={labelCls}>{t("New Username", "নতুন ইউজারনেম")}</label>
+                      <div className="relative group">
+                        <LgUser className={iconCls} />
+                        <input
+                          type="text"
+                          value={forgotNewUsername}
+                          onChange={e => setForgotNewUsername(e.target.value)}
+                          placeholder={t("New username", "নতুন ইউজারনেম")}
+                          className={inputCls}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>{t("New Password", "নতুন পাসওয়ার্ড")}</label>
+                      <div className="relative group">
+                        <LgLock className={iconCls} />
+                        <input
+                          type="password"
+                          autoComplete="new-password"
+                          value={forgotNewPass}
+                          onChange={e => setForgotNewPass(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && handleResetCredentials()}
+                          placeholder={t("New password", "নতুন পাসওয়ার্ড")}
+                          className={inputCls}
+                        />
+                      </div>
+                    </div>
+                    {forgotError && (
+                      <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${dk ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-red-50 border-red-100 text-red-600'}`}>
+                        <LgAlert className="w-4 h-4 shrink-0" /><span>{forgotError}</span>
+                      </div>
+                    )}
+                    <button type="button" onClick={handleResetCredentials} className={primaryBtnCls}>
+                      {t("Save new login", "নতুন লগইন সংরক্ষণ")}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+              </div>
+
+              {/* Footer — clock + language switch */}
+              <div className="lg-rise lg-d3 mt-8 pt-4 flex items-center justify-between border-t border-dashed" style={{ borderColor: dk ? '#1e293b' : '#e2e8f0' }}>
+                <div className={`text-[12px] leading-tight ${mutedCls}`}>
+                  <div className={`font-mono font-medium text-[13px] tabular-nums ${dk ? 'text-slate-300' : 'text-slate-700'}`}><LiveTimeText /></div>
+                  <div><LiveDateText /> · <LiveDayText language={language} /></div>
+                </div>
+
+                <div className={`relative grid grid-cols-2 p-0.5 rounded-lg ${dk ? 'bg-slate-900 ring-1 ring-slate-800' : 'bg-slate-100'}`}>
+                  <div
+                    className={`lg-slide absolute top-0.5 bottom-0.5 left-0.5 rounded-md ${dk ? 'bg-slate-700' : 'bg-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]'}`}
+                    style={{ width: 'calc(50% - 2px)', transform: language === "en" ? 'translateX(0)' : 'translateX(100%)' }}
+                  />
+                  <button type="button" onClick={() => handleLanguageChange("en")} className={`relative z-10 w-10 h-6 rounded-md text-[11px] font-medium transition-colors duration-300 ${language === "en" ? (dk ? 'text-white' : 'text-slate-900') : 'text-slate-500'}`}>EN</button>
+                  <button type="button" onClick={() => handleLanguageChange("bn")} className={`relative z-10 w-10 h-6 rounded-md text-[11px] font-medium transition-colors duration-300 ${language === "bn" ? (dk ? 'text-white' : 'text-slate-900') : 'text-slate-500'}`}>বাং</button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        </main>
       </div>
     );
   }
