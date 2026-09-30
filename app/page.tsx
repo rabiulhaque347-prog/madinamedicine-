@@ -145,32 +145,169 @@ const fetchWithTimeout = (url: string, options: RequestInit = {}, timeoutMs = 10
     .finally(() => clearTimeout(timer));
 };
 
-// Write a single key directly to Firebase. Firebase is the ONLY place
-// business data lives now — there is no local cache to fall back to,
-// so if this fails the caller's UI should surface that the save did
-// not go through (see saveQueue / useCloudSaveStatus below).
-const fbSet = async (key: string, value: string): Promise<boolean> => {
-  if (!isFirebaseConfigured()) return false;
+// ============================================================
+// REVISION-VALIDATED SYNC LAYER  (bandwidth fix)
+// ------------------------------------------------------------
+// WHY: every business key is one big JSON string (all invoices, all
+// ledgers, ...). The old code (1) streamed the WHOLE /madina_data root
+// over SSE, so every device re-downloaded the full database on every
+// connect/reconnect and every changed key in full on every sale, and
+// (2) re-downloaded those big keys again before each write.
+//
+// HOW: every write also bumps a tiny revision stamp at /_rev/<key> in
+// the SAME atomic PATCH. Readers compare that ~30-byte stamp with the
+// copy they already hold and only download the big value when it really
+// changed. The live listener now streams ONLY /_rev (a few hundred
+// bytes), and heavy keys are fetched lazily (see fbListenAll).
+// Data format in Firebase is unchanged -> backups/restore still work.
+// ============================================================
+const REV_KEY = '_rev';
+// Never cached / never live-synced: tiny, security-sensitive or transient.
+const NO_CACHE_KEYS = new Set<string>(['madina_v7_pending_tx', 'madina_v7_reset_otp']);
+// Safety net: even if some writer ever forgot to bump a rev, a cached
+// copy is never trusted for longer than this.
+const CACHE_MAX_AGE_MS = 10 * 60 * 1000;
+
+// If Firebase rules reject writes under /_rev, we transparently fall back to
+// the old behaviour (no cache, root stream) so saving a sale can NEVER break.
+let revSupported = true;
+
+const newRev = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+// key -> last raw string we hold + the revision it corresponds to
+const rawCache = new Map<string, { rev: string; value: string; at: number }>();
+// key -> revision we have already applied/seen (used to skip our own echoes)
+const knownRev: Record<string, string> = {};
+// key -> revision WE just wrote (registered before the request is sent,
+// because the SSE echo can beat the HTTP response)
+const ownRevs: Record<string, string> = {};
+
+const revUrl = (key?: string) =>
+  `${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}/${REV_KEY}${key ? `/${key}` : ''}.json`;
+
+// Tiny read: just the revision stamp of one key (~30 bytes).
+const fetchRev = async (key: string): Promise<string | null> => {
   try {
-    const res = await fetchWithTimeout(fbUrl(key), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(value),
-    });
-    return res.ok;
-  } catch {
-    return false;
+    const res = await fetchWithTimeout(revUrl(key), {}, 6000);
+    if (!res.ok) return null;
+    const v = await res.json();
+    return typeof v === 'string' ? v : null;
+  } catch { return null; }
+};
+
+// Forget everything we cached (used after a bulk restore).
+const fbInvalidateAll = () => {
+  rawCache.clear();
+  for (const k of Object.keys(knownRev)) delete knownRev[k];
+  for (const k of Object.keys(ownRevs)) delete ownRevs[k];
+};
+
+// Add a fresh revision stamp for every key in a root-level PATCH body.
+const fbAttachRevs = (body: Record<string, any>, keys: string[]) => {
+  if (!revSupported) return;
+  for (const key of keys) {
+    if (NO_CACHE_KEYS.has(key)) continue;
+    const r = newRev();
+    body[`/${REV_KEY}/${key}`] = r;
+    ownRevs[key] = r;
   }
 };
 
-// Read a single key from Firebase
+// ONE atomic multi-path PATCH: data + revision stamps land together or
+// not at all. Single-key writes use this too (value null = delete).
+const multiPathWrite = async (
+  updates: Record<string, string | null>,
+  timeoutMs: number
+): Promise<'ok' | 'failed' | 'unknown'> => {
+  if (!isFirebaseConfigured()) return 'failed';
+  const keys = Object.keys(updates);
+  if (keys.length === 0) return 'ok';
+  const body: Record<string, string | null> = {};
+  for (const key of keys) body[`/${key}`] = updates[key];
+  fbAttachRevs(body, keys);
+  const revs: Record<string, string> = {};
+  for (const key of keys) {
+    const r = body[`/${REV_KEY}/${key}`];
+    if (typeof r === 'string') revs[key] = r;
+  }
+  const forget = () => {
+    for (const key of Object.keys(revs)) {
+      if (ownRevs[key] === revs[key]) delete ownRevs[key];
+    }
+  };
+  try {
+    const res = await fetchWithTimeout(`${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}.json`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }, timeoutMs);
+    if (!res.ok) {
+      forget();
+      if ((res.status === 401 || res.status === 403) && revSupported && Object.keys(revs).length > 0) {
+        // Rules may not allow /_rev. Retry the SAME write without stamps.
+        const plain: Record<string, string | null> = {};
+        for (const key of keys) plain[`/${key}`] = updates[key];
+        const res2 = await fetchWithTimeout(`${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}.json`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(plain),
+        }, timeoutMs);
+        if (res2.ok) {
+          revSupported = false;
+          fbInvalidateAll();
+          console.warn('[sync] Firebase rules reject /_rev -> running in compatibility mode (no bandwidth savings). Allow writes to /madina_data/_rev in your rules.');
+          return 'ok';
+        }
+      }
+      return 'failed';
+    }
+    const now = Date.now();
+    for (const key of Object.keys(revs)) {
+      const v = updates[key];
+      if (typeof v === 'string') rawCache.set(key, { rev: revs[key], value: v, at: now });
+      else rawCache.delete(key);
+      knownRev[key] = revs[key];
+    }
+    return 'ok';
+  } catch (err: any) {
+    // Unknown whether the server applied it: drop our cached copies so the
+    // next read (or the SSE echo) fetches the truth.
+    forget();
+    for (const key of Object.keys(revs)) rawCache.delete(key);
+    if (err?.name === 'AbortError') return 'unknown';
+    return 'failed';
+  }
+};
+
+// Write a single key directly to Firebase. Firebase is the ONLY place
+// business data lives now -- if this fails the caller's UI should
+// surface that the save did not go through (see saveQueue below).
+const fbSet = async (key: string, value: string): Promise<boolean> => {
+  return (await multiPathWrite({ [key]: value }, 10000)) === 'ok';
+};
+
+// Read a single key from Firebase. Uses the revision stamp to avoid
+// re-downloading a big value we already hold and know is current.
 const fbGet = async (key: string): Promise<string | null> => {
   if (!isFirebaseConfigured()) return null;
+  const cacheable = revSupported && !NO_CACHE_KEYS.has(key);
+  let revBefore: string | null = null;
+  if (cacheable) {
+    revBefore = await fetchRev(key);
+    const c = rawCache.get(key);
+    if (revBefore && c && c.rev === revBefore && Date.now() - c.at < CACHE_MAX_AGE_MS) {
+      return c.value;
+    }
+  }
   try {
     const res = await fetchWithTimeout(fbUrl(key));
     if (!res.ok) return null;
     const data = await res.json();
-    return typeof data === 'string' ? data : null;
+    if (typeof data !== 'string') return null;
+    // revBefore was read BEFORE the value: if the key changed in between,
+    // the stored rev is older than the value -> next read just refetches.
+    if (cacheable && revBefore) rawCache.set(key, { rev: revBefore, value: data, at: Date.now() });
+    return data;
   } catch { return null; }
 };
 
@@ -197,25 +334,14 @@ const fbGet = async (key: string): Promise<string | null> => {
 // NEVER treat 'unknown' as 'failed' for financial operations.
 const fbMultiSet = async (updates: Record<string, string>): Promise<'ok' | 'failed' | 'unknown'> => {
   if (!isFirebaseConfigured()) return 'failed';
-  const body: Record<string, string> = {};
+  const filtered: Record<string, string> = {};
   for (const key of Object.keys(updates)) {
     if (!CLOUD_SYNC_KEYS.includes(key)) continue;
-    body[`/${key}`] = updates[key];
+    filtered[key] = updates[key];
   }
-  try {
-    const res = await fetchWithTimeout(`${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}.json`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }, 15000);
-    return res.ok ? 'ok' : 'failed';
-  } catch (err: any) {
-    // AbortError = our timeout fired = network was open when we sent,
-    // Firebase may have received and committed it.  Any other error
-    // (TypeError: Failed to fetch) = connection never established = safe failed.
-    if (err?.name === 'AbortError') return 'unknown';
-    return 'failed';
-  }
+  // AbortError => 'unknown' (server may have committed); any other error
+  // (connection never established) => safe 'failed'. See multiPathWrite.
+  return multiPathWrite(filtered, 15000);
 };
 
 // cloudSet-compatible wrapper so pending-save UI indicators still work
@@ -365,7 +491,9 @@ const readPendingTx = async (transactionId: string) => {
   };
 };
 
-// Read ALL cloud keys at once (faster than individual reads on load)
+// Read ALL cloud keys at once. Used ONCE on app load (and for backups).
+// The same response also carries /_rev, so we seed the revision cache
+// from one consistent snapshot -- no second download is ever needed.
 const fbGetAll = async (): Promise<Record<string, string> | null> => {
   if (!isFirebaseConfigured()) return null;
   try {
@@ -377,13 +505,40 @@ const fbGetAll = async (): Promise<Record<string, string> | null> => {
     if (!res.ok) return null;
     const data = await res.json();
     if (!data || typeof data !== 'object') return null;
+    const revs: Record<string, any> =
+      data[REV_KEY] && typeof data[REV_KEY] === 'object' ? data[REV_KEY] : {};
     const result: Record<string, string> = {};
+    const now = Date.now();
     for (const k of CLOUD_SYNC_KEYS) {
-      if (typeof data[k] === 'string') result[k] = data[k];
+      if (typeof data[k] !== 'string') continue;
+      result[k] = data[k];
+      if (NO_CACHE_KEYS.has(k)) continue;
+      const r = revs[k];
+      if (typeof r === 'string') {
+        rawCache.set(k, { rev: r, value: data[k], at: now });
+        knownRev[k] = r;
+      } else {
+        rawCache.delete(k);
+        delete knownRev[k];
+      }
     }
     return result;
   } catch { return null; }
 };
+
+// Debug helper: run  __fbSizes()  in the browser console to see which
+// keys are the biggest (bytes). Handy for deciding what to trim next.
+if (typeof window !== 'undefined') {
+  (window as any).__fbSizes = async () => {
+    const all = await fbGetAll();
+    if (!all) { console.warn('Could not read Firebase'); return; }
+    const rows = Object.keys(all)
+      .map(k => ({ key: k, KB: Math.round((all[k] || '').length / 102.4) / 10 }))
+      .sort((a, b) => b.KB - a.KB);
+    console.table(rows);
+    return rows;
+  };
+}
 
 // ── ETag-based conditional stock write (optimistic lock) ─────
 // Firebase REST supports If-Match: "<etag>" — the server rejects the
@@ -488,7 +643,7 @@ const validateAndPrepareStock = async (
 > => {
   for (let attempt = 0; attempt < STOCK_MAX_RETRIES; attempt++) {
     // Read fresh stock from Firebase (ETag read — no write here)
-    const { data: rawMeds } = await fbGetWithETag('madina_v7_meds');
+    const rawMeds = await fbGet('madina_v7_meds'); // rev-validated: only downloads if meds changed
     if (!rawMeds) return { ok: false, reason: 'network' };
 
     let freshMeds: any[];
@@ -528,84 +683,249 @@ const validateAndPrepareStock = async (
 // validateAndPrepareStock instead.
 const deductStockAtomically = validateAndPrepareStock;
 
-// Delete a single key from Firebase
 const fbDelete = async (key: string): Promise<boolean> => {
-  if (!isFirebaseConfigured()) return false;
-  try {
-    const res = await fetchWithTimeout(fbUrl(key), { method: 'DELETE' });
-    return res.ok;
-  } catch { return false; }
+  return (await multiPathWrite({ [key]: null }, 10000)) === 'ok';
 };
 
-// ── Firebase Real-time Listener via SSE ─────────────────────
-// Returns an unsubscribe function. Calls onChange(data) whenever
-// ANY key under /madina_data changes on Firebase (from any device).
-// Since Firebase is the single source of truth, every event is applied
-// as-is — there's no local copy to compare against or protect.
-const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => void) => {
-  if (!isFirebaseConfigured() || typeof window === 'undefined' || typeof EventSource === 'undefined') {
-    return () => {};
-  }
+// ── Firebase live sync (revision stream) ────────────────────
+// Streams ONLY /_rev (a few hundred bytes) instead of the whole
+// database. When a key's revision differs from what we hold, the key is
+// marked dirty and fetched through fbGet (which only downloads if the
+// rev really changed). To keep bandwidth low:
+//   * hidden tabs download nothing; they catch up when shown again
+//   * small settings keys sync immediately
+//   * medicines + due list sync at most every 20 s
+//   * heavy history keys (invoices, ledgers, logs...) wait until the user
+//     leaves the POS screen (then sync at most every 60 s), with a 10-min
+//     safety refresh. Every WRITE still re-validates against Firebase
+//     first, so a lazily-updated screen can never cause a wrong write.
+const LIVE_MEDIUM_KEYS = new Set<string>(['madina_v7_meds', 'madina_v7_due_list']);
+const LIVE_HEAVY_KEYS = new Set<string>([
+  'madina_v7_invoices', 'madina_v7_due_collection_log', 'madina_v7_payment_ledger',
+  'madina_v7_cash_ledger', 'madina_v7_stock_movements', 'madina_v7_audit_log',
+  'madina_v7_purchases', 'madina_v7_expenses', 'madina_v7_medmeta',
+  'madina_v7_mednames', 'madina_v7_companies',
+]);
+const LIVE_MEDIUM_INTERVAL_MS = 20 * 1000;
+const LIVE_HEAVY_INTERVAL_MS = 60 * 1000;
+const LIVE_HEAVY_ON_POS_MS = 10 * 60 * 1000;
+
+let fbActiveTab = 'pos';
+let fbFlushHeavyNow: (() => void) | null = null;
+// Call whenever the visible tab/screen changes.
+const fbSetActiveTab = (tab: string) => {
+  fbActiveTab = tab;
+  if (tab !== 'pos' && fbFlushHeavyNow) fbFlushHeavyNow();
+};
+
+
+// Legacy full-root stream. Used ONLY if Firebase rules reject /_rev.
+const fbListenAllLegacy = (onChange: (data: Record<string, string>) => void): (() => void) => {
   const url = `${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}.json`;
   let es: EventSource | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
-
   const extractResult = (path: string, data: any): Record<string, string> => {
     const result: Record<string, string> = {};
     if (!data) return result;
-
     if (path === '/' || path === '') {
-      // Full snapshot: data is the whole /madina_data object
       if (typeof data === 'object') {
-        for (const k of CLOUD_SYNC_KEYS) {
-          if (typeof data[k] === 'string') result[k] = data[k];
-        }
+        for (const k of CLOUD_SYNC_KEYS) if (typeof data[k] === 'string') result[k] = data[k];
       }
     } else {
-      // Single-key update: path is e.g. "/madina_v7_invoices"
-      const key = path.replace(/^\//, ''); // strip leading slash
-      if (CLOUD_SYNC_KEYS.includes(key) && typeof data === 'string') {
-        result[key] = data;
-      }
+      const key = path.replace(/^\//, '');
+      if (CLOUD_SYNC_KEYS.includes(key) && typeof data === 'string') result[key] = data;
     }
     return result;
+  };
+  const connect = () => {
+    if (stopped) return;
+    es = new EventSource(url);
+    const onEvt = (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data);
+        const result = extractResult(payload.path || '/', payload.data);
+        if (Object.keys(result).length > 0) onChange(result);
+      } catch { /* malformed event */ }
+    };
+    es.addEventListener('put', onEvt as any);
+    es.addEventListener('patch', onEvt as any);
+    es.onerror = () => { es?.close(); es = null; if (!stopped) retryTimer = setTimeout(connect, 5000); };
+  };
+  connect();
+  return () => { stopped = true; if (retryTimer) clearTimeout(retryTimer); es?.close(); es = null; };
+};
+
+// One-time probe: can we write under /_rev? (rules may forbid it)
+let revProbe: Promise<boolean> | null = null;
+const probeRevSupport = (): Promise<boolean> => {
+  if (!revProbe) {
+    revProbe = (async () => {
+      try {
+        const res = await fetchWithTimeout(`${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}.json`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [`/${REV_KEY}/_probe`]: '1' }),
+        }, 8000);
+        if (res.ok) return true;
+        if (res.status === 401 || res.status === 403) return false;
+        return true; // transient error: assume supported, writes self-heal
+      } catch { return true; }
+    })();
+  }
+  return revProbe;
+};
+
+const fbListenAll = (onChange: (data: Record<string, string>) => void): (() => void) => {
+  if (!isFirebaseConfigured() || typeof window === 'undefined' || typeof EventSource === 'undefined') {
+    return () => {};
+  }
+  let es: EventSource | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryDelay = 5000;
+  let stopped = false;
+  const startedAt = Date.now();
+
+  const remoteRev: Record<string, string> = {};
+  const dirty = new Set<string>();
+  const lastFetchAt: Record<string, number> = {};
+  const timers: Record<string, ReturnType<typeof setTimeout>> = {};
+  const inFlight = new Set<string>();
+
+  const isVisible = () =>
+    typeof document === 'undefined' || document.visibilityState !== 'hidden';
+
+  // -1 = never live-fetch this key
+  const intervalFor = (key: string): number => {
+    if (NO_CACHE_KEYS.has(key)) return -1;
+    if (LIVE_HEAVY_KEYS.has(key)) {
+      return fbActiveTab === 'pos' ? LIVE_HEAVY_ON_POS_MS : LIVE_HEAVY_INTERVAL_MS;
+    }
+    if (LIVE_MEDIUM_KEYS.has(key)) return LIVE_MEDIUM_INTERVAL_MS;
+    return 0;
+  };
+
+  const schedule = (key: string, force = false, minWait = 0) => {
+    if (stopped || !dirty.has(key) || timers[key] || inFlight.has(key)) return;
+    if (!isVisible()) return; // catch up when the tab becomes visible
+    const interval = intervalFor(key);
+    if (interval < 0) { dirty.delete(key); return; }
+    const last = lastFetchAt[key] ?? startedAt;
+    const wait = Math.max(minWait, force ? 0 : Math.max(0, last + interval - Date.now()));
+    timers[key] = setTimeout(() => { delete timers[key]; void run(key); }, wait);
+  };
+
+  const run = async (key: string) => {
+    if (stopped || !dirty.has(key)) return;
+    inFlight.add(key);
+    let ok = false;
+    try {
+      const value = await fbGet(key); // downloads only if the rev changed
+      lastFetchAt[key] = Date.now();
+      if (value !== null && !stopped) {
+        const c = rawCache.get(key);
+        if (c) knownRev[key] = c.rev;
+        else if (remoteRev[key]) knownRev[key] = remoteRev[key];
+        ok = true;
+        if (!remoteRev[key] || knownRev[key] === remoteRev[key]) dirty.delete(key);
+        onChange({ [key]: value });
+      }
+    } catch { /* retried below */ }
+    finally { inFlight.delete(key); }
+    // changed again while fetching, or the fetch failed -> try again
+    if (!stopped && dirty.has(key)) schedule(key, false, ok ? 0 : 15000);
+  };
+
+  const handleRevs = (path: string, data: any) => {
+    const updates: Record<string, string> = {};
+    if (path === '/' || path === '') {
+      if (data && typeof data === 'object') {
+        for (const k of Object.keys(data)) if (typeof data[k] === 'string') updates[k] = data[k];
+      }
+    } else {
+      const seg = path.replace(/^\//, '').split('/')[0];
+      if (typeof data === 'string') updates[seg] = data;
+    }
+    for (const k of Object.keys(updates)) {
+      if (!CLOUD_SYNC_KEYS.includes(k)) continue;
+      const r = updates[k];
+      remoteRev[k] = r;
+      if (ownRevs[k] === r) { knownRev[k] = r; dirty.delete(k); continue; } // our own write
+      if (knownRev[k] === r) { dirty.delete(k); continue; }                  // already have it
+      dirty.add(k);
+      schedule(k);
+    }
+  };
+
+  // Tiny re-read of the whole /_rev map (catches events missed while a
+  // phone suspended the tab / connection).
+  const resync = async () => {
+    try {
+      const res = await fetchWithTimeout(revUrl(), {}, 8000);
+      if (!res.ok) return;
+      handleRevs('/', await res.json());
+    } catch { /* ignore */ }
+  };
+
+  const onVisible = () => {
+    if (!isVisible() || stopped) return;
+    void resync();
+    for (const k of Array.from(dirty)) schedule(k);
+  };
+
+  fbFlushHeavyNow = () => {
+    for (const k of Array.from(dirty)) {
+      if (!LIVE_HEAVY_KEYS.has(k)) continue;
+      if (timers[k]) { clearTimeout(timers[k]); delete timers[k]; }
+      schedule(k, true);
+    }
   };
 
   const connect = () => {
     if (stopped) return;
-    es = new EventSource(url);
-
-    es.addEventListener('put', (event: MessageEvent) => {
+    es = new EventSource(revUrl());
+    es.onopen = () => { retryDelay = 5000; };
+    const onEvt = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
-        const result = extractResult(payload.path || '/', payload.data);
-        if (Object.keys(result).length > 0) onChange(result);
+        handleRevs(payload.path || '/', payload.data);
       } catch { /* malformed event */ }
-    });
-
-    es.addEventListener('patch', (event: MessageEvent) => {
-      try {
-        const payload = JSON.parse(event.data);
-        const result = extractResult(payload.path || '/', payload.data);
-        if (Object.keys(result).length > 0) onChange(result);
-      } catch { /* malformed event */ }
-    });
-
+    };
+    es.addEventListener('put', onEvt as any);
+    es.addEventListener('patch', onEvt as any);
     es.onerror = () => {
       es?.close();
       es = null;
       if (!stopped) {
-        retryTimer = setTimeout(connect, 5000); // retry in 5s
+        retryTimer = setTimeout(connect, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 60000); // back off, don't hammer
       }
     };
   };
 
-  connect();
+  let legacyStop: (() => void) | null = null;
+  void probeRevSupport().then(supported => {
+    if (stopped) return;
+    if (!supported) {
+      revSupported = false;
+      fbInvalidateAll();
+      console.warn('[sync] Firebase rules reject /_rev -> compatibility mode. Allow writes to /madina_data/_rev to save bandwidth.');
+      legacyStop = fbListenAllLegacy(onChange);
+      return;
+    }
+    connect();
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
+    if (typeof window !== 'undefined') window.addEventListener('online', onVisible);
+  });
 
   return () => {
     stopped = true;
+    if (legacyStop) legacyStop();
+    fbFlushHeavyNow = null;
     if (retryTimer) clearTimeout(retryTimer);
+    for (const k of Object.keys(timers)) clearTimeout(timers[k]);
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
+    if (typeof window !== 'undefined') window.removeEventListener('online', onVisible);
     es?.close();
     es = null;
   };
@@ -1977,6 +2297,10 @@ export default function Home() {
     // fills in the new tab's content the instant it's ready.
     startTransition(() => setActiveTab(tab));
   }, []);
+
+  // Tell the sync layer which screen is open (heavy history keys only
+  // live-sync once the user leaves the POS screen -- saves Firebase bandwidth).
+  useEffect(() => { fbSetActiveTab(activeTab); }, [activeTab]);
 
   // On mount: read hash from URL to restore tab
   useEffect(() => {
@@ -5919,6 +6243,8 @@ export default function Home() {
       }
     }
 
+    // Bump revision stamps for every restored key so all devices re-sync.
+    fbAttachRevs(patchBody as Record<string, any>, [...CLOUD_SYNC_KEYS]);
     try {
       const res = await fetchWithTimeout(
         `${FIREBASE_CONFIG.databaseURL}/${DATA_ROOT}.json`,
@@ -5929,6 +6255,7 @@ export default function Home() {
         },
         30000 // 30s — large payload on slow connections
       );
+      fbInvalidateAll(); // drop cached copies; next read gets the restored data
       return res.ok;
     } catch {
       // Network failure / timeout → Firebase never received the request.
@@ -9327,7 +9654,8 @@ export default function Home() {
 
             const handleDeleteVoucher = async (v: any) => {
               if (!confirm(t(`Delete this purchase voucher (${v.items.length} items)?`, `এই ক্রয় ভাউচার মুছে ফেলবেন (${v.items.length}টি আইটেম)?`))) return;
-              const updatedList = purchaseList.filter((log: any) => !v.logIds.includes(log.id));
+              const latestPurchaseList = await fetchLatestList('madina_v7_purchases', purchaseList);
+              const updatedList = latestPurchaseList.filter((log: any) => !v.logIds.includes(log.id));
               // FIX: was unawaited cloudSet (fire-and-forget). Now awaited and
               // result is checked so a failed write surfaces an error instead of
               // silently succeeding in UI but not in Firebase.
