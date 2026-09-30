@@ -1952,7 +1952,7 @@ export default function Home() {
   const validTabs = [
     "pos","analytics","inventory","procurement","new_product",
     "purchase_history","company_purchase_history","invoices",
-    "due_list","due_collection","report","closing_report",
+    "due_list","monthly_due","due_collection","report","closing_report",
     "returns","settings","modules_menu","daily_report","monthly_report",
     "reconciliation"
   ];
@@ -2119,6 +2119,11 @@ export default function Home() {
   const dueCollectionLogRef = useRef<any[]>([]);
   useEffect(() => { dueCollectionLogRef.current = dueCollectionLog; }, [dueCollectionLog]);
   const [dueSearch, setDueSearch] = useState("");
+  const [monthlyDueSearch, setMonthlyDueSearch] = useState("");
+  const [monthlyDueMonth, setMonthlyDueMonth] = useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [dueCollectionSearch, setDueCollectionSearch] = useState("");
   const [companyPurchaseSearch, setCompanyPurchaseSearch] = useState("");
 
@@ -7445,7 +7450,7 @@ export default function Home() {
 
             const inventoryActive = ["inventory","procurement","new_product"].includes(activeTab);
             const purchasesActive = ["purchase_history","company_purchase_history"].includes(activeTab);
-            const salesActive     = ["invoices","due_list","due_collection","returns","expense_tracker"].includes(activeTab);
+            const salesActive     = ["invoices","due_list","monthly_due","due_collection","returns","expense_tracker"].includes(activeTab);
             const reportsActive   = ["report","closing_report","daily_report","monthly_report"].includes(activeTab);
             const adminActive     = ["modules_menu","reconciliation"].includes(activeTab);
 
@@ -7532,7 +7537,7 @@ export default function Home() {
               </>)}
 
               {/* SALES & DUE GROUP */}
-              {(checkShouldRenderTabOption("invoices") || checkShouldRenderTabOption("due_list_view") || checkShouldRenderTabOption("due_collection_view") || checkShouldRenderTabOption("returns") || checkShouldRenderTabOption("expense_tracker")) && (<>
+              {(checkShouldRenderTabOption("invoices") || checkShouldRenderTabOption("due_list_view") || checkShouldRenderTabOption("monthly_due_view") || checkShouldRenderTabOption("due_collection_view") || checkShouldRenderTabOption("returns") || checkShouldRenderTabOption("expense_tracker")) && (<>
                 <div style={S.sectionLabel}>{t("Finance","ফিন্যান্স")}</div>
                 <button style={S.group(salesActive, salOpen)} onClick={()=>toggleGroup("sales")}>
                   <span style={{display:'flex',alignItems:'center',gap:'10px'}}>
@@ -7552,6 +7557,11 @@ export default function Home() {
                     <button style={S.subItem(activeTab==="due_list")} onClick={()=>{playSound('tab');navigateTab("due_list");}}>
                       <span>{t("Due List","বাকি তালিকা")}</span>
                       {dueList.length > 0 && <span style={S.badge('#ef4444')}>{dueList.length}</span>}
+                    </button>
+                  )}
+                  {checkShouldRenderTabOption("monthly_due_view") && (
+                    <button style={S.subItem(activeTab==="monthly_due")} onClick={()=>{playSound('tab');navigateTab("monthly_due");}}>
+                      <span>{t("Monthly Due List","মাসিক বাকি তালিকা")}</span>
                     </button>
                   )}
                   {checkShouldRenderTabOption("due_collection_view") && (
@@ -7720,6 +7730,11 @@ export default function Home() {
                 {checkShouldRenderTabOption("due_list_view") && (
                   <button onClick={() => { playSound('tab'); navigateTab("due_list"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "due_list" ? 'bg-indigo-500 text-white border-indigo-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
                     <span className="text-xl">💳</span><span>{t("Due List", "বাকি তালিকা")}</span>
+                  </button>
+                )}
+                {checkShouldRenderTabOption("monthly_due_view") && (
+                  <button onClick={() => { playSound('tab'); navigateTab("monthly_due"); setMobileMenuOpen(false); }} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-bold border transition ${activeTab === "monthly_due" ? 'bg-indigo-500 text-white border-indigo-500' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                    <span className="text-xl">🗓️</span><span>{t("Monthly Due", "মাসিক বাকি")}</span>
                   </button>
                 )}
                 {checkShouldRenderTabOption("due_collection_view") && (
@@ -9955,6 +9970,144 @@ export default function Home() {
               })()}
             </div>
           )}
+
+          {/* =========================================================
+              TAB 6A: MONTHLY DUE LIST (who took due in a selected month)
+          ========================================================= */}
+          {activeTab === "monthly_due" && checkShouldRenderTabOption("monthly_due_view") && (() => {
+            const monthKeyOf = (inv: any) => {
+              const d = parseCustomDateString(inv.dateString);
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            };
+            const shiftMonth = (delta: number) => {
+              const [y, m] = monthlyDueMonth.split('-').map(Number);
+              const d = new Date(y, m - 1 + delta, 1);
+              setMonthlyDueMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+            };
+            const [selYear, selMonth] = monthlyDueMonth.split('-').map(Number);
+            const monthLabel = new Date(selYear, (selMonth || 1) - 1, 1).toLocaleDateString(language === "bn" ? 'bn-BD' : 'en-US', { month: 'long', year: 'numeric' });
+
+            // Group every invoice of the selected month that created a due, per customer
+            const groups = new Map<string, any>();
+            invoices.forEach((inv: any) => {
+              if (!inv || inv.isReturned || (inv.due || 0) <= 0) return;
+              if (monthKeyOf(inv) !== monthlyDueMonth) return;
+              const name = inv.customer || t("Regular Customer", "সাধারণ গ্রাহক");
+              const phone = inv.phone || "N/A";
+              const key = name.toLowerCase() + '|' + phone;
+              const g = groups.get(key) || { key, customerName: name, phone, monthDue: 0, invoices: [] as any[] };
+              g.monthDue += inv.due || 0;
+              g.invoices.push({ invoiceId: inv.invoiceId, amount: inv.due || 0, date: (inv.dateString || '').split('|')[0].trim() });
+              groups.set(key, g);
+            });
+            const rows = Array.from(groups.values()).map((g: any) => {
+              const live = dueList.find((d: any) => (d.customerName || '').toLowerCase() === g.customerName.toLowerCase() && d.phone === g.phone);
+              return { ...g, liveDue: live || null, remaining: live ? live.totalDue : 0 };
+            }).sort((a: any, b: any) => b.monthDue - a.monthDue);
+
+            const q = monthlyDueSearch.trim().toLowerCase();
+            const filtered = q
+              ? rows.filter((r: any) => r.customerName.toLowerCase().includes(q) || (r.phone && r.phone.includes(monthlyDueSearch.trim())))
+              : rows;
+            const grandMonthDue = filtered.reduce((s: number, r: any) => s + r.monthDue, 0);
+            const grandRemaining = filtered.reduce((s: number, r: any) => s + r.remaining, 0);
+
+            return (
+              <div className={`ccard cc-rose p-4 rounded-xl border shadow-sm print:p-0 print:border-none print:shadow-none print:bg-transparent print:rounded-none ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-indigo-500">🗓️ {t("Monthly Due List", "মাসিক বাকি তালিকা")} — {monthLabel}</h3>
+                  <div className="flex items-center gap-3 flex-wrap print:hidden">
+                    <div className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      {t("This Month's Due:", "এই মাসের বাকি:")} <span className="text-red-500 font-mono font-black">{grandMonthDue.toFixed(1)} {currencySymbol}</span>
+                    </div>
+                    <button onClick={() => window.print()} className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-sm px-3 py-1.5 rounded-xl transition uppercase tracking-wider">🖨️ {t("Print", "প্রিন্ট")}</button>
+                    <button onClick={() => {
+                      posPrintReport(
+                        '🗓️ ' + t("Monthly Due List", "মাসিক বাকি তালিকা") + ' — ' + monthLabel,
+                        [t("Customer", "গ্রাহক"), t("Phone", "ফোন"), t("Month Due", "মাসের বাকি")],
+                        filtered.map((r: any) => [r.customerName, r.phone || '', r.monthDue.toFixed(1)]),
+                        [{ label: t("Grand Total Due", "সর্বমোট বাকি"), value: grandMonthDue.toFixed(1) + ' ' + currencySymbol, emphasize: true }]
+                      );
+                    }} className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-3 py-1.5 rounded-xl transition uppercase tracking-wider">🧾 {t("POS Print", "POS প্রিন্ট")}</button>
+                  </div>
+                </div>
+
+                {/* Month picker + search */}
+                <div className="mb-3 flex items-center gap-2 flex-wrap print:hidden">
+                  <button onClick={() => shiftMonth(-1)} className={`px-3 py-2 rounded-xl border text-sm font-black transition ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-700'}`}>◀</button>
+                  <input
+                    type="month"
+                    value={monthlyDueMonth}
+                    onChange={e => { if (e.target.value) setMonthlyDueMonth(e.target.value); }}
+                    className={`px-3 py-2 rounded-xl border text-sm outline-none transition ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}
+                  />
+                  <button onClick={() => shiftMonth(1)} className={`px-3 py-2 rounded-xl border text-sm font-black transition ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-700'}`}>▶</button>
+                  <input
+                    type="text"
+                    value={monthlyDueSearch}
+                    onChange={e => setMonthlyDueSearch(e.target.value)}
+                    placeholder={t("Search by name or phone...", "নাম বা নম্বর দিয়ে খুঁজুন...")}
+                    className={`flex-1 min-w-[180px] px-3 py-2 rounded-xl border text-sm outline-none transition ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-800 placeholder-slate-400'}`}
+                  />
+                </div>
+
+                {rows.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 italic text-sm">{t("No dues taken in this month.", "এই মাসে কেউ বাকি নেয়নি।")}</div>
+                ) : filtered.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400 italic text-sm">{t("No results found.", "কোনো ফলাফল পাওয়া যায়নি।")}</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm border-collapse" style={{minWidth:'560px'}}>
+                      <thead>
+                        <tr className={`font-black text-slate-400 border-b ${isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                          <th className="p-2.5">#</th>
+                          <th className="p-2.5">{t("Customer Name", "গ্রাহকের নাম")}</th>
+                          <th className="p-2.5">{t("Phone", "ফোন")}</th>
+                          <th className="p-2.5">{t("Invoices", "রশিদ")}</th>
+                          <th className="p-2.5 text-right">{t("Month Due", "মাসের বাকি")}</th>
+                          <th className="p-2.5 text-right">{t("Still Unpaid", "এখনো বাকি")}</th>
+                          <th className="p-2.5 text-center print:hidden">{t("Action", "কার্যক্রম")}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-700/10">
+                        {filtered.map((r: any, idx: number) => (
+                          <tr key={r.key} className="hover:bg-slate-500/5 transition-colors">
+                            <td className="p-2.5 text-slate-400">{idx + 1}</td>
+                            <td className="p-2.5 font-black">{r.customerName}</td>
+                            <td className="p-2.5 font-mono text-slate-400">{r.phone}</td>
+                            <td className="p-2.5 text-slate-400 text-sm">
+                              {r.invoices.map((inv: any) => (
+                                <span key={inv.invoiceId} className="mr-2">{inv.invoiceId} ({inv.amount.toFixed(1)}{inv.date ? ` · ${inv.date}` : ''})</span>
+                              ))}
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-black text-red-500 text-sm">{r.monthDue.toFixed(1)} {currencySymbol}</td>
+                            <td className={`p-2.5 text-right font-mono font-black text-sm ${r.remaining > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                              {r.remaining > 0 ? `${r.remaining.toFixed(1)} ${currencySymbol}` : `✓ ${t("Cleared", "পরিশোধিত")}`}
+                            </td>
+                            <td className="p-2.5 text-center print:hidden">
+                              {r.liveDue ? (
+                                <button onClick={() => { setDuePaymentModal(r.liveDue); setDuePayAmount(""); openEdit(() => setDuePaymentModal(null)); }} className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-sm px-3 py-1 rounded transition">
+                                  💰 {t("Collect Payment", "পরিশোধ নিন")}
+                                </button>
+                              ) : <span className="text-slate-400">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className={`font-black border-t-2 ${isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
+                          <td className="p-2.5" colSpan={4}>{t("Total", "মোট")} ({filtered.length})</td>
+                          <td className="p-2.5 text-right font-mono text-red-500">{grandMonthDue.toFixed(1)} {currencySymbol}</td>
+                          <td className="p-2.5 text-right font-mono text-amber-500">{grandRemaining.toFixed(1)} {currencySymbol}</td>
+                          <td className="print:hidden"></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* =========================================================
               TAB 6B: DUE COLLECTION LIST (history of who paid off dues)
